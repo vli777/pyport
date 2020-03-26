@@ -13,8 +13,13 @@ import re
 
 ## Config
 folder = '1 yr'
-weight_bounds=(0, 1)
-write_to_csv = True
+weight_bounds=(-1,1)
+capital = 20000
+max_vol = .33
+target_return = .33
+viewdict = { "QQQ": 0.10, "TLT": .10 }
+use_bl_views = False # uses market return derived weights
+opt = '' # black, min vol, target vol, target return
 
 ## start main
 DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
@@ -39,38 +44,33 @@ for sym in symbols:
         df = df_sym
     else:
         df = df.join(df_sym, how='outer')
-print(df.head())
 
-# Calculate expected returns and sample covariance
 mu = mean_historical_return(df)
 cov_matrix = CovarianceShrinkage(df).ledoit_wolf()
-
-# Optimise for maximal Sharpe ratio 
 ef = EfficientFrontier(mu, cov_matrix, weight_bounds)
-weights = ef.max_sharpe()
 
-# Optimize Black Litterman
-# relative views
-# viewdict = { "QQQ": 0.10, "IWM": -0.10, "TLT": .10 }
-# bl = BlackLittermanModel(cov_matrix, absolute_views=viewdict)
-# rets = bl.bl_returns()
-# ef = EfficientFrontier(rets, cov_matrix)
-# OR use market return-implied weights
-# delta = black_litterman.market_implied_risk_aversion(df.SPY)
-# bl.bl_weights(delta)
-# cleaned_weights = bl.clean_weights()
+def getBLweights(viewdict, use_bl_views):
+    bl = BlackLittermanModel(cov_matrix, absolute_views=viewdict)
+    rets = bl.bl_returns()
+    ef = EfficientFrontier(rets, cov_matrix)
+    delta = black_litterman.market_implied_risk_aversion(df.SPY)
+    bl.bl_weights(delta)
+    return bl.clean_weights()
 
-# clean weights and write to csv
-cleaned_weights = ef.clean_weights()
-ef.portfolio_performance(verbose=True)
-print(cleaned_weights)
-
-if write_to_csv:
-    ef.save_weights_to_file(PATH + DATE + ".csv")  # saves to file
+if opt == 'sharpe':
+    weights = ef.max_sharpe()
+elif opt == 'min vol':
+    weights = ef.min_volatility()
+elif opt == 'target vol':
+    weights = ef.efficient_risk(max_vol)
+elif opt == 'target return':
+    weights = ef.efficient_return(target_return)
+else:
+    weights = getBLweights(viewdict, use_bl_views)
 
 # discrete share allocation
 latest_prices = get_latest_prices(df)
-da = DiscreteAllocation(cleaned_weights, latest_prices, total_portfolio_value=20000)
+da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=capital)
 allocation, leftover = da.lp_portfolio()
 for sym in sorted(allocation):
     print(sym, + allocation[sym])
