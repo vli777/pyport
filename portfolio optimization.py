@@ -17,9 +17,9 @@ weight_bounds=(-1,1)
 capital = 20000
 max_vol = .33
 target_return = .33
-viewdict = { "QQQ": 0.10, "TLT": .10 }
+viewdict = { "QQQ": 0.10, "TLT": .10 } # need views on each asset to work properly
 use_bl_views = False # uses market return derived weights
-opt = '' # black, min vol, target vol, target return
+opt = 'sharpe' # black, min vol, target vol, target return
 
 ## start main
 DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
