@@ -13,8 +13,9 @@ to-do:
 
 Instructions:
 1. Download [Yahoo] stock price data and place in a folder within the root directory.
-2. Specify folder name and configure allocation limits in weight_bounds.
+2. Specify folder name and other config params
 3. Run
 
+If using Black Litterman model, you need to enter relative views for each asset.
 Standard columns OHLC and volume are dropped. Date as index, Adj Close as price input
 
