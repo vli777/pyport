@@ -18,8 +18,9 @@ import csv
 ## config
 folder = '1 yr'
 input_file = 'portfolio inputs.csv'
-yrs = 0.5
+yrs = 1
 symbols = []
+ignore = []
 import_csv_data = False     # if using exported yahoo finance data, set this to True
 weight_bounds=(0,1)         # (-1, 1) to include shorts
 capital = 30000             # starting capital
@@ -49,11 +50,14 @@ if len(symbols) == 0:
             print(file)
             if file.endswith(".csv") and not re.search(r'\d', file) and file != input_file :
                 name = os.path.splitext(file)[0]
-                symbols.append(name)  
+                if name not in ignore:
+                    symbols.append(name)  
     else:    
         with open(PATH + input_file) as file:
             for line in file:
-                symbols.append(line.rstrip())
+                name = line.rstrip()
+                if name not in ignore:
+                    symbols.append(name)
 
 # Read in price data
 df = pd.DataFrame()
