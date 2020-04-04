@@ -8,6 +8,7 @@ from pypfopt import black_litterman
 from pypfopt.black_litterman import BlackLittermanModel
 from pypfopt.efficient_frontier import EfficientFrontier
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import os
 import re
 import yfinance as yf
@@ -17,10 +18,9 @@ import csv
 ## config
 folder = '1 yr'
 input_file = 'portfolio inputs.csv'
+yrs = 0.5
 symbols = []
 import_csv_data = False     # if using exported yahoo finance data, set this to True
-startDate = '2020-01-31'    
-endDate = '2020-03-31'
 weight_bounds=(0,1)         # (-1, 1) to include shorts
 capital = 30000             # starting capital
 opt = 'sharpe'              # black, min vol, target vol, target return
@@ -38,6 +38,9 @@ target_return = .33         # if minimizing vol for a target return
 ## start main
 DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 PATH = os.getcwd() +'/' + folder +'/'
+TODAY = datetime.today()
+startDate = (TODAY + relativedelta(months=-round(yrs*12))).strftime('%Y-%m-%d')
+endDate = TODAY.strftime('%Y-%m-%d')
 
 # get ticker symbols
 if len(symbols) == 0:
@@ -74,6 +77,8 @@ for sym in symbols:
 mu = mean_historical_return(df)
 cov_matrix = CovarianceShrinkage(df).ledoit_wolf()
 ef = EfficientFrontier(mu, cov_matrix, weight_bounds)
+print ('\nStart Date:', startDate)
+print ('End Date:', endDate)
 
 if opt == 'sharpe':
     weights = ef.max_sharpe()
