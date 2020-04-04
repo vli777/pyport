@@ -17,19 +17,21 @@ import csv
 ## config
 folder = '1 yr'
 input_file = 'portfolio inputs.csv'
-symbols = ['TLT','IWM']
+symbols = []
 import_csv_data = False     # if using exported yahoo finance data, set this to True
-startDate = '2018-03-27'    
-endDate = '2020-03-27'
+startDate = '2020-01-31'    
+endDate = '2020-03-31'
 weight_bounds=(0,1)         # (-1, 1) to include shorts
-capital = 20000             # starting capital
-opt = 'black'              # black, min vol, target vol, target return
+capital = 30000             # starting capital
+opt = 'sharpe'              # black, min vol, target vol, target return
 
 # opt method specific vars  
 viewdict = {                # if using BL, need prior weights on each asset to work properly
     "TLT": 1,               # these weights are based on your belief of expected performance
     "IWM": -1 
-} 
+}
+if (opt == 'black'): 
+    symbols = viewdict.keys()
 max_vol = .33               # if maximizing return for target vol
 target_return = .33         # if minimizing vol for a target return
 
@@ -39,7 +41,7 @@ PATH = os.getcwd() +'/' + folder +'/'
 
 # get ticker symbols
 if len(symbols) == 0:
-    if import_csv_data == True:
+    if import_csv_data:
         for file in os.listdir(PATH):
             print(file)
             if file.endswith(".csv") and not re.search(r'\d', file) and file != input_file :
@@ -54,6 +56,8 @@ if len(symbols) == 0:
 df = pd.DataFrame()
 
 for sym in symbols:    
+    if not sym:
+        continue
     if import_csv_data:
         df_sym = pd.read_csv(PATH + '{}.csv'.format(sym), parse_dates=True, index_col="Date")
     else:
@@ -91,9 +95,16 @@ elif opt == 'black':
 if opt != 'black':
     ef.portfolio_performance(verbose=True)
 
+print('\nportfolio allocation weights: ')
+clean_weights = ef.clean_weights()
+for sym, weight in clean_weights.items():
+    if int(weight * 100) > 0:
+        print(sym, '\t% 5.2f' %(weight))
+
 # discrete share allocation
 latest_prices = get_latest_prices(df)
 da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=capital)
 allocation, leftover = da.lp_portfolio()
+print('\ndiscrete share allocation given $', capital)
 for sym in sorted(allocation):
-    print(sym, + allocation[sym])
+    print(sym, '\t', allocation[sym])
