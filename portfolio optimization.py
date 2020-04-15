@@ -15,34 +15,43 @@ import yfinance as yf
 yf.pdr_override()
 import csv
 
-## config
-folder = '1 yr'
-input_file = 'portfolio inputs.csv'
-yrs = 0.5
-symbols = []
-use_bonds = False
-ignore = []
+## config ##
+folder = '1 yr'                     # specify the folder u
+input_file = 'portfolio inputs.csv' # specify your input file name here with file ext
+yrs = 0.5                           # intended investment horizon / lookback period
+symbols = []                        # manually add symbols, str comma-delineated format
+ignore = []                         # ignore symbols in this list
+
+use_bonds = False                   # option to include use_bonds
 if not use_bonds:
-    ignore += ['SHY', 'IEF', 'TLT']
+    ignore += ['SHY', 'IEF', 'TLT'] # proxies for short, medium, and long term bonds
+
 import_csv_data = False     # if using csv exports of yahoo finance data, set this to True
 save_to_csv = False         # writes to csv when importing yahoo finance data
-weight_bounds=(0,.33)       # (-1, 1) to include shorts
-capital = 30000             # starting capital
+weight_bounds=(0,.33)       # min, max allocation bounds e.g. (-1, 1) for long-short
+capital = 60000             # starting capital
 opt = 'sharpe'              # black, min vol, target vol, target return
 
-# opt method specific vars  
+## BLACK LITTERMAN SPECIFIC VARS
 viewdict = {                # if using BL, need prior weights on each asset to work properly
     "TLT": 1,               # these weights are based on your belief of expected performance
     "IWM": -1 
 }
 if (opt == 'black'): 
     symbols = viewdict.keys()
+
+## MAXIMIZE RETURN FOR A GIVEN VOLATILITY
 max_vol = .33               # if maximizing return for target vol
+
+# MINIMIZE VOLATILITY FOR A TARGET RETURN
 target_return = .33         # if minimizing vol for a target return
 
-## start main
+## end config ##
+
+## start main ##
 DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-PATH = os.getcwd() +'/' + folder +'/'
+PATH = os.getcwd() +'/' 
+if folder: PATH += folder +'/'
 TODAY = datetime.today()
 startDate = (TODAY + relativedelta(months=-round(yrs*12))).strftime('%Y-%m-%d')
 endDate = TODAY.strftime('%Y-%m-%d')
