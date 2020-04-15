@@ -18,11 +18,15 @@ import csv
 ## config
 folder = '1 yr'
 input_file = 'portfolio inputs.csv'
-yrs = 1
+yrs = 0.5
 symbols = []
+use_bonds = False
 ignore = []
-import_csv_data = False     # if using exported yahoo finance data, set this to True
-weight_bounds=(0,1)         # (-1, 1) to include shorts
+if not use_bonds:
+    ignore += ['SHY', 'IEF', 'TLT']
+import_csv_data = False     # if using csv exports of yahoo finance data, set this to True
+save_to_csv = False         # writes to csv when importing yahoo finance data
+weight_bounds=(0,.33)       # (-1, 1) to include shorts
 capital = 30000             # starting capital
 opt = 'sharpe'              # black, min vol, target vol, target return
 
@@ -69,6 +73,8 @@ for sym in symbols:
         df_sym = pd.read_csv(PATH + '{}.csv'.format(sym), parse_dates=True, index_col="Date")
     else:
         df_sym = pdr.get_data_yahoo(sym, start=startDate, end=endDate)
+        if save_to_csv: 
+            df_sym.to_csv(PATH + '{}.csv'.format(sym))
 
     df_sym.rename(columns={'Adj Close':sym}, inplace=True)
     df_sym.drop(['Open','High','Low','Close','Volume'], 1, inplace=True)
