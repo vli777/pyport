@@ -15,53 +15,68 @@ import yfinance as yf
 yf.pdr_override()
 import csv
 
-## config
-folder = '1 yr'
-input_file = 'portfolio inputs.csv'
-yrs = 0.5
-symbols = []
-use_bonds = False
-ignore = []
-if not use_bonds:
-    ignore += ['SHY', 'IEF', 'TLT']
-import_csv_data = False     # if using csv exports of yahoo finance data, set this to True
-save_to_csv = False         # writes to csv when importing yahoo finance data
+## config ##
+
+folder = ''                             # optional: if your files are located in another folder
+input_file = 'portfolio inputs.csv'     # specify the input file name with ext
+
+# symbols in this list will not be included in optimization
+ignored_symbols = []        
+use_bonds = False           # includes ETF proxies for short, medium, long term bonds    
+
+# optimization parameters
+yrs = 1                     # investment horizon / lookback period
 weight_bounds=(0,.33)       # (-1, 1) to include shorts
 capital = 30000             # starting capital
 opt = 'sharpe'              # black, min vol, target vol, target return
 
-# opt method specific vars  
+discrete_shares = False     # display whole number shares after allocation weights
+
+# optional : read/write csv
+import_csv_data = False     # if using csv exports of yahoo finance data
+save_to_csv = False         # saves a copy of imported yahoo finance data to csv
+
+# BLACK LITTERMAN RELATIVE VIEWS
 viewdict = {                # if using BL, need prior weights on each asset to work properly
     "TLT": 1,               # these weights are based on your belief of expected performance
     "IWM": -1 
 }
 if (opt == 'black'): 
     symbols = viewdict.keys()
+
+# MAXIMUM RETURN GIVEN TARGET VOLATILITY
 max_vol = .33               # if maximizing return for target vol
+
+# MINIMIZE VOLATILITY GIVEN TARGET RETURN
 target_return = .33         # if minimizing vol for a target return
 
-## start main
+## end config ##
+
 DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-PATH = os.getcwd() +'/' + folder +'/'
+PATH = os.getcwd() +'/'
+if len(folder) > 0:
+    PATH += folder +'/'
 TODAY = datetime.today()
 startDate = (TODAY + relativedelta(months=-round(yrs*12))).strftime('%Y-%m-%d')
 endDate = TODAY.strftime('%Y-%m-%d')
+if not use_bonds:
+    ignored_symbols += ['SHY', 'IEF', 'TLT']
+symbols = []   
 
 # get ticker symbols
-if len(symbols) == 0:
-    if import_csv_data:
-        for file in os.listdir(PATH):
-            print(file)
-            if file.endswith(".csv") and not re.search(r'\d', file) and file != input_file :
-                name = os.path.splitext(file)[0]
-                if name not in ignore:
-                    symbols.append(name)  
-    else:    
-        with open(PATH + input_file) as file:
-            for line in file:
-                name = line.rstrip()
-                if name not in ignore:
-                    symbols.append(name)
+if import_csv_data:
+    for file in os.listdir(PATH):
+        print(file)
+        if file.endswith(".csv") and not re.search(r'\d', file) and file != input_file :
+            name = os.path.splitext(file)[0]
+            if name not in ignored_symbols:
+                symbols.append(name)  
+else:    
+    with open(PATH + input_file) as file:
+        for line in file:
+            name = line.rstrip()
+            if name not in ignored_symbols:
+                symbols.append(name)
 
 # Read in price data
 df = pd.DataFrame()
@@ -89,6 +104,7 @@ cov_matrix = CovarianceShrinkage(df).ledoit_wolf()
 ef = EfficientFrontier(mu, cov_matrix, weight_bounds)
 print ('\nStart Date:', startDate)
 print ('End Date:', endDate)
+print ('Investment Horizon: {} YR'.format(yrs))
 
 if opt == 'sharpe':
     weights = ef.max_sharpe()
@@ -117,9 +133,10 @@ for sym, weight in clean_weights.items():
         print(sym, '\t% 5.2f' %(weight))
 
 # discrete share allocation
-latest_prices = get_latest_prices(df)
-da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=capital)
-allocation, leftover = da.lp_portfolio()
-print('\ndiscrete share allocation given $', capital)
-for sym in sorted(allocation):
-    print(sym, '\t', allocation[sym])
+if discrete_shares:
+    latest_prices = get_latest_prices(df)
+    da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=capital)
+    allocation, leftover = da.lp_portfolio()
+    print('\ndiscrete share allocation given $', capital)
+    for sym in sorted(allocation):
+        print(sym, '\t', allocation[sym])
