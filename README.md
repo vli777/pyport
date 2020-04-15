@@ -13,7 +13,7 @@ to-do:
 * omega ratio
 
 Instructions:
-1. Provide a list of symbols in portfolio optimization.py or in a column csv export. 
-If using exported data from Yahoo Finance, place the csv in a folder.
-2. Specify the folder and file names as needed.
-3. Make sure all parameters required for the optimization type selected are updated before running e.g. BL needs prior views in a dictionary
+1. Provide a single column csv containing the ticker symbols you want to include in portfolio optimization
+OR download exported historical price data from Yahoo Finance and set `import_csv_data` to True.
+2. Specify the input file name and folder name if your files are not in the root directory.
+3. Set the parameters in the `#config` section. Some optimization methods require additional parameters.
