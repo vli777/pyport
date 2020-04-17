@@ -16,25 +16,22 @@ yf.pdr_override()
 import csv
 
 ## config ##
-
-folder = ''                             # optional: if your files are located in another folder
+folder = '3 yr'                             # optional: if your files are located in another folder
 input_file = 'portfolio inputs.csv'     # specify the input file name with ext
-
-# symbols in this list will not be included in optimization
-ignored_symbols = []        
-use_bonds = False           # includes ETF proxies for short, medium, long term bonds    
-
-# optimization parameters
-yrs = 1                     # investment horizon / lookback period
-weight_bounds=(0,.33)       # (-1, 1) to include shorts
-capital = 30000             # starting capital
-opt = 'sharpe'              # black, min vol, target vol, target return
-
-discrete_shares = False     # display whole number shares after allocation weights
 
 # optional : read/write csv
 import_csv_data = False     # if using csv exports of yahoo finance data
-save_to_csv = False         # saves a copy of imported yahoo finance data to csv
+save_to_csv = True         # saves a copy of imported yahoo finance data to csv  
+
+# optimization parameters
+yrs = 3                  # investment horizon / lookback period
+weight_bounds=(0,.33)       # (-1, 1) to include shorts
+capital = 60000             # starting capital
+opt = 'sharpe'              # black, min vol, target vol, target return
+
+ignored_symbols = ['GLD', 'ZM', 'CRUS']    # symbols in this list will not be included in optimization
+use_bonds = False           # includes ETF proxies for short, medium, long term bonds  
+discrete_shares = True     # display whole number shares after allocation weights
 
 # BLACK LITTERMAN RELATIVE VIEWS
 viewdict = {                # if using BL, need prior weights on each asset to work properly
@@ -53,7 +50,8 @@ target_return = .33         # if minimizing vol for a target return
 ## end config ##
 
 DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-PATH = os.getcwd() +'/'
+CWD = os.getcwd() +'/'
+PATH = CWD
 if len(folder) > 0:
     PATH += folder +'/'
 TODAY = datetime.today()
@@ -72,7 +70,7 @@ if import_csv_data:
             if name not in ignored_symbols:
                 symbols.append(name)  
 else:    
-    with open(PATH + input_file) as file:
+    with open(CWD + input_file) as file:
         for line in file:
             name = line.rstrip()
             if name not in ignored_symbols:
@@ -88,7 +86,7 @@ for sym in symbols:
         df_sym = pd.read_csv(PATH + '{}.csv'.format(sym), parse_dates=True, index_col="Date")
     else:
         df_sym = pdr.get_data_yahoo(sym, start=startDate, end=endDate)
-        if save_to_csv: 
+        if save_to_csv and not import_csv_data: 
             df_sym.to_csv(PATH + '{}.csv'.format(sym))
 
     df_sym.rename(columns={'Adj Close':sym}, inplace=True)
