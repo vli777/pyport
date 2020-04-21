@@ -16,36 +16,37 @@ yf.pdr_override()
 import csv
 
 ## config ##
-folder = '3 yr'                             # optional: if your files are located in another folder
-input_file = 'portfolio inputs.csv'     # specify the input file name with ext
-
-# optional : read/write csv
-import_csv_data = False     # if using csv exports of yahoo finance data
-save_to_csv = True         # saves a copy of imported yahoo finance data to csv  
+import_symbols_from_csv = True          # if not importing, use manually entered list
+folder = '1 yr'                         # optional: if your files are located in another folder
+input_file = 'portfolio inputs.csv'     # specify the input file name with file ext
+symbols = []                            # manual symbol list
+ignored_symbols = ['GLD','ZM']          # symbols in this list will not be included in optimization  
 
 # optimization parameters
-yrs = 3                  # investment horizon / lookback period
-weight_bounds=(0,.33)       # (-1, 1) to include shorts
-capital = 60000             # starting capital
-opt = 'sharpe'              # black, min vol, target vol, target return
+yrs = 0.5                 # investment horizon / lookback period
+weight_bounds=(0, 1)      # e.g. (-1, 1) includes shorts
+capital = 30000           # starting capital
+opt = 'sharpe'            # sharpe, black, min portfolio vol, target vol (max return), target return (minimizes vol)
 
-ignored_symbols = ['GLD', 'ZM', 'CRUS']    # symbols in this list will not be included in optimization
-use_bonds = False           # includes ETF proxies for short, medium, long term bonds  
-discrete_shares = True     # display whole number shares after allocation weights
+# other options
+import_data_from_csv = True     # if using csv exports of yahoo finance data
+save_to_csv = True               # saves a copy of imported yahoo finance data to csv  
+use_bonds = False         # includes ETF proxies for short, medium, long term bonds  
+discrete_shares = True    # display whole number shares after allocation weights
 
 # BLACK LITTERMAN RELATIVE VIEWS
-viewdict = {                # if using BL, need prior weights on each asset to work properly
-    "TLT": 1,               # these weights are based on your belief of expected performance
+viewdict = {              # if using BL, need prior weights on each asset to work properly
+    "TLT": 1,             # these weights are based on your belief of expected performance
     "IWM": -1 
 }
 if (opt == 'black'): 
     symbols = viewdict.keys()
 
 # MAXIMUM RETURN GIVEN TARGET VOLATILITY
-max_vol = .33               # if maximizing return for target vol
+max_vol = .33             # if maximizing return for target vol
 
 # MINIMIZE VOLATILITY GIVEN TARGET RETURN
-target_return = .33         # if minimizing vol for a target return
+target_return = .33       # if minimizing vol for a target return
 
 ## end config ##
 
@@ -58,18 +59,11 @@ TODAY = datetime.today()
 startDate = (TODAY + relativedelta(months=-round(yrs*12))).strftime('%Y-%m-%d')
 endDate = TODAY.strftime('%Y-%m-%d')
 if not use_bonds:
-    ignored_symbols += ['SHY', 'IEF', 'TLT']
-symbols = []   
+    ignored_symbols += ['SHY', 'IEF', 'TLT'] 
 
-# get ticker symbols
-if import_csv_data:
-    for file in os.listdir(PATH):
-        print(file)
-        if file.endswith(".csv") and not re.search(r'\d', file) and file != input_file :
-            name = os.path.splitext(file)[0]
-            if name not in ignored_symbols:
-                symbols.append(name)  
-else:    
+# get ticker symbols 
+if import_symbols_from_csv and len(input_file) > 0:
+    symbols = []
     with open(CWD + input_file) as file:
         for line in file:
             name = line.rstrip()
@@ -78,15 +72,14 @@ else:
 
 # Read in price data
 df = pd.DataFrame()
-
 for sym in symbols:    
     if not sym:
         continue
-    if import_csv_data:
+    if import_data_from_csv:
         df_sym = pd.read_csv(PATH + '{}.csv'.format(sym), parse_dates=True, index_col="Date")
     else:
         df_sym = pdr.get_data_yahoo(sym, start=startDate, end=endDate)
-        if save_to_csv and not import_csv_data: 
+        if save_to_csv:
             df_sym.to_csv(PATH + '{}.csv'.format(sym))
 
     df_sym.rename(columns={'Adj Close':sym}, inplace=True)
