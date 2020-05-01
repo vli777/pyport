@@ -17,15 +17,15 @@ import csv
 
 ## config ##
 import_symbols_from_csv = True          # if not importing, use manually entered list
-folder = '1 yr'                         # optional: if your files are located in another folder
+import_data_from_csv = False     # if using csv exports of yahoo finance data
+save_to_csv = True              # saves a copy of imported yahoo finance data to csv  
+folder = '6 mo'                         # optional: if your files are located in another folder
+time_period_in_yrs = 0.5
 input_file = 'portfolio inputs.csv'     # specify the input file name with file ext
 symbols = []                            
-ignored_symbols = []                    
-time_period_in_yrs = 0.5        
+ignored_symbols = ['SHY','IEF', 'TLT', 'IAU', 'GLD','INO', 'MRNA', 'GILD']                    
 weight_bounds=(0, .33)          
-starting_capital = 60000        
-import_data_from_csv = True     # if using csv exports of yahoo finance data
-save_to_csv = True              # saves a copy of imported yahoo finance data to csv  
+starting_capital = 60000       
 discrete_shares = True          # display whole number shares after allocation weights
 optimization_method = 'sharpe'                                                  
 # SHARPE - max return / volatility ratio
@@ -48,7 +48,7 @@ PATH = CWD
 if len(folder) > 0: PATH += folder +'/'
 TODAY = datetime.today()
 START_DATE = (TODAY + relativedelta(months=-round(time_period_in_yrs*12))).strftime('%Y-%m-%d')
-END_DATE = TODAY.strftime('%Y-%m-%d')
+END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
 
 # get ticker symbols 
 if import_symbols_from_csv and len(input_file) > 0:
@@ -84,7 +84,7 @@ mu = mean_historical_return(df)
 cov_matrix = CovarianceShrinkage(df).ledoit_wolf()
 ef = EfficientFrontier(mu, cov_matrix, weight_bounds)
 print ('\nStart Date:', START_DATE)
-print ('End Date:', END_DATE)
+print ('End Date:', TODAY)
 print ('Investment Horizon: {} YR'.format(time_period_in_yrs))
 
 if optimization_method == 'sharpe':
