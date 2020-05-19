@@ -15,5 +15,5 @@ to-do:
 Instructions:
 1. Provide a single column csv containing the ticker symbols you want to include in portfolio optimization
 OR download exported historical price data from Yahoo Finance and set `import_csv_data` to True.
-2. Specify the input file name and folder name if your files are not in the root directory.
+2. Specify the input file name (e.g. 'portfolio inputs')
 3. Set the parameters in the `#config` section. Some optimization methods require additional parameters.

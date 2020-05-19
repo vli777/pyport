@@ -16,36 +16,36 @@ yf.pdr_override()
 import csv
 
 ## config ##
-import_symbols_from_csv = True          # if not importing, use manually entered list
-import_data_from_csv = False     # if using csv exports of yahoo finance data
-save_to_csv = True              # saves a copy of imported yahoo finance data to csv  
-folder = '6 mo'                         # optional: if your files are located in another folder
-time_period_in_yrs = 0.5
-input_file = 'portfolio inputs.csv'     # specify the input file name with file ext
-symbols = []                            
-ignored_symbols = ['SHY','IEF', 'TLT', 'IAU', 'GLD','INO', 'MRNA', 'GILD']                    
-weight_bounds=(0, .33)          
+input_file = 'portfolio inputs.csv'   
+weight_bounds=(0, 1)         
+discrete_share_allocation = True          
+time_period_in_yrs = 0.25
 starting_capital = 60000       
-discrete_shares = True          # display whole number shares after allocation weights
-optimization_method = 'sharpe'                                                  
-# SHARPE - max return / volatility ratio
-# BLACK - black litterman allows specifiying views on relative asset performance
-viewdict = {    # if using BL, specify manual weights for each included asset to work properly
-    'IWM': -1,
-    'TLT': 0.5,
-    'QQQ': 1
-}
-# TARGET VOL - max return given a target volatility
-target_vol = .33                    
-# TARGET RETURN min volatlity given a target return
-target_return = .33             
+symbols = []            
+ignored_symbols = ['SHY', 'IEF', 'LQD', 'GLD', 'INO', 'MRNA', 'GILD']                    
+import_symbols_from_csv = True          
+import_data_from_csv = True     
+save_to_csv = True   
+optimization_method = 'target return'         
+optimization_config = {
+    'sharpe': {},           # maximize return / volatility ratio
+    'min vol': {},          # minimize portfolio variance
+    'black': {              # black litterman incorprates your performance expectations
+        'IWM': -1,
+        'TLT': 0.5,
+        'QQQ': 1
+    },
+    'target vol': 0.33,     # maximize return given a target volatility
+    'target return': 0.33   # minimize volatlity given a target return             
+}   
 ## end config ##
 
 # constants
-DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+FOLDER = '{}yr'.format(time_period_in_yrs)
 CWD = os.getcwd() +'/'
-PATH = CWD
-if len(folder) > 0: PATH += folder +'/'
+PATH = CWD + FOLDER + '/'
+
+DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 TODAY = datetime.today()
 START_DATE = (TODAY + relativedelta(months=-round(time_period_in_yrs*12))).strftime('%Y-%m-%d')
 END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
@@ -57,6 +57,9 @@ if import_symbols_from_csv and len(input_file) > 0:
             name = line.rstrip()
             if name not in ignored_symbols:
                 symbols.append(name)
+                if optimization_method == 'black':
+                    if name not in optimization_config[optimization_method]:
+                        optimization_config[optimization_method][name] = 1
     symbols = list(set(symbols))
 
 # Read in price data
@@ -83,38 +86,40 @@ for sym in symbols:
 mu = mean_historical_return(df)
 cov_matrix = CovarianceShrinkage(df).ledoit_wolf()
 ef = EfficientFrontier(mu, cov_matrix, weight_bounds)
-print ('\nStart Date:', START_DATE)
-print ('End Date:', TODAY)
 print ('Investment Horizon: {} YR'.format(time_period_in_yrs))
+print ('Optimization Method:', optimization_method)
 
 if optimization_method == 'sharpe':
     weights = ef.max_sharpe()
 elif optimization_method == 'min vol':
     weights = ef.min_volatility()
 elif optimization_method == 'target vol':
-    weights = ef.efficient_risk(target_vol)
+    weights = ef.efficient_risk(optimization_config[optimization_method])
 elif optimization_method == 'target return':
-    weights = ef.efficient_return(target_return)
+    weights = ef.efficient_return(optimization_config[optimization_method])
 elif optimization_method == 'black':
-    bl = BlackLittermanModel(cov_matrix, absolute_views=viewdict)    
+    bl = BlackLittermanModel(cov_matrix, absolute_views=optimization_config[optimization_method])    
     spx = pdr.get_data_yahoo('SPY', start=START_DATE, end=END_DATE)
     spx.drop(['Open','High','Low','Close','Volume'], 1, inplace=True)
     delta = black_litterman.market_implied_risk_aversion(spx['Adj Close'])
     bl.bl_weights(delta)
-    weights = bl.clean_weights()
+    weights = clean_weights = bl.clean_weights()
     bl.portfolio_performance(verbose=True)
 if optimization_method != 'black':
     ef.portfolio_performance(verbose=True)
 
 # output
 print('\nportfolio allocation weights: ')
-clean_weights = ef.clean_weights()
+try: 
+    clean_weights
+except:
+    clean_weights = ef.clean_weights()
 for sym, weight in clean_weights.items():
     if int(weight * 100) > 0:
         print(sym, '\t% 5.2f' %(weight))
 
 # discrete share allocation
-if discrete_shares:
+if discrete_share_allocation:
     latest_prices = get_latest_prices(df)
     da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=starting_capital)
     allocation, leftover = da.lp_portfolio()
