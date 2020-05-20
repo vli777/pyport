@@ -6,7 +6,6 @@ from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 from pandas_datareader import data as pdr
 from pypfopt import black_litterman
 from pypfopt.black_litterman import BlackLittermanModel
-from pypfopt.efficient_frontier import EfficientFrontier
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import os
@@ -17,16 +16,17 @@ import csv
 
 ## config ##
 input_file = 'portfolio inputs.csv'   
-weight_bounds=(0, 1)         
-discrete_share_allocation = True          
-time_period_in_yrs = 0.25
+weight_bounds=(0, 1)        
+l2_regularization = 1.0
+show_discrete_share_allocation = False          
+time_period_in_yrs = 1
 starting_capital = 60000       
 symbols = []            
-ignored_symbols = ['SHY', 'IEF', 'LQD', 'GLD', 'INO', 'MRNA', 'GILD']                    
+ignored_symbols = ['TLT', 'GLD']                    
 import_symbols_from_csv = True          
 import_data_from_csv = True     
 save_to_csv = True   
-optimization_method = 'target return'         
+optimization_method = 'sharpe'         
 optimization_config = {
     'sharpe': {},           # maximize return / volatility ratio
     'min vol': {},          # minimize portfolio variance
@@ -85,9 +85,7 @@ for sym in symbols:
 # calculate optimal weights
 mu = mean_historical_return(df)
 cov_matrix = CovarianceShrinkage(df).ledoit_wolf()
-ef = EfficientFrontier(mu, cov_matrix, weight_bounds)
-print ('Investment Horizon: {} YR'.format(time_period_in_yrs))
-print ('Optimization Method:', optimization_method)
+ef = EfficientFrontier(mu, cov_matrix, weight_bounds, gamma=l2_regularization)
 
 if optimization_method == 'sharpe':
     weights = ef.max_sharpe()
@@ -119,7 +117,7 @@ for sym, weight in clean_weights.items():
         print(sym, '\t% 5.2f' %(weight))
 
 # discrete share allocation
-if discrete_share_allocation:
+if show_discrete_share_allocation:
     latest_prices = get_latest_prices(df)
     da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=starting_capital)
     allocation, leftover = da.lp_portfolio()
