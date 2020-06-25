@@ -15,16 +15,18 @@ yf.pdr_override()
 import csv
 
 ## config ##
-input_file = 'portfolio inputs.csv'   
+input_file = 'max_inputs.csv'   
 weight_bounds=(0, 1)        
-l2_regularization = 1.0
+l2_regularization = .1
 show_discrete_share_allocation = False          
 time_period_in_yrs = 1
-starting_capital = 60000       
+starting_capital = 30000
 symbols = []            
-ignored_symbols = ['TLT', 'GLD']                    
-import_symbols_from_csv = True          
-import_data_from_csv = True     
+ignored_symbols = [
+
+]
+import_symbols_from_csv = True
+import_data_from_csv = False
 save_to_csv = True   
 optimization_method = 'sharpe'         
 optimization_config = {
@@ -35,13 +37,16 @@ optimization_config = {
         'TLT': 0.5,
         'QQQ': 1
     },
-    'target vol': 0.33,     # maximize return given a target volatility
-    'target return': 0.33   # minimize volatlity given a target return             
+    'target vol': 0.36,     # maximize return given a target volatility
+    'target return': 1.00   # minimize volatility given a target return             
 }   
 ## end config ##
 
 # constants
-FOLDER = '{}yr'.format(time_period_in_yrs)
+FOLDER = '{}{}yr'.format(input_file, time_period_in_yrs)
+if not os.path.exists(FOLDER):
+    os.makedirs(FOLDER)
+    import_data_from_csv = False
 CWD = os.getcwd() +'/'
 PATH = CWD + FOLDER + '/'
 
@@ -51,12 +56,14 @@ START_DATE = (TODAY + relativedelta(months=-round(time_period_in_yrs*12))).strft
 END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
 
 # get ticker symbols 
+if len(symbols) == 0:
+    import_symbols_from_csv = True
 if import_symbols_from_csv and len(input_file) > 0:
     with open(CWD + input_file) as file:
         for line in file:
             name = line.rstrip()
-            if name not in ignored_symbols:
-                symbols.append(name)
+            if name.upper() not in ignored_symbols:
+                symbols.append(name.upper())
                 if optimization_method == 'black':
                     if name not in optimization_config[optimization_method]:
                         optimization_config[optimization_method][name] = 1
@@ -107,12 +114,13 @@ if optimization_method != 'black':
     ef.portfolio_performance(verbose=True)
 
 # output
-print('\nportfolio allocation weights: ')
+print('{} - {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
+print('portfolio allocation weights: ')
 try: 
     clean_weights
 except:
     clean_weights = ef.clean_weights()
-for sym, weight in clean_weights.items():
+for sym, weight in sorted(clean_weights.items()):
     if int(weight * 100) > 0:
         print(sym, '\t% 5.2f' %(weight))
 
