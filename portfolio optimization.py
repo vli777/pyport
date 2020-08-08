@@ -15,8 +15,8 @@ yf.pdr_override()
 import csv
 
 ## config ##
-input_file = 'buyz.csv'   
-weight_bounds=(0, 1)        
+input_file = 'semis.csv'   
+weight_bounds=(0, .21)        
 l2_regularization = 0
 starting_capital = 100000       
 time_period_in_yrs = 1.83
@@ -74,7 +74,7 @@ df = pd.DataFrame()
 for sym in symbols:    
     if not sym:
         continue
-    if import_data_from_csv and os.path.exists(sym):
+    if import_data_from_csv and os.path.exists(FOLDER + '/' + sym + '.csv'):
         df_sym = pd.read_csv(PATH + '{}.csv'.format(sym), parse_dates=True, index_col="Date")
     else:
         df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
