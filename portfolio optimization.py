@@ -15,19 +15,19 @@ yf.pdr_override()
 import csv
 
 ## config ##
-input_file = 'max_inputs.csv'   
+input_file = 'buyz.csv'   
 weight_bounds=(0, 1)        
-l2_regularization = .1
-show_discrete_share_allocation = False          
-time_period_in_yrs = 1
-starting_capital = 30000
+l2_regularization = 0
+starting_capital = 100000       
+time_period_in_yrs = 1.83
 symbols = []            
 ignored_symbols = [
-
+    
 ]
 import_symbols_from_csv = True
-import_data_from_csv = False
+import_data_from_csv = True
 save_to_csv = True   
+show_discrete_share_allocation = False
 optimization_method = 'sharpe'         
 optimization_config = {
     'sharpe': {},           # maximize return / volatility ratio
@@ -37,13 +37,13 @@ optimization_config = {
         'TLT': 0.5,
         'QQQ': 1
     },
-    'target vol': 0.36,     # maximize return given a target volatility
-    'target return': 1.00   # minimize volatility given a target return             
+    'target vol': 0.237,     # maximize return given a target volatility
+    'target return': 1.83   # minimize volatility given a target return             
 }   
 ## end config ##
 
 # constants
-FOLDER = '{}{}yr'.format(input_file, time_period_in_yrs)
+FOLDER = '{}yr'.format(time_period_in_yrs)
 if not os.path.exists(FOLDER):
     os.makedirs(FOLDER)
     import_data_from_csv = False
@@ -62,7 +62,7 @@ if import_symbols_from_csv and len(input_file) > 0:
     with open(CWD + input_file) as file:
         for line in file:
             name = line.rstrip()
-            if name.upper() not in ignored_symbols:
+            if not name.startswith("#") and name.upper() not in ignored_symbols:
                 symbols.append(name.upper())
                 if optimization_method == 'black':
                     if name not in optimization_config[optimization_method]:
@@ -74,7 +74,7 @@ df = pd.DataFrame()
 for sym in symbols:    
     if not sym:
         continue
-    if import_data_from_csv:
+    if import_data_from_csv and os.path.exists(sym):
         df_sym = pd.read_csv(PATH + '{}.csv'.format(sym), parse_dates=True, index_col="Date")
     else:
         df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
