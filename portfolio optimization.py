@@ -13,13 +13,14 @@ import re
 import yfinance as yf
 yf.pdr_override()
 import csv
+from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
 
 ## config ##
 input_file = 'semis.csv'   
-weight_bounds=(0, .21)        
+weight_bounds=(0, 1)        
 l2_regularization = 0
 starting_capital = 100000       
-time_period_in_yrs = 1.83
+time_period_in_yrs = .36
 symbols = []            
 ignored_symbols = [
     
@@ -37,8 +38,9 @@ optimization_config = {
         'TLT': 0.5,
         'QQQ': 1
     },
-    'target vol': 0.237,     # maximize return given a target volatility
-    'target return': 1.83   # minimize volatility given a target return             
+    'hrp': {},
+    'target vol': 0.158,     # maximize return given a target volatility
+    'target return': 1.67   # minimize volatility given a target return             
 }   
 ## end config ##
 
@@ -110,7 +112,14 @@ elif optimization_method == 'black':
     bl.bl_weights(delta)
     weights = clean_weights = bl.clean_weights()
     bl.portfolio_performance(verbose=True)
-if optimization_method != 'black':
+elif optimization_method == 'hrp':
+    # Compute HRP weights
+    hrp = HierarchicalRiskParity()
+    hrp.allocate(asset_prices=df)
+    hrp_weights = hrp.weights.sort_values(by=0, ascending=False, axis=1)
+    hrp.plot_clusters(assets=df.columns)
+    clean_weights = hrp_weights.to_dict('records')[0]
+if optimization_method not in ['black', 'hrp']:
     ef.portfolio_performance(verbose=True)
 
 # output
