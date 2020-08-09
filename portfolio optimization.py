@@ -16,7 +16,7 @@ import csv
 from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
 
 ## config ##
-input_file = 'semis.csv'   
+input_file = 'sectors.csv'   
 weight_bounds=(0, 1)        
 l2_regularization = 0
 starting_capital = 100000       
@@ -29,7 +29,7 @@ import_symbols_from_csv = True
 import_data_from_csv = True
 save_to_csv = True   
 show_discrete_share_allocation = False
-optimization_method = 'sharpe'         
+optimization_method = 'hrp'         
 optimization_config = {
     'sharpe': {},           # maximize return / volatility ratio
     'min vol': {},          # minimize portfolio variance
@@ -118,7 +118,8 @@ elif optimization_method == 'hrp':
     hrp.allocate(asset_prices=df)
     hrp_weights = hrp.weights.sort_values(by=0, ascending=False, axis=1)
     hrp.plot_clusters(assets=df.columns)
-    clean_weights = hrp_weights.to_dict('records')[0]
+    hrp_weights = hrp_weights.to_dict('records')
+    clean_weights = hrp_weights[0]
 if optimization_method not in ['black', 'hrp']:
     ef.portfolio_performance(verbose=True)
 
@@ -129,9 +130,9 @@ try:
     clean_weights
 except:
     clean_weights = ef.clean_weights()
-for sym, weight in sorted(clean_weights.items()):
-    if int(weight * 100) > 0:
-        print(sym, '\t% 5.2f' %(weight))
+for sym, weight in sorted(clean_weights.items(), key = lambda kv: (kv[1], kv[0]), reverse=True):
+    if int(weight * 100) >= 1:
+        print(sym, '\t% 5.3f' %(weight))
 
 # discrete share allocation
 if show_discrete_share_allocation:
