@@ -14,13 +14,14 @@ import yfinance as yf
 yf.pdr_override()
 import csv
 from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
+from mlfinlab.portfolio_optimization.herc import HierarchicalEqualRiskContribution
 
 ## config ##
 input_file = 'sectors.csv'   
 weight_bounds=(0, 1)        
 l2_regularization = 0
 starting_capital = 100000       
-time_period_in_yrs = .36
+time_period_in_yrs = .72
 symbols = []            
 ignored_symbols = [
     
@@ -29,7 +30,7 @@ import_symbols_from_csv = True
 import_data_from_csv = True
 save_to_csv = True   
 show_discrete_share_allocation = False
-optimization_method = 'hrp'         
+optimization_method = 'hrp' 
 optimization_config = {
     'sharpe': {},           # maximize return / volatility ratio
     'min vol': {},          # minimize portfolio variance
@@ -38,7 +39,13 @@ optimization_config = {
         'TLT': 0.5,
         'QQQ': 1
     },
-    'hrp': {},
+    'hrp': {
+        'linkage': 'average',
+    },
+    'herc': { 
+        'risk_measure' : 'conditional_drawdown_risk',
+        'linkage': 'average',
+    },
     'target vol': 0.158,     # maximize return given a target volatility
     'target return': 1.67   # minimize volatility given a target return             
 }   
@@ -90,6 +97,7 @@ for sym in symbols:
         df = df_sym
     else:
         df = df.join(df_sym, how='outer')
+print (df.head())
 
 # calculate optimal weights
 mu = mean_historical_return(df)
@@ -112,15 +120,18 @@ elif optimization_method == 'black':
     bl.bl_weights(delta)
     weights = clean_weights = bl.clean_weights()
     bl.portfolio_performance(verbose=True)
-elif optimization_method == 'hrp':
+elif optimization_method in ['hrp', 'herc']:
     # Compute HRP weights
-    hrp = HierarchicalRiskParity()
-    hrp.allocate(asset_prices=df)
-    hrp_weights = hrp.weights.sort_values(by=0, ascending=False, axis=1)
-    hrp.plot_clusters(assets=df.columns)
-    hrp_weights = hrp_weights.to_dict('records')
-    clean_weights = hrp_weights[0]
-if optimization_method not in ['black', 'hrp']:
+    if (optimization_method == 'hrp'):
+        temp = HierarchicalRiskParity()
+    elif (optimization_method == 'herc'):
+        temp = HierarchicalEqualRiskContribution()
+    print(optimization_config[optimization_method])
+    temp.allocate(asset_prices=df, **optimization_config[optimization_method])
+    temp_weights = temp.weights.sort_values(by=0, ascending=False, axis=1)
+    temp_weights = temp_weights.to_dict('records')
+    clean_weights = temp_weights[0]
+if optimization_method not in ['black', 'hrp', 'herc']:
     ef.portfolio_performance(verbose=True)
 
 # output
@@ -131,7 +142,7 @@ try:
 except:
     clean_weights = ef.clean_weights()
 for sym, weight in sorted(clean_weights.items(), key = lambda kv: (kv[1], kv[0]), reverse=True):
-    if int(weight * 100) >= 1:
+    if (int(weight * 100) >= 0.01):
         print(sym, '\t% 5.3f' %(weight))
 
 # discrete share allocation
