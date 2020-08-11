@@ -17,11 +17,11 @@ from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
 from mlfinlab.portfolio_optimization.herc import HierarchicalEqualRiskContribution
 
 ## config ##
-input_file = 'sectors.csv'   
+input_file = 'fngs.csv'   
 weight_bounds=(0, 1)        
 l2_regularization = 0
 starting_capital = 100000       
-time_period_in_yrs = .72
+time_period_in_yrs = 1.83
 symbols = []            
 ignored_symbols = [
     
@@ -30,7 +30,7 @@ import_symbols_from_csv = True
 import_data_from_csv = True
 save_to_csv = True   
 show_discrete_share_allocation = False
-optimization_method = 'hrp' 
+optimization_method = 'sharpe' 
 optimization_config = {
     'sharpe': {},           # maximize return / volatility ratio
     'min vol': {},          # minimize portfolio variance
@@ -97,6 +97,7 @@ for sym in symbols:
         df = df_sym
     else:
         df = df.join(df_sym, how='outer')
+df = df.fillna(df.mean())
 print (df.head())
 
 # calculate optimal weights
