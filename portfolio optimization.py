@@ -6,9 +6,9 @@ from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 from pandas_datareader import data as pdr
 from pypfopt import black_litterman
 from pypfopt.black_litterman import BlackLittermanModel
-from datetime import datetime
+from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
-import os
+import os, time
 import re
 import yfinance as yf
 yf.pdr_override()
@@ -17,20 +17,21 @@ from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
 from mlfinlab.portfolio_optimization.herc import HierarchicalEqualRiskContribution
 
 ## config ##
-input_file = 'fngs.csv'   
+input_file = 'temp.csv'   
 weight_bounds=(0, 1)        
 l2_regularization = 0
 starting_capital = 100000       
-time_period_in_yrs = 1.83
-symbols = []            
+time_period_in_yrs = .36
+symbols = []  
 ignored_symbols = [
-    
+
 ]
+update_freq = 7             # 0 always re-dl, or use import_data_from_csv false
 import_symbols_from_csv = True
-import_data_from_csv = True
+import_data_from_csv = True # default uses local cache
 save_to_csv = True   
 show_discrete_share_allocation = False
-optimization_method = 'sharpe' 
+optimization_method = 'herc' 
 optimization_config = {
     'sharpe': {},           # maximize return / volatility ratio
     'min vol': {},          # minimize portfolio variance
@@ -43,7 +44,7 @@ optimization_config = {
         'linkage': 'average',
     },
     'herc': { 
-        'risk_measure' : 'conditional_drawdown_risk',
+        'risk_measure' : 'expected_shortfall',
         'linkage': 'average',
     },
     'target vol': 0.158,     # maximize return given a target volatility
@@ -83,8 +84,14 @@ df = pd.DataFrame()
 for sym in symbols:    
     if not sym:
         continue
-    if import_data_from_csv and os.path.exists(FOLDER + '/' + sym + '.csv'):
-        df_sym = pd.read_csv(PATH + '{}.csv'.format(sym), parse_dates=True, index_col="Date")
+    
+    filepath = PATH + '{}.csv'.format(sym)
+    mod_time = datetime.fromtimestamp(os.path.getmtime(filepath))
+    time_elapsed = TODAY - mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    needs_refresh = time_elapsed > timedelta(days=update_freq)
+
+    if import_data_from_csv and os.path.exists(FOLDER + '/' + sym + '.csv') and not needs_refresh:
+        df_sym = pd.read_csv(filepath, parse_dates=True, index_col="Date")
     else:
         df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
         if save_to_csv:
@@ -97,7 +104,7 @@ for sym in symbols:
         df = df_sym
     else:
         df = df.join(df_sym, how='outer')
-df = df.fillna(df.mean())
+df.fillna(method='bfill', inplace=True)
 print (df.head())
 
 # calculate optimal weights
