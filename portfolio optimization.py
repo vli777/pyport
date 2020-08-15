@@ -115,15 +115,20 @@ if optimization_method in ['hrp', 'herc']:
     # Compute HRP weights
     if (optimization_method == 'hrp'):
         temp = HierarchicalRiskParity()
+        temp.allocate(asset_prices=df, 
+                linkage=optimization_config[optimization_method]['linkage']
+            )
     elif (optimization_method == 'herc'):
         temp = HierarchicalEqualRiskContribution()
-
-    temp.allocate(asset_prices=df, **optimization_config[optimization_method])
+        temp.allocate(asset_prices=df, 
+                risk_measure=optimization_config[optimization_method]['risk_measure'],
+                linkage=optimization_config[optimization_method]['linkage']
+            )
 else:
     temp = MeanVarianceOptimisation()
     expected_returns = ReturnsEstimators().calculate_mean_historical_returns(asset_prices=df,
-                                                                         resample_by='W')
-    covariance = ReturnsEstimators().calculate_returns(asset_prices=df, resample_by='W').cov()
+                                                                         resample_by='D')
+    covariance = ReturnsEstimators().calculate_returns(asset_prices=df, resample_by='D').cov()
     temp.allocate(asset_names=df.columns, 
              asset_prices=df, 
              expected_asset_returns=expected_returns, 
@@ -140,7 +145,8 @@ temp_weights = temp_weights.to_dict('records')
 clean_weights = temp_weights[0]
 
 # output
-print('{} - {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
+print('\n{} to {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
+print('optimization method:', optimization_method)
 print('portfolio allocation weights: ')
 
 for sym, weight in sorted(clean_weights.items(), key = lambda kv: (kv[1], kv[0]), reverse=True):
