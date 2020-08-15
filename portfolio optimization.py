@@ -1,11 +1,5 @@
 import pandas as pd
-from pypfopt.efficient_frontier import EfficientFrontier
-from pypfopt.expected_returns import mean_historical_return
-from pypfopt.risk_models import CovarianceShrinkage
-from pypfopt.discrete_allocation import DiscreteAllocation, get_latest_prices
 from pandas_datareader import data as pdr
-from pypfopt import black_litterman
-from pypfopt.black_litterman import BlackLittermanModel
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import os
@@ -13,11 +7,12 @@ import re
 import yfinance as yf
 yf.pdr_override()
 import csv
+from mlfinlab.portfolio_optimization.mean_variance import MeanVarianceOptimisation, ReturnsEstimators
 from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
 from mlfinlab.portfolio_optimization.herc import HierarchicalEqualRiskContribution
 
 ## config ##
-input_file = 'watchlist.csv'   
+input_file = 'fngs.csv'   
 weight_bounds=(0, 1)        
 l2_regularization = 0
 starting_capital = 100000       
@@ -29,25 +24,30 @@ ignored_symbols = [
 update_freq = 7             # 0 always re-dl, or use import_data_from_csv false
 import_symbols_from_csv = True
 import_data_from_csv = True # default uses local cache
-show_discrete_share_allocation = False
+
 optimization_method = 'herc' 
+# hrp
+# herc
+# inverse_variance
+# min_volatility 
+# max_sharpe
+# efficient_risk
+# efficient_return 
+# max_return_min_volatility
+# max_diversification
+# max_decorrelation
+
 optimization_config = {
-    'sharpe': {},           # maximize return / volatility ratio
-    'min vol': {},          # minimize portfolio variance
-    'black': {              # black litterman incorprates your performance expectations
-        'IWM': -1,
-        'TLT': 0.5,
-        'QQQ': 1
-    },
     'hrp': {
-        'linkage': 'average',
+        'linkage': 'single',
     },
     'herc': { 
-        'risk_measure' : 'expected_shortfall',
-        'linkage': 'average',
+        'risk_measure' : 'conditional_drawdown_risk',
+        'linkage': 'ward',
     },
-    'target vol': 0.158,     # maximize return given a target volatility
-    'target return': 1.67   # minimize volatility given a target return             
+    'efficient_risk': 0.21,     # maximize return given a target volatility
+    'efficient_return': 0.01,  # minimize volatility given a target return     
+    'risk_aversion': 10,        
 }   
 ## end config ##
 
@@ -111,56 +111,38 @@ df.fillna(method='bfill', inplace=True)
 # print (df.head())
 
 # calculate optimal weights
-mu = mean_historical_return(df)
-cov_matrix = CovarianceShrinkage(df).ledoit_wolf()
-ef = EfficientFrontier(mu, cov_matrix, weight_bounds, gamma=l2_regularization)
-
-if optimization_method == 'sharpe':
-    weights = ef.max_sharpe()
-elif optimization_method == 'min vol':
-    weights = ef.min_volatility()
-elif optimization_method == 'target vol':
-    weights = ef.efficient_risk(optimization_config[optimization_method])
-elif optimization_method == 'target return':
-    weights = ef.efficient_return(optimization_config[optimization_method])
-elif optimization_method == 'black':
-    bl = BlackLittermanModel(cov_matrix, absolute_views=optimization_config[optimization_method])    
-    spx = pdr.get_data_yahoo('SPY', start=START_DATE, end=END_DATE)
-    spx.drop(['Open','High','Low','Close','Volume'], 1, inplace=True)
-    delta = black_litterman.market_implied_risk_aversion(spx['Adj Close'])
-    bl.bl_weights(delta)
-    weights = clean_weights = bl.clean_weights()
-    bl.portfolio_performance(verbose=True)
-elif optimization_method in ['hrp', 'herc']:
+if optimization_method in ['hrp', 'herc']:
     # Compute HRP weights
     if (optimization_method == 'hrp'):
         temp = HierarchicalRiskParity()
     elif (optimization_method == 'herc'):
         temp = HierarchicalEqualRiskContribution()
-    print(optimization_config[optimization_method])
+
     temp.allocate(asset_prices=df, **optimization_config[optimization_method])
-    temp_weights = temp.weights.sort_values(by=0, ascending=False, axis=1)
-    temp_weights = temp_weights.to_dict('records')
-    clean_weights = temp_weights[0]
-if optimization_method not in ['black', 'hrp', 'herc']:
-    ef.portfolio_performance(verbose=True)
+else:
+    temp = MeanVarianceOptimisation()
+    expected_returns = ReturnsEstimators().calculate_mean_historical_returns(asset_prices=df,
+                                                                         resample_by='W')
+    covariance = ReturnsEstimators().calculate_returns(asset_prices=df, resample_by='W').cov()
+    temp.allocate(asset_names=df.columns, 
+             asset_prices=df, 
+             expected_asset_returns=expected_returns, 
+             covariance_matrix=covariance, 
+             solution=optimization_method, 
+             target_return=optimization_config['efficient_risk'], 
+             target_risk=optimization_config['efficient_return'], 
+             risk_aversion=optimization_config['risk_aversion'], 
+             weight_bounds=weight_bounds)
+    temp.get_portfolio_metrics()
+
+temp_weights = temp.weights.sort_values(by=0, ascending=False, axis=1)
+temp_weights = temp_weights.to_dict('records')
+clean_weights = temp_weights[0]
 
 # output
 print('{} - {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
 print('portfolio allocation weights: ')
-try: 
-    clean_weights
-except:
-    clean_weights = ef.clean_weights()
+
 for sym, weight in sorted(clean_weights.items(), key = lambda kv: (kv[1], kv[0]), reverse=True):
     if (int(weight * 100) >= 0.01):
         print(sym, '\t% 5.3f' %(weight))
-
-# discrete share allocation
-if show_discrete_share_allocation:
-    latest_prices = get_latest_prices(df)
-    da = DiscreteAllocation(weights, latest_prices, total_portfolio_value=starting_capital)
-    allocation, leftover = da.lp_portfolio()
-    print('\ndiscrete share allocation given $', starting_capital)
-    for sym in sorted(allocation):
-        print(sym, '\t', allocation[sym])
