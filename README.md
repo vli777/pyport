@@ -12,6 +12,8 @@ optimization models available:
 * max_decorrelation
 * hierarchical risk parity
 * hierarchical equal risk contribution
+* online moving average reversion
+* robust median reversion
 
 Instructions:
 1. Provide a single column csv containing the ticker symbols you want to includ
