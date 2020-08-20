@@ -22,25 +22,15 @@ yf.pdr_override()
 # scorn window 16, rho .21
 # fcornk window 1.83, rho .87
 
-# Volume Bars
-# volume = standard_data_structures.get_volume_bars('FILE_PATH', threshold=28000,
-#                                               batch_size=1000000, verbose=False)
-
-#vpin   
-    # :param volume: (pd.Series) Bar volume
-    # :param buy_volume: (pd.Series) Bar volume classified as buy (either tick rule, BVC or aggressor side methods applied)
-    # :param window: (int) Estimation window
-    # :return: (pd.Series) VPIN series
-
 ## config ##
 input_file = 'fngs.csv'
-time_period_in_yrs = 2.87       
+time_period_in_yrs = 2.87   
 ignored_symbols = [             # use this to filter out symbols in a csv input file
-
+    
 ]
-min_alloc = 0                # don't output weights below this value
+min_alloc = 0.02                # don't output weights below this value
 update_freq_days = 7            # 0 to always dl latest data
-optimization_method = 'herc'
+optimization_method = 'olmar'
 # rmr
 # olmar
 # herc
@@ -63,9 +53,11 @@ optimization_config = {
         'risk_measure': 'conditional_drawdown_risk',
         'linkage': 'ward',
     },
-    'olmar':{                  # SMA
+    'olmar':{                  
+        'method': 2,            # 1 for SMA, 2 for EWA    
         'epsilon': 10,          # reversion threshold
-        'window': 11,            # SMA window
+        'window': 11,           
+        'alpha': 0.37,
     },
     'rmr':{
         'epsilon': 13.37,
@@ -145,6 +137,22 @@ for sym in symbols:
 df.fillna(method='bfill', inplace=True)
 # print (df.head())
 
+def output(weights):
+    if isinstance(weights, dict):
+        clean_weights = weights
+    else: 
+        weights = weights.sort_values(by=0, ascending=False, axis=1)    
+        clean_weights = weights.to_dict('records')[0]
+
+    print('\n{} to {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
+    print('optimization method:', optimization_method)
+    print('portfolio allocation weights: ')
+
+    for sym, weight in sorted(clean_weights.items(
+    ), key=lambda kv: (kv[1], kv[0]), reverse=True):
+        if (weight >= min_alloc):
+            print(sym, '\t% 5.3f' % (weight))
+
 # calculate optimal weights
 if optimization_method in ['hrp', 'herc', 'cla', 'olmar', 'rmr']:
     # Compute HRP weights
@@ -153,33 +161,37 @@ if optimization_method in ['hrp', 'herc', 'cla', 'olmar', 'rmr']:
         temp.allocate(
             asset_prices=df,
             linkage=optimization_config[optimization_method]['linkage'])
+        output(temp.weights)
     elif (optimization_method == 'herc'):
         temp = HierarchicalEqualRiskContribution()
         temp.allocate(
             asset_prices=df,
             risk_measure=optimization_config[optimization_method]['risk_measure'],
             linkage=optimization_config[optimization_method]['linkage'])
+        output(temp.weights)
     elif (optimization_method == 'cla'):
         temp = CriticalLineAlgorithm()
         solution = optimization_config[optimization_method]['solution']
         temp.allocate(
             asset_prices=df,
             solution=solution)
-
         if solution == 'max_sharpe':
             print('max sharpe', temp.max_sharpe)
         elif solution == 'min_volatility':
             print('min variance', temp.min_var)
         elif solution == 'efficient_frontier':
             print('means', temp.efficient_frontier_means, 'sigma', temp.efficient_frontier_sigma)
+        output(temp.weights)
     elif (optimization_method == 'olmar'):
         temp = OLMAR(
-            reversion_method=1, 
+            reversion_method=optimization_config[optimization_method]['method'], 
             epsilon=optimization_config[optimization_method]['epsilon'],
             window=optimization_config[optimization_method]['window'],
+            alpha=optimization_config[optimization_method]['alpha']
         )
         temp.allocate(asset_prices=df, verbose=True)
-        temp.weights = temp.all_weights
+        temp_dict = dict(zip(df.columns, temp.weights))
+        output(temp_dict)
     elif (optimization_method == 'rmr'):
         temp = RMR(
             epsilon=optimization_config[optimization_method]['epsilon'],
@@ -187,7 +199,8 @@ if optimization_method in ['hrp', 'herc', 'cla', 'olmar', 'rmr']:
             window=optimization_config[optimization_method]['window']
         )
         temp.allocate(asset_prices=df, verbose=True)
-        temp.weights = temp.all_weights
+        temp_dict = dict(zip(df.columns, temp.weights))
+        output(temp_dict)
     else:
         temp = MeanVarianceOptimisation()
         expected_returns = ReturnsEstimators().calculate_mean_historical_returns(asset_prices=df)
@@ -202,16 +215,6 @@ if optimization_method in ['hrp', 'herc', 'cla', 'olmar', 'rmr']:
                     risk_aversion=optimization_config['risk_aversion'],
                     )
         temp.get_portfolio_metrics()
-    
-temp_weights = temp.weights #.sort_values(by=0, ascending=False, axis=1)
-clean_weights = temp_weights.to_dict('records')[0]
+        output(temp.weights)
 
-# output
-print('\n{} to {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
-print('optimization method:', optimization_method)
-print('portfolio allocation weights: ')
 
-for sym, weight in sorted(clean_weights.items(
-), key=lambda kv: (kv[1], kv[0]), reverse=True):
-    if (weight >= min_alloc):
-        print(sym, '\t% 5.3f' % (weight))
