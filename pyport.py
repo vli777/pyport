@@ -23,14 +23,14 @@ yf.pdr_override()
 # fcornk window 1.83, rho .87
 
 ## config ##
-input_file = 'fngs.csv'
-time_period_in_yrs = 2.87   
+input_file = 'hero.csv'
+time_period_in_yrs = 2.87 
 ignored_symbols = [             # use this to filter out symbols in a csv input file
     
 ]
 min_alloc = 0.02                # don't output weights below this value
 update_freq_days = 7            # 0 to always dl latest data
-optimization_method = 'olmar'
+optimization_method = 'rmr'
 # rmr
 # olmar
 # herc
@@ -135,6 +135,7 @@ for sym in symbols:
         df = df.join(df_sym, how='outer')
 
 df.fillna(method='bfill', inplace=True)
+df.fillna(method='ffill', inplace=True)
 # print (df.head())
 
 def output(weights):
@@ -189,6 +190,7 @@ if optimization_method in ['hrp', 'herc', 'cla', 'olmar', 'rmr']:
             window=optimization_config[optimization_method]['window'],
             alpha=optimization_config[optimization_method]['alpha']
         )
+        print(df.head())
         temp.allocate(asset_prices=df, verbose=True)
         temp_dict = dict(zip(df.columns, temp.weights))
         output(temp_dict)
@@ -198,6 +200,7 @@ if optimization_method in ['hrp', 'herc', 'cla', 'olmar', 'rmr']:
             n_iteration=optimization_config[optimization_method]['n_iteration'],
             window=optimization_config[optimization_method]['window']
         )
+        print(df.head())
         temp.allocate(asset_prices=df, verbose=True)
         temp_dict = dict(zip(df.columns, temp.weights))
         output(temp_dict)
