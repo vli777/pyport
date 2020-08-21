@@ -27,9 +27,10 @@ yf.pdr_override()
 input_files = [
     'sectors'
     ]
-time_period_in_yrs = .72
+time_period_in_yrs = 0.72
 min_weight_to_display = 0.03                
-use_latest_data = False
+use_cached_data = True
+
 ignored_symbols = [             
     
     ]
@@ -106,6 +107,12 @@ for input_file in input_files:
                     "#") and name[:1].isalpha() and name.upper() not in ignored_symbols:
                 symbols.append(name.upper())
 symbols = list(set(symbols))
+# print(symbols)
+
+def get_stock_data(sym):
+    df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
+    df_sym.to_csv(sym_file)
+    return df_sym
 
 # Read in price data
 df = pd.DataFrame()
@@ -114,22 +121,22 @@ for sym in symbols:
         continue
     sym_file = PATH + '{}.csv'.format(sym)
 
-    if not use_latest_data:
+    if use_cached_data:
         try:
             mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
             time_elapsed = TODAY - \
                 mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
-            use_latest_data = time_elapsed > timedelta(days=max(7,int(0.07 * time_period_in_yrs)))
+            needs_refresh = time_elapsed > timedelta(days=max(7,int(0.07 * time_period_in_yrs)))
         except BaseException:
-            use_latest_data = True
+            needs_refresh = True
 
-    if use_latest_data:
-        print(
-            '{} local data cache out of date. downloading latest price data...'.format(sym))
-        df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
-        df_sym.to_csv(sym_file)
+    if needs_refresh:
+        print('{} local data cache out of date. downloading latest price data...'.format(sym))
+        df_sym = get_stock_data(sym)
     else:
         df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
+        if df_sym.empty:
+            df_sym = get_stock_data(sym)
 
     df_sym.rename(columns={'Adj Close': sym}, inplace=True)
     df_sym.drop(['Open', 'High', 'Low', 'Close', 'Volume'], 1, inplace=True)
@@ -141,6 +148,7 @@ for sym in symbols:
 
 df.fillna(method='bfill', inplace=True)
 df.fillna(method='ffill', inplace=True)
+# print(df.head(), df.tail(), df.isnull().values.any())
 
 def output(weights):
     if isinstance(weights, dict):
