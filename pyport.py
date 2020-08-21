@@ -24,14 +24,18 @@ yf.pdr_override()
 # fcornk window 1.83, rho .87
 
 ## config ##
-input_files = ['sp500', 'nq', 'mdy']
-time_period_in_yrs = .72
+input_files = [
+    'sp500', 'nq', 'mdy'
+    ]
+time_period_in_yrs = 2.87
+min_alloc = 0.02                # don't output weights below this value
+use_latest_data = False
 ignored_symbols = [             # use this to filter out symbols in a csv input file
     
-]
-min_alloc = 0.02                # don't output weights below this value
-update_freq_days = 7            # 0 to always dl latest data
-models = ['herc', 'cla']
+    ]
+models = [
+    'cla', 'herc', 'olmar', 'rmr'
+    ]
 # rmr
 # olmar
 # herc
@@ -101,7 +105,7 @@ for input_file in input_files:
             if not name.startswith(
                     "#") and name[:1].isalpha() and name.upper() not in ignored_symbols:
                 symbols.append(name.upper())
-    symbols = list(set(symbols))
+symbols = list(set(symbols))
 
 # Read in price data
 df = pd.DataFrame()
@@ -110,15 +114,16 @@ for sym in symbols:
         continue
     sym_file = PATH + '{}.csv'.format(sym)
 
-    try:
-        mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
-        time_elapsed = TODAY - \
-            mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
-        needs_refresh = time_elapsed > timedelta(days=update_freq_days)
-    except BaseException:
-        needs_refresh = True
+    if not use_latest_data:
+        try:
+            mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
+            time_elapsed = TODAY - \
+                mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
+            use_latest_data = time_elapsed > timedelta(days=int(0.02 * time_period_in_yrs))
+        except BaseException:
+            use_latest_data = True
 
-    if needs_refresh:
+    if use_latest_data:
         print(
             '{} local data cache out of date. downloading latest price data...'.format(sym))
         df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
@@ -158,6 +163,7 @@ def output(weights):
 stk = []
 
 for optimization_method in models:
+    print ('\nCalculating...', optimization_method)
     # calculate optimal weights
     if optimization_method in ['hrp', 'herc', 'cla', 'olmar', 'rmr']:
         # Compute HRP weights
@@ -222,7 +228,8 @@ if len(models) > 1:
     stk = { k: v/N for k, v in total.items() }
 
     print('\n{} to {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
-    print('optimization method: STACK', )
+    print('input files:', input_files)
+    print('optimization method: STACK', models)
     print('portfolio allocation weights: ')
 
     for sym, weight in sorted(stk.items(
