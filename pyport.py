@@ -32,7 +32,7 @@ min_weight_to_display = 0.03
 use_cached_data = True
 
 ignored_symbols = [             
-    
+    'ring', 'slvp'
     ]
 models = [
     'cla', 'herc', 'olmar', 'rmr'
@@ -104,7 +104,7 @@ for input_file in input_files:
             name = line.rstrip()
             name=name.split('.')[0]
             if not name.startswith(
-                    "#") and name[:1].isalpha() and name.upper() not in ignored_symbols:
+                    "#") and name[:1].isalpha() and name.upper() not in [x.upper() for x in ignored_symbols]:
                 symbols.append(name.upper())
 symbols = list(set(symbols))
 # print(symbols)
