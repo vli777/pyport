@@ -25,12 +25,12 @@ yf.pdr_override()
 
 ## config ##
 input_files = [
-    'sp500', 'nq', 'mdy'
+    'sectors'
     ]
 time_period_in_yrs = .72
-min_alloc = 0.02                # don't output weights below this value
+min_weight_to_display = 0.03                
 use_latest_data = False
-ignored_symbols = [             # use this to filter out symbols in a csv input file
+ignored_symbols = [             
     
     ]
 models = [
@@ -157,7 +157,7 @@ def output(weights):
 
     for sym, weight in sorted(clean_weights.items(
     ), key=lambda kv: (kv[1], kv[0]), reverse=True):
-        if (weight >= min_alloc):
+        if (weight >= min_weight_to_display):
             print(sym, '\t% 5.3f' % (weight))
 
 stk = []
@@ -225,15 +225,16 @@ for optimization_method in models:
 if len(models) > 1:
     total = sum(map(Counter, stk), Counter())
     N = float(len(stk))
-    stk = { k: v/N for k, v in total.items() }
+    stk = { k: v/N for k, v in total.items() if v/N >= min_weight_to_display }
+    total_alloc = sum(stk.values())
+    scaled = { k: v / total_alloc for k, v in stk.items() }
 
     print('\n{} to {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
     print('input files:', input_files)
     print('optimization method: STACK', models)
     print('portfolio allocation weights: ')
 
-    for sym, weight in sorted(stk.items(
+    for sym, weight in sorted(scaled.items(
     ), key=lambda kv: (kv[1], kv[0]), reverse=True):
-        if (weight >= min_alloc):
-            print(sym, '\t% 5.3f' % (weight))
+        print(sym, '\t% 5.3f' % (weight))
 
