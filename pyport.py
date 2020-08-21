@@ -27,7 +27,7 @@ yf.pdr_override()
 input_files = [
     'sp500', 'nq', 'mdy'
     ]
-time_period_in_yrs = 2.87
+time_period_in_yrs = .72
 min_alloc = 0.02                # don't output weights below this value
 use_latest_data = False
 ignored_symbols = [             # use this to filter out symbols in a csv input file
@@ -119,7 +119,7 @@ for sym in symbols:
             mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
             time_elapsed = TODAY - \
                 mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
-            use_latest_data = time_elapsed > timedelta(days=int(0.02 * time_period_in_yrs))
+            use_latest_data = time_elapsed > timedelta(days=max(7,int(0.07 * time_period_in_yrs)))
         except BaseException:
             use_latest_data = True
 
