@@ -11,7 +11,6 @@ from mlfinlab.data_structures import standard_data_structures
 
 import matplotlib.pyplot as plt
 from scipy.cluster.hierarchy import dendrogram
-from pyhrp.hrp import dist, linkage, tree, _hrp
 
 from collections import Counter
 import csv
@@ -34,12 +33,12 @@ input_files = [
 time_period_in_yrs = 1.83
 min_weight_to_display = 0.01              
 use_cached_data = True
-sort_by_weights = False
+sort_by_weights = True
 ignored_symbols = [             
     'ring', 'slvp'
     ]
 models = [
-    'hrp',
+    'herc', 'olmar', 'rmr'
     ]
 # rmr
 # olmar
@@ -153,28 +152,14 @@ for sym in symbols:
 
 df.fillna(method='bfill', inplace=True)
 df.fillna(method='ffill', inplace=True)
-# print(df.head(), df.tail(), df.isnull().values.any())
+df = df.reindex(sorted(df.columns), axis=1)
+# print(df.head(), df.isnull().values.any())
 
-# TESTING ********
-# returns = df.to_returns().dropna()
-# portfolios = helpers.get_all_portfolios(returns)
-# print(portfolios)
-
-returns = df.pct_change()
-cov, cor = returns.cov(), returns.corr()
-links = linkage(dist(cor.values), method='single')
-node = tree(links)
-rootcluster = _hrp(node, cov)
-print(rootcluster.weights)
-# END TESTING ***********
-
-def output(weights, sort_by_weights=False):
+def output(weights, sort_by_weights=False, optimization_method=None):
     if isinstance(weights, dict):
         clean_weights = weights
     else: 
         clean_weights = weights.to_dict('records')[0]
-
-    stk.append(clean_weights)
 
     print('\n{} to {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
     print('optimization method:', optimization_method)
@@ -190,7 +175,11 @@ def output(weights, sort_by_weights=False):
         for sym, weight in sorted(clean_weights.items()):
             if (weight >= min_weight_to_display):
                 print(sym, '\t% 5.3f' % (weight))
-stk = []
+    
+    if optimization_method != 'stack':
+        stk[optimization_method] = clean_weights
+
+stk = {}
 temp = None
 
 for optimization_method in models:
@@ -228,8 +217,9 @@ for optimization_method in models:
             window=optimization_config[optimization_method]['window'],
             alpha=optimization_config[optimization_method]['alpha']
         )
-        temp.allocate(asset_prices=df, verbose=True)
+        temp.allocate(asset_prices=df, verbose=False)
         temp_dict = dict(zip(df.columns, temp.weights))
+        temp.weights = temp_dict
 
     elif (optimization_method == 'rmr'):
         temp = RMR(
@@ -239,7 +229,8 @@ for optimization_method in models:
         )
         temp.allocate(asset_prices=df, verbose=True)
         temp_dict = dict(zip(df.columns, temp.weights))
-
+        temp.weights = temp_dict
+        
     else:
         temp = MeanVarianceOptimisation()
         expected_returns = ReturnsEstimators().calculate_mean_historical_returns(asset_prices=df)
@@ -255,22 +246,26 @@ for optimization_method in models:
                     )
         temp.get_portfolio_metrics()
 
-    output(temp.weights, sort_by_weights)
+    output(temp.weights, sort_by_weights, optimization_method)
 
-if len(models) > 1:
-    total = sum(map(Counter, stk), Counter())
+if len(stk) > 1:
+    t = [ v for k, v in stk.items() if k not in ['olmar', 'rmr'] ]
+    total = sum(map(Counter, t), Counter())
     N = float(len(stk))
-    stk = { k: v/N for k, v in total.items() if v/N >= min_weight_to_display }
-    total_alloc = sum(stk.values())
-    scaled = { k: v / total_alloc for k, v in stk.items() }
+    avg = { k: v/N for k, v in total.items() }
 
-    print('\n{} to {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
+    # to reduce the bias from high weights in the reversion series, they are scaled down 
+    N2 = len(avg)
+    for mr in ['olmar', 'rmr']:
+        if stk[mr]:
+            for k, v in stk[mr].items():
+                avg[k] += v / N2
+    
+    # scale to sum to 1
+    total_alloc = sum(avg.values())
+    scaled = { k: v / total_alloc for k, v in avg.items() if v / total_alloc >= min_weight_to_display }
+    
     print('input files:', input_files)
-    print('optimization method: STACK', models)
-    print('portfolio allocation weights: ')
-
-    for sym, weight in sorted(scaled.items(
-    ), key=lambda kv: (kv[1], kv[0]), reverse=True):
-        print(sym, '\t% 5.3f' % (weight))
-
+    output(scaled, sort_by_weights = True, optimization_method = 'stack')
+    
 plt.show()
