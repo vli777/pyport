@@ -28,12 +28,13 @@ yf.pdr_override()
 
 ## config ##
 input_files = [
-    'fngs'
+    'sectors'
     ]
 time_period_in_yrs = 1.83
-min_weight_to_display = 0.01              
+min_weight_to_display = 0.02             
 use_cached_data = True
 sort_by_weights = True
+reduce_reversion_weights = True
 ignored_symbols = [             
     'ring', 'slvp'
     ]
@@ -165,19 +166,27 @@ def output(weights, sort_by_weights=False, optimization_method=None):
     print('optimization method:', optimization_method)
     print('portfolio allocation weights: ')
 
+    scaled = scale_to_one(clean_weights)
+    clipped = { k: v for k, v in scaled.items() if v >= min_weight_to_display }
+    scaled = scale_to_one(clipped)
+
     if sort_by_weights:
-        for sym, weight in sorted(clean_weights.items(), 
+        for sym, weight in sorted(scaled.items(), 
             key=lambda kv: (kv[1], kv[0]), reverse=True # sort by weights
             ):
-            if (weight >= min_weight_to_display):
-                print(sym, '\t% 5.3f' % (weight))
+            print(sym, '\t% 5.3f' % (weight))
     else:
-        for sym, weight in sorted(clean_weights.items()):
-            if (weight >= min_weight_to_display):
-                print(sym, '\t% 5.3f' % (weight))
+        for sym, weight in sorted(scaled.items()):
+            print(sym, '\t% 5.3f' % (weight))
     
     if optimization_method != 'stack':
-        stk[optimization_method] = clean_weights
+        stk[optimization_method] = scaled
+
+def scale_to_one(weights):
+        # scale to sum to 1
+    total_alloc = sum(weights.values())
+    scaled = { k: v / total_alloc for k, v in weights.items() if v / total_alloc >= min_weight_to_display }
+    return scaled
 
 stk = {}
 temp = None
@@ -253,19 +262,20 @@ if len(stk) > 1:
     total = sum(map(Counter, t), Counter())
     N = float(len(stk))
     avg = { k: v/N for k, v in total.items() }
-
     # to reduce the bias from high weights in the reversion series, they are scaled down 
     N2 = len(avg)
     for mr in ['olmar', 'rmr']:
-        if stk[mr]:
+        if mr in stk.keys():
             for k, v in stk[mr].items():
-                avg[k] += v / N2
-    
-    # scale to sum to 1
-    total_alloc = sum(avg.values())
-    scaled = { k: v / total_alloc for k, v in avg.items() if v / total_alloc >= min_weight_to_display }
-    
+                if reduce_reversion_weights:
+                    mod = v / N2
+                else:
+                    mod = v / N
+                if k in avg.keys():
+                    avg[k] += mod
+                else:
+                    avg[k] = mod
     print('input files:', input_files)
-    output(scaled, sort_by_weights = True, optimization_method = 'stack')
+    output(avg, sort_by_weights = True, optimization_method = 'stack')
     
 plt.show()
