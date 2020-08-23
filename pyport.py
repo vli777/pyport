@@ -22,64 +22,22 @@ import os
 import re
 import yfinance as yf
 yf.pdr_override()
+import json
 
 # scorn window 16, rho .21
 # fcornk window 1.83, rho .87
 
-## config ##
-input_files = [
-    'sectors', 
-    ]
-time_period_in_yrs = .36
-min_weight = 0.037
-use_cached_data = True
-sort_by_weights = True
-ignored_symbols = [             
-    
-    ]
-models = [
-    'herc', 'olmar', 'rmr'
-    ]
-# rmr
-# olmar
-# herc
-# hrp
-# cla
-# inverse_variance
-# min_volatility
-# max_sharpe
-# efficient_risk
-# efficient_return
-# max_return_min_volatility
-# max_diversification
-# max_decorrelation
-
-optimization_config = {
-    'hrp': {
-        'linkage': 'single',
-    },
-    'herc': {
-        'risk_measure': 'conditional_drawdown_risk',
-        'linkage': 'ward',
-        'plot_dendrogram': False,
-    },
-    'olmar':{                  
-        'method': 1,            # 1 for SMA, 2 for EWA    
-        'epsilon': 11, #23        # reversion threshold
-        'window': 11,           
-        'alpha': 0.11,
-    },
-    'rmr':{
-        'epsilon': 14,
-        'n_iteration': 237,
-        'window': 21,
-    },
-    'cla': { 'solution': 'max_sharpe' },
-    'efficient_risk': 1.83,     # maximize return given a target volatility
-    'efficient_return': 0.28,   # minimize volatility given a target return
-    'risk_aversion': 10,
-}
-## end config ##
+with open('config.json') as config_file:
+    config = json.load(config_file)
+time_period_in_yrs = config['time_period_in_yrs']
+input_files = config['input_files']
+ignored_symbols = config['ignored_symbols']
+use_cached_data = config['use_cached_data']
+min_weight = config['min_weight']
+models = config['models']
+optimization_method = config['optimization_method']
+optimization_config = config['optimization_config']
+sort_by_weights = config['sort_by_weights']
 
 # constants
 FOLDER = '{}yr'.format(time_period_in_yrs)

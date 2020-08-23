@@ -1,0 +1,36 @@
+{
+    "input_files": [  ],
+    "time_period_in_yrs": 1,
+    "min_weight": 0,
+    "use_cached_data": true,
+    "sort_by_weights": true,
+    "ignored_symbols": [],
+    "models": [ ],
+    "optimization_config": {
+        "hrp": {
+            "linkage": "single"
+        },
+        "herc": {
+            "risk_measure": "conditional_drawdown_risk",
+            "linkage": "ward",
+            "plot_dendrogram": false
+        },
+        "olmar": {
+            "method": 1,            
+            "epsilon": 10,  
+            "window": 10,
+            "alpha": 0.10
+        },
+        "rmr": {
+            "epsilon": 10,
+            "n_iteration": 60,
+            "window": 10
+        },
+        "cla": {
+            "solution": "max_sharpe"
+        },
+        "efficient_risk": 1,   
+        "efficient_return": 0.3, 
+        "risk_aversion": 10
+    }
+}
