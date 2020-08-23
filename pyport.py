@@ -28,15 +28,14 @@ yf.pdr_override()
 
 ## config ##
 input_files = [
-    'sectors'
+    'sectors', 
     ]
-time_period_in_yrs = 1.83
-min_weight_to_display = 0.02             
+time_period_in_yrs = .36
+min_weight = 0.037
 use_cached_data = True
 sort_by_weights = True
-reduce_reversion_weights = True
 ignored_symbols = [             
-    'ring', 'slvp'
+    
     ]
 models = [
     'herc', 'olmar', 'rmr'
@@ -162,13 +161,14 @@ def output(weights, sort_by_weights=False, optimization_method=None):
     else: 
         clean_weights = weights.to_dict('records')[0]
 
+    scaled = scale_to_one(clean_weights)
+    clipped = { k: v for k, v in scaled.items() if v >= min_weight }
+    scaled = scale_to_one(clipped)
+    stk[optimization_method] = scaled
+
     print('\n{} to {} ({} yrs)'.format(START_DATE, END_DATE, time_period_in_yrs))
     print('optimization method:', optimization_method)
     print('portfolio allocation weights: ')
-
-    scaled = scale_to_one(clean_weights)
-    clipped = { k: v for k, v in scaled.items() if v >= min_weight_to_display }
-    scaled = scale_to_one(clipped)
 
     if sort_by_weights:
         for sym, weight in sorted(scaled.items(), 
@@ -178,14 +178,11 @@ def output(weights, sort_by_weights=False, optimization_method=None):
     else:
         for sym, weight in sorted(scaled.items()):
             print(sym, '\t% 5.3f' % (weight))
-    
-    if optimization_method != 'stack':
-        stk[optimization_method] = scaled
 
 def scale_to_one(weights):
         # scale to sum to 1
     total_alloc = sum(weights.values())
-    scaled = { k: v / total_alloc for k, v in weights.items() if v / total_alloc >= min_weight_to_display }
+    scaled = { k: v / total_alloc for k, v in weights.items() if v / total_alloc >= min_weight }
     return scaled
 
 stk = {}
@@ -264,10 +261,13 @@ if len(stk) > 1:
     avg = { k: v/N for k, v in total.items() }
     # to reduce the bias from high weights in the reversion series, they are scaled down 
     N2 = len(avg)
+    if N2 < 1: 
+        N2 = N
+    
     for mr in ['olmar', 'rmr']:
         if mr in stk.keys():
             for k, v in stk[mr].items():
-                if reduce_reversion_weights:
+                if N <= 10:
                     mod = v / N2
                 else:
                     mod = v / N
