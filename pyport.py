@@ -35,7 +35,6 @@ ignored_symbols = config['ignored_symbols']
 use_cached_data = config['use_cached_data']
 min_weight = config['min_weight']
 models = config['models']
-optimization_method = config['optimization_method']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
 
