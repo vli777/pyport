@@ -9,10 +9,9 @@ from mlfinlab.online_portfolio_selection.fcornk import FCORNK
 from mlfinlab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.microstructural_features.third_generation import get_vpin
 from mlfinlab.data_structures import standard_data_structures
-
 import matplotlib.pyplot as plt
+from labellines import labelLine, labelLines
 from scipy.cluster.hierarchy import dendrogram
-
 from collections import Counter
 import csv
 import pandas as pd
@@ -34,17 +33,15 @@ input_files = config['input_files']
 ignored_symbols = config['ignored_symbols']
 use_cached_data = config['use_cached_data']
 min_weight = config['min_weight']
+plot_returns = config['plot_returns']
 models = config['models']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
-
-# constants
 FOLDER = '{}yr'.format(time_period_in_yrs)
 if not os.path.exists(FOLDER):
     os.makedirs(FOLDER)
 CWD = os.getcwd() + '/'
 PATH = CWD + FOLDER + '/'
-
 DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 TODAY = datetime.today()
 START_DATE = (
@@ -92,9 +89,9 @@ for sym in symbols:
             needs_refresh = time_elapsed > timedelta(
                 days=max(7, int(0.07 * time_period_in_yrs)))
         except BaseException:
-            needs_refresh = True
+            use_cached_data = False
 
-    if needs_refresh:
+    if not use_cached_data:
         print(
             '{} local data cache out of date. downloading latest price data...'.format(sym))
         df_sym = get_stock_data(sym)
@@ -116,6 +113,22 @@ df.fillna(method='ffill', inplace=True)
 df = df.reindex(sorted(df.columns), axis=1)
 # print(df.head(), df.isnull().values.any())
 
+if plot_returns:
+    daily_returns = df.pct_change()
+    daily_returns.plot(
+        colormap='rainbow', 
+        title='daily returns', 
+        grid=True)
+
+    cumulative_returns = daily_returns.add(1).cumprod().sub(1)
+    cumulative_returns.mul(100).plot(
+        colormap='rainbow',
+        title='cumulative returns',
+        grid=True)
+
+    labelLines(plt.gca().get_lines())
+    plt.show(block=False)
+
 
 def output(weights, sort_by_weights=False, optimization_method=None):
     if isinstance(weights, dict):
@@ -124,7 +137,7 @@ def output(weights, sort_by_weights=False, optimization_method=None):
         clean_weights = weights.to_dict('records')[0]
 
     scaled = scale_to_one(clean_weights)
-    clipped = {k: v for k, v in scaled.items() if v >= min_weight}
+    clipped = {k: v for k, v in scaled.items() if v > min_weight}
     scaled = scale_to_one(clipped)
     stk[optimization_method] = scaled
 
@@ -138,7 +151,6 @@ def output(weights, sort_by_weights=False, optimization_method=None):
 
     if sort_by_weights:
         for sym, weight in sorted(scaled.items(),
-                                  # sort by weights
                                   key=lambda kv: (kv[1], kv[0]), reverse=True
                                   ):
             print(sym, '\t% 5.3f' % (weight))
@@ -148,13 +160,12 @@ def output(weights, sort_by_weights=False, optimization_method=None):
 
 
 def scale_to_one(weights):
-    # scale to sum to 1
     total_alloc = sum(weights.values())
     scaled = {
         k: v /
         total_alloc for k,
         v in weights.items() if v /
-        total_alloc >= min_weight}
+        total_alloc > min_weight}
     return scaled
 
 
@@ -231,8 +242,6 @@ if len(stk) > 1:
     total = sum(map(Counter, t), Counter())
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
-    # to reduce the bias from high weights in the reversion series, they are
-    # scaled down
     N2 = len(avg)
     if N2 < 1:
         N2 = N
@@ -240,7 +249,7 @@ if len(stk) > 1:
     for mr in ['olmar', 'rmr']:
         if mr in stk.keys():
             for k, v in stk[mr].items():
-                if N <= 10:
+                if N <= 8:
                     mod = v / N2
                 else:
                     mod = v / N
