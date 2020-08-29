@@ -15,6 +15,7 @@ from scipy.cluster.hierarchy import dendrogram
 from collections import Counter
 import csv
 import pandas as pd
+import numpy as np
 from pandas_datareader import data as pdr
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -33,7 +34,8 @@ input_files = config['input_files']
 ignored_symbols = config['ignored_symbols']
 use_cached_data = config['use_cached_data']
 min_weight = config['min_weight']
-plot_returns = config['plot_returns']
+plot_daily_returns = config['plot_daily_returns']
+plot_cumulative_returns = config['plot_cumulative_returns']
 models = config['models']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
@@ -113,20 +115,51 @@ df.fillna(method='ffill', inplace=True)
 df = df.reindex(sorted(df.columns), axis=1)
 # print(df.head(), df.isnull().values.any())
 
-if plot_returns:
+if plot_daily_returns:
     daily_returns = df.pct_change()
-    daily_returns.plot(
-        colormap='rainbow', 
-        title='daily returns', 
-        grid=True)
-
-    cumulative_returns = daily_returns.add(1).cumprod().sub(1)
-    cumulative_returns.mul(100).plot(
+    # print(daily_returns.head())
+    ax1 = daily_returns.plot(
         colormap='rainbow',
-        title='cumulative returns',
-        grid=True)
+        title='daily returns',
+        grid=True,
+        legend=None,
+    )
+    labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
+    plt.show(block=False)
 
-    labelLines(plt.gca().get_lines())
+if plot_cumulative_returns:
+    daily_returns = df.pct_change()
+    cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
+    # print(cumulative_returns.head())
+    sorted_cols = cumulative_returns.sort_values(
+        cumulative_returns.index[-1], 
+        axis=1
+        ).columns
+    print(sorted_cols)
+    cumulative_returns = cumulative_returns[sorted_cols]
+    print(cumulative_returns)
+    
+    ax2 = cumulative_returns.plot(
+        colormap='gist_rainbow',
+        title='cumulative returns',
+        grid=True,
+        legend=None
+    )
+
+    for line, name in zip(ax2.lines, cumulative_returns.columns):
+        y = line.get_ydata()[-1]
+        percent = "{} {:.2f}%".format(name, y)
+        ax2.annotate(percent, xy=(1, y), xytext=(6, 0), color="w",
+                     xycoords=ax2.get_yaxis_transform(), textcoords="offset points",
+                     bbox=dict(
+            boxstyle="round, pad=0.3",
+            fc=line.get_color(),
+            edgecolor="none"),
+            fontsize=8,
+            # va="center", ha="left"
+        )
+    labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
+    plt.tight_layout()
     plt.show(block=False)
 
 
