@@ -1,3 +1,19 @@
+import yfinance as yf
+import re
+import os
+from dateutil.relativedelta import relativedelta
+from datetime import datetime, timedelta
+from pandas_datareader import data as pdr
+import numpy as np
+import pandas as pd
+import csv
+from collections import Counter
+from scipy.cluster.hierarchy import dendrogram
+from labellines import labelLine, labelLines
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+import plotly.express as px
+import plotly.offline as py
 import json
 from mlfinlab.portfolio_optimization.herc import HierarchicalEqualRiskContribution
 from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
@@ -10,22 +26,8 @@ from mlfinlab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.microstructural_features.third_generation import get_vpin
 from mlfinlab.data_structures import standard_data_structures
 import matplotlib.pyplot as plt
-import plotly.offline as py
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from labellines import labelLine, labelLines
-from scipy.cluster.hierarchy import dendrogram
-from collections import Counter
-import csv
-import pandas as pd
-import numpy as np
-from pandas_datareader import data as pdr
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-import os
-import re
-import yfinance as yf
+import seaborn as sns
+sns.set()
 yf.pdr_override()
 
 # scorn window 16, rho .21
@@ -132,11 +134,17 @@ if plot_returns:
 
     if not use_plotly:
         ax1 = daily_returns.plot(
-            colormap='rainbow',
+            kind='box',
             title='daily returns',
             grid=True,
-            legend=None,
+            legend=None
         )
+
+        try:
+            labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
+        except BaseException:
+            pass
+
         ax2 = cumulative_returns.plot(
             colormap='rainbow',
             title='cumulative returns',
@@ -145,7 +153,7 @@ if plot_returns:
         )
 
         for line, name in zip(ax2.lines, cumulative_returns.columns):
-            y = line.get_ydata()[-1]    
+            y = line.get_ydata()[-1]
             percent = "{} {:.2f}%".format(name, y)
             ax2.annotate(percent,
                          xy=(1, y),
@@ -170,12 +178,13 @@ if plot_returns:
     else:
         fig = px.line(cumulative_returns, title="Cumulative Returns")
         # fig2 = px.box(daily_returns, title="Daily Returns")
-        c = ['hsl('+str(h)+',50%'+',50%)' for h in np.linspace(0, 360, len(daily_returns.columns))]
+        c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
+                                                                     360, len(daily_returns.columns))]
         fig2 = go.Figure(data=[go.Box(
             y=daily_returns[col],
             marker_color=c[i],
             name=col
-            ) for i, col in enumerate(daily_returns.columns)])
+        ) for i, col in enumerate(daily_returns.columns)])
 
         # format the layout
         fig2.update_layout(
@@ -187,6 +196,7 @@ if plot_returns:
 
         fig.show()
         fig2.show()
+
 
 def output(weights, sort_by_weights=False, optimization_method=None):
     if isinstance(weights, dict):
