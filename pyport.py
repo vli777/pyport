@@ -10,6 +10,10 @@ from mlfinlab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.microstructural_features.third_generation import get_vpin
 from mlfinlab.data_structures import standard_data_structures
 import matplotlib.pyplot as plt
+import plotly.offline as py
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from labellines import labelLine, labelLines
 from scipy.cluster.hierarchy import dendrogram
 from collections import Counter
@@ -34,8 +38,8 @@ input_files = config['input_files']
 ignored_symbols = config['ignored_symbols']
 use_cached_data = config['use_cached_data']
 min_weight = config['min_weight']
-plot_daily_returns = config['plot_daily_returns']
-plot_cumulative_returns = config['plot_cumulative_returns']
+plot_returns = config['plot_returns']
+use_plotly = config['use_plotly']
 models = config['models']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
@@ -115,53 +119,74 @@ df.fillna(method='ffill', inplace=True)
 df = df.reindex(sorted(df.columns), axis=1)
 # print(df.head(), df.isnull().values.any())
 
-if plot_daily_returns:
+if plot_returns:
     daily_returns = df.pct_change()
     # print(daily_returns.head())
-    ax1 = daily_returns.plot(
-        colormap='rainbow',
-        title='daily returns',
-        grid=True,
-        legend=None,
-    )
-    labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
-    plt.show(block=False)
-
-if plot_cumulative_returns:
-    daily_returns = df.pct_change()
     cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
     # print(cumulative_returns.head())
     sorted_cols = cumulative_returns.sort_values(
-        cumulative_returns.index[-1], 
+        cumulative_returns.index[-1],
         axis=1
-        ).columns
-    print(sorted_cols)
+    ).columns
     cumulative_returns = cumulative_returns[sorted_cols]
-    print(cumulative_returns)
-    
-    ax2 = cumulative_returns.plot(
-        colormap='gist_rainbow',
-        title='cumulative returns',
-        grid=True,
-        legend=None
-    )
 
-    for line, name in zip(ax2.lines, cumulative_returns.columns):
-        y = line.get_ydata()[-1]
-        percent = "{} {:.2f}%".format(name, y)
-        ax2.annotate(percent, xy=(1, y), xytext=(6, 0), color="w",
-                     xycoords=ax2.get_yaxis_transform(), textcoords="offset points",
-                     bbox=dict(
-            boxstyle="round, pad=0.3",
-            fc=line.get_color(),
-            edgecolor="none"),
-            fontsize=8,
-            # va="center", ha="left"
+    if not use_plotly:
+        ax1 = daily_returns.plot(
+            colormap='rainbow',
+            title='daily returns',
+            grid=True,
+            legend=None,
         )
-    labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
-    plt.tight_layout()
-    plt.show(block=False)
+        ax2 = cumulative_returns.plot(
+            colormap='rainbow',
+            title='cumulative returns',
+            grid=True,
+            legend=None
+        )
 
+        for line, name in zip(ax2.lines, cumulative_returns.columns):
+            y = line.get_ydata()[-1]    
+            percent = "{} {:.2f}%".format(name, y)
+            ax2.annotate(percent,
+                         xy=(1, y),
+                         xytext=(-25, 0),
+                         #  color="w",
+                         xycoords=ax2.get_yaxis_transform(),
+                         textcoords="offset points",
+                         bbox=dict(
+                             boxstyle="round, pad=0.5",
+                             fc=line.get_color(),
+                             edgecolor="none"),
+                         fontsize=8,
+                         va="center", ha="center"
+                         )
+        try:
+            labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
+        except BaseException:
+            pass
+        plt.tight_layout()
+        plt.show(block=False)
+
+    else:
+        fig = px.line(cumulative_returns, title="Cumulative Returns")
+        # fig2 = px.box(daily_returns, title="Daily Returns")
+        c = ['hsl('+str(h)+',50%'+',50%)' for h in np.linspace(0, 360, len(daily_returns.columns))]
+        fig2 = go.Figure(data=[go.Box(
+            y=daily_returns[col],
+            marker_color=c[i],
+            name=col
+            ) for i, col in enumerate(daily_returns.columns)])
+
+        # format the layout
+        fig2.update_layout(
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(zeroline=False, gridcolor='white'),
+            paper_bgcolor='rgb(233,233,233)',
+            plot_bgcolor='rgb(233,233,233)',
+        )
+
+        fig.show()
+        fig2.show()
 
 def output(weights, sort_by_weights=False, optimization_method=None):
     if isinstance(weights, dict):
