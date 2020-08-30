@@ -121,6 +121,134 @@ df.fillna(method='ffill', inplace=True)
 df = df.reindex(sorted(df.columns), axis=1)
 # print(df.head(), df.isnull().values.any())
 
+def output(weights, sort_by_weights=False, optimization_method=None):
+    if isinstance(weights, dict):
+        clean_weights = weights
+    else:
+        clean_weights = weights.to_dict('records')[0]
+
+    scaled = scale_to_one(clean_weights)
+    clipped = {k: v for k, v in scaled.items() if v > min_weight}
+    scaled = scale_to_one(clipped)
+    stk[optimization_method] = scaled
+
+    print(
+        '\n{} to {} ({} yrs)'.format(
+            START_DATE,
+            END_DATE,
+            time_period_in_yrs))
+    print('optimization method:', optimization_method)
+    print('portfolio allocation weights: ')
+
+    if sort_by_weights:
+        for sym, weight in sorted(scaled.items(),
+                                  key=lambda kv: (kv[1], kv[0]), reverse=True
+                                  ):
+            print(sym, '\t% 5.3f' % (weight))
+    else:
+        for sym, weight in sorted(scaled.items()):
+            print(sym, '\t% 5.3f' % (weight))
+
+
+def scale_to_one(weights):
+    total_alloc = sum(weights.values())
+    scaled = {
+        k: v /
+        total_alloc for k,
+        v in weights.items() if v /
+        total_alloc > min_weight}
+    return scaled
+
+stk = {}
+temp = None
+
+for optimization_method in models:
+    print('\nCalculating...', optimization_method)
+
+    if (optimization_method == 'hrp'):
+        temp = HierarchicalRiskParity()
+        temp.allocate(
+            asset_prices=df,
+            linkage=optimization_config[optimization_method]['linkage'],
+        )
+
+    elif (optimization_method == 'herc'):
+        temp = HierarchicalEqualRiskContribution()
+        temp.allocate(
+            asset_prices=df,
+            risk_measure=optimization_config[optimization_method]['risk_measure'],
+            linkage=optimization_config[optimization_method]['linkage'])
+
+        if optimization_config[optimization_method]['plot_dendrogram']:
+            z = temp.plot_clusters(assets=df.columns)
+
+    elif (optimization_method == 'cla'):
+        temp = CriticalLineAlgorithm()
+        solution = optimization_config[optimization_method]['solution']
+        temp.allocate(
+            asset_prices=df,
+            solution=solution)
+
+    elif (optimization_method == 'olmar'):
+        temp = OLMAR(
+            reversion_method=optimization_config[optimization_method]['method'],
+            epsilon=optimization_config[optimization_method]['epsilon'],
+            window=optimization_config[optimization_method]['window'],
+            alpha=optimization_config[optimization_method]['alpha'])
+        temp.allocate(asset_prices=df, verbose=False)
+        temp_dict = dict(zip(df.columns, temp.weights))
+        temp.weights = temp_dict
+
+    elif (optimization_method == 'rmr'):
+        temp = RMR(
+            epsilon=optimization_config[optimization_method]['epsilon'],
+            n_iteration=optimization_config[optimization_method]['n_iteration'],
+            window=optimization_config[optimization_method]['window'])
+        temp.allocate(asset_prices=df, verbose=True)
+        temp_dict = dict(zip(df.columns, temp.weights))
+        temp.weights = temp_dict
+
+    else:
+        temp = MeanVarianceOptimisation()
+        expected_returns = ReturnsEstimators(
+        ).calculate_mean_historical_returns(asset_prices=df)
+        covariance = ReturnsEstimators().calculate_returns(asset_prices=df).cov()
+        temp.allocate(asset_names=df.columns,
+                      asset_prices=df,
+                      expected_asset_returns=expected_returns,
+                      covariance_matrix=covariance,
+                      solution=optimization_method,
+                      target_return=optimization_config['efficient_risk'],
+                      target_risk=optimization_config['efficient_return'],
+                      risk_aversion=optimization_config['risk_aversion'],
+                      )
+        temp.get_portfolio_metrics()
+
+    output(temp.weights, sort_by_weights, optimization_method)
+
+if len(stk) > 1:
+    t = [v for k, v in stk.items() if k not in ['olmar', 'rmr']]
+    total = sum(map(Counter, t), Counter())
+    N = float(len(stk))
+    avg = {k: v / N for k, v in total.items()}
+    N2 = len(avg)
+    if N2 < 1:
+        N2 = N
+
+    for mr in ['olmar', 'rmr']:
+        if mr in stk.keys():
+            for k, v in stk[mr].items():
+                if N <= 8:
+                    mod = v / N2
+                else:
+                    mod = v / N
+                if k in avg.keys():
+                    avg[k] += mod
+                else:
+                    avg[k] = mod
+    print('input files:', input_files)
+    output(avg, sort_by_weights=True, optimization_method='stack')
+
 if plot_returns:
     daily_returns = df.pct_change()
     # print(daily_returns.head())
@@ -196,136 +324,4 @@ if plot_returns:
 
         fig.show()
         fig2.show()
-
-
-def output(weights, sort_by_weights=False, optimization_method=None):
-    if isinstance(weights, dict):
-        clean_weights = weights
-    else:
-        clean_weights = weights.to_dict('records')[0]
-
-    scaled = scale_to_one(clean_weights)
-    clipped = {k: v for k, v in scaled.items() if v > min_weight}
-    scaled = scale_to_one(clipped)
-    stk[optimization_method] = scaled
-
-    print(
-        '\n{} to {} ({} yrs)'.format(
-            START_DATE,
-            END_DATE,
-            time_period_in_yrs))
-    print('optimization method:', optimization_method)
-    print('portfolio allocation weights: ')
-
-    if sort_by_weights:
-        for sym, weight in sorted(scaled.items(),
-                                  key=lambda kv: (kv[1], kv[0]), reverse=True
-                                  ):
-            print(sym, '\t% 5.3f' % (weight))
-    else:
-        for sym, weight in sorted(scaled.items()):
-            print(sym, '\t% 5.3f' % (weight))
-
-
-def scale_to_one(weights):
-    total_alloc = sum(weights.values())
-    scaled = {
-        k: v /
-        total_alloc for k,
-        v in weights.items() if v /
-        total_alloc > min_weight}
-    return scaled
-
-
-stk = {}
-temp = None
-
-for optimization_method in models:
-    print('\nCalculating...', optimization_method)
-
-    if (optimization_method == 'hrp'):
-        temp = HierarchicalRiskParity()
-        temp.allocate(
-            asset_prices=df,
-            linkage=optimization_config[optimization_method]['linkage'],
-        )
-
-    elif (optimization_method == 'herc'):
-        temp = HierarchicalEqualRiskContribution()
-        temp.allocate(
-            asset_prices=df,
-            risk_measure=optimization_config[optimization_method]['risk_measure'],
-            linkage=optimization_config[optimization_method]['linkage'])
-
-        if optimization_config[optimization_method]['plot_dendrogram']:
-            z = temp.plot_clusters(assets=df.columns)
-            plt.show(block=False)
-
-    elif (optimization_method == 'cla'):
-        temp = CriticalLineAlgorithm()
-        solution = optimization_config[optimization_method]['solution']
-        temp.allocate(
-            asset_prices=df,
-            solution=solution)
-
-    elif (optimization_method == 'olmar'):
-        temp = OLMAR(
-            reversion_method=optimization_config[optimization_method]['method'],
-            epsilon=optimization_config[optimization_method]['epsilon'],
-            window=optimization_config[optimization_method]['window'],
-            alpha=optimization_config[optimization_method]['alpha'])
-        temp.allocate(asset_prices=df, verbose=False)
-        temp_dict = dict(zip(df.columns, temp.weights))
-        temp.weights = temp_dict
-
-    elif (optimization_method == 'rmr'):
-        temp = RMR(
-            epsilon=optimization_config[optimization_method]['epsilon'],
-            n_iteration=optimization_config[optimization_method]['n_iteration'],
-            window=optimization_config[optimization_method]['window'])
-        temp.allocate(asset_prices=df, verbose=True)
-        temp_dict = dict(zip(df.columns, temp.weights))
-        temp.weights = temp_dict
-
-    else:
-        temp = MeanVarianceOptimisation()
-        expected_returns = ReturnsEstimators(
-        ).calculate_mean_historical_returns(asset_prices=df)
-        covariance = ReturnsEstimators().calculate_returns(asset_prices=df).cov()
-        temp.allocate(asset_names=df.columns,
-                      asset_prices=df,
-                      expected_asset_returns=expected_returns,
-                      covariance_matrix=covariance,
-                      solution=optimization_method,
-                      target_return=optimization_config['efficient_risk'],
-                      target_risk=optimization_config['efficient_return'],
-                      risk_aversion=optimization_config['risk_aversion'],
-                      )
-        temp.get_portfolio_metrics()
-
-    output(temp.weights, sort_by_weights, optimization_method)
-
-if len(stk) > 1:
-    t = [v for k, v in stk.items() if k not in ['olmar', 'rmr']]
-    total = sum(map(Counter, t), Counter())
-    N = float(len(stk))
-    avg = {k: v / N for k, v in total.items()}
-    N2 = len(avg)
-    if N2 < 1:
-        N2 = N
-
-    for mr in ['olmar', 'rmr']:
-        if mr in stk.keys():
-            for k, v in stk[mr].items():
-                if N <= 8:
-                    mod = v / N2
-                else:
-                    mod = v / N
-                if k in avg.keys():
-                    avg[k] += mod
-                else:
-                    avg[k] = mod
-    print('input files:', input_files)
-    output(avg, sort_by_weights=True, optimization_method='stack')
-
 plt.show()
