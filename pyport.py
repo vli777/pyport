@@ -30,11 +30,9 @@ import seaborn as sns
 sns.set()
 yf.pdr_override()
 
-# scorn window 16, rho .21
-# fcornk window 1.83, rho .87
-
 with open('config.json') as config_file:
     config = json.load(config_file)
+dev_mode = config['dev_mode']
 time_period_in_yrs = config['time_period_in_yrs']
 input_files = config['input_files']
 ignored_symbols = config['ignored_symbols']
@@ -73,7 +71,8 @@ for input_file in input_files:
                     x.upper() for x in ignored_symbols]:
                 symbols.append(name.upper())
 symbols = list(set(symbols))
-# print(symbols)
+if dev_mode:
+    print(symbols)
 
 
 def get_stock_data(sym):
@@ -82,7 +81,6 @@ def get_stock_data(sym):
     return df_sym
 
 
-# Read in price data
 df = pd.DataFrame()
 for sym in symbols:
     if not sym:
@@ -119,7 +117,9 @@ for sym in symbols:
 df.fillna(method='bfill', inplace=True)
 df.fillna(method='ffill', inplace=True)
 df = df.reindex(sorted(df.columns), axis=1)
-# print(df.head(), df.isnull().values.any())
+if dev_mode:
+    print(df.head(), df.isnull().values.any())
+
 
 def output(weights, sort_by_weights=False, optimization_method=None):
     if isinstance(weights, dict):
@@ -158,6 +158,7 @@ def scale_to_one(weights):
         v in weights.items() if v /
         total_alloc > min_weight}
     return scaled
+
 
 stk = {}
 temp = None
@@ -208,6 +209,24 @@ for optimization_method in models:
         temp_dict = dict(zip(df.columns, temp.weights))
         temp.weights = temp_dict
 
+    elif(optimization_method == 'scorn'):
+        temp = SCORN(
+            window=optimization_config[optimization_method]['window'],
+            rho=optimization_config[optimization_method]['rho'])
+        temp.allocate(df, resample_by="M", verbose=True)
+        temp_dict = dict(zip(df.columns, temp.weights))
+        temp.weights = temp_dict
+
+    elif(optimization_method == 'fcornk'):
+        temp = FCORNK(
+            window=optimization_config[optimization_method]['window'],
+            rho=optimization_config[optimization_method]['rho'],
+            lambd=optimization_config[optimization_method]['lambd'],
+            k=optimization_config[optimization_method]['k'])
+        temp.allocate(df, resample_by="M", verbose=True)
+        temp_dict = dict(zip(df.columns, temp.expert_weights[0]))
+        temp.weights = temp_dict
+
     else:
         temp = MeanVarianceOptimisation()
         expected_returns = ReturnsEstimators(
@@ -251,9 +270,11 @@ if len(stk) > 1:
 
 if plot_returns:
     daily_returns = df.pct_change()
-    # print(daily_returns.head())
+    if dev_mode:
+        print(daily_returns.head())
     cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
-    # print(cumulative_returns.head())
+    if dev_mode:
+        print(cumulative_returns.head())
     sorted_cols = cumulative_returns.sort_values(
         cumulative_returns.index[-1],
         axis=1
@@ -286,7 +307,7 @@ if plot_returns:
             ax2.annotate(percent,
                          xy=(1, y),
                          xytext=(-25, 0),
-                         #  color="w",
+                         color="w",
                          xycoords=ax2.get_yaxis_transform(),
                          textcoords="offset points",
                          bbox=dict(
@@ -305,7 +326,6 @@ if plot_returns:
 
     else:
         fig = px.line(cumulative_returns, title="Cumulative Returns")
-        # fig2 = px.box(daily_returns, title="Daily Returns")
         c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
                                                                      360, len(daily_returns.columns))]
         fig2 = go.Figure(data=[go.Box(
@@ -314,7 +334,6 @@ if plot_returns:
             name=col
         ) for i, col in enumerate(daily_returns.columns)])
 
-        # format the layout
         fig2.update_layout(
             xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
             yaxis=dict(zeroline=False, gridcolor='white'),

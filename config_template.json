@@ -25,8 +25,18 @@
         },
         "rmr": {
             "epsilon": 10,
-            "n_iteration": 60,
+            "n_iteration": 10,
             "window": 10
+        },
+        "scorn": {
+            "rho": 1,
+            "window": 10
+        },
+        "fcornk": {
+            "rho": 1,
+            "window": 1,
+            "lambd": 1,
+            "k": 1
         },
         "cla": {
             "solution": "max_sharpe"
