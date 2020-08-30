@@ -4,6 +4,8 @@
     "min_weight": 0,
     "use_cached_data": true,
     "sort_by_weights": true,
+    "plot_returns": true,
+    "use_plotly": false,
     "ignored_symbols": [],
     "models": [ ],
     "optimization_config": {
