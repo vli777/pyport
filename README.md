@@ -14,6 +14,8 @@ optimization models available:
 * hierarchical equal risk contribution
 * online moving average reversion
 * robust median reversion
+* symmetric correlation driven nonparametric learning
+* functional correlation driven nonparametric learning
 
 Instructions:
 1. Provide a single column csv containing the ticker symbols you want to includ

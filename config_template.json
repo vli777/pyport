@@ -26,11 +26,12 @@
         "rmr": {
             "epsilon": 10,
             "n_iteration": 10,
-            "window": 10
+            "window": 1,
+            "resample": "W"
         },
         "scorn": {
             "rho": 1,
-            "window": 10,
+            "window": 1,
             "resample": "W"
         },
         "fcornk": {

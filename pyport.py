@@ -116,7 +116,7 @@ df.fillna(method='bfill', inplace=True)
 df.fillna(method='ffill', inplace=True)
 df = df.reindex(sorted(df.columns), axis=1)
 if dev_mode:
-    df = df.head(int(len(df)/2))
+    df = df.head(int(len(df) * 0.72))
     print(df.head(), df.tail(), df.isnull().values.any())
 
 def output(weights, sort_by_weights=False, optimization_method=None):
@@ -203,7 +203,10 @@ for optimization_method in models:
             epsilon=optimization_config[optimization_method]['epsilon'],
             n_iteration=optimization_config[optimization_method]['n_iteration'],
             window=optimization_config[optimization_method]['window'])
-        temp.allocate(asset_prices=df, verbose=True)
+        temp.allocate(
+            asset_prices=df, 
+            resample_by=optimization_config[optimization_method]["resample"],
+            verbose=True)
         temp_dict = dict(zip(df.columns, temp.weights))
         temp.weights = temp_dict
 
@@ -212,7 +215,7 @@ for optimization_method in models:
             window=optimization_config[optimization_method]['window'],
             rho=optimization_config[optimization_method]['rho'])
         temp.allocate(
-            df,
+            asset_prices=df,
             resample_by=optimization_config[optimization_method]["resample"],
             verbose=True)
         temp_dict = dict(zip(df.columns, temp.weights))
