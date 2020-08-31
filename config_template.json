@@ -30,13 +30,15 @@
         },
         "scorn": {
             "rho": 1,
-            "window": 10
+            "window": 10,
+            "resample": "W"
         },
         "fcornk": {
             "rho": 1,
             "window": 1,
             "lambd": 1,
-            "k": 1
+            "k": 1,
+            "resample": "W"
         },
         "cla": {
             "solution": "max_sharpe"

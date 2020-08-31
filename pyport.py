@@ -74,12 +74,10 @@ symbols = list(set(symbols))
 if dev_mode:
     print(symbols)
 
-
 def get_stock_data(sym):
     df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
     df_sym.to_csv(sym_file)
     return df_sym
-
 
 df = pd.DataFrame()
 for sym in symbols:
@@ -118,8 +116,8 @@ df.fillna(method='bfill', inplace=True)
 df.fillna(method='ffill', inplace=True)
 df = df.reindex(sorted(df.columns), axis=1)
 if dev_mode:
-    print(df.head(), df.isnull().values.any())
-
+    df = df.head(int(len(df)/2))
+    print(df.head(), df.tail(), df.isnull().values.any())
 
 def output(weights, sort_by_weights=False, optimization_method=None):
     if isinstance(weights, dict):
@@ -213,7 +211,10 @@ for optimization_method in models:
         temp = SCORN(
             window=optimization_config[optimization_method]['window'],
             rho=optimization_config[optimization_method]['rho'])
-        temp.allocate(df, resample_by="M", verbose=True)
+        temp.allocate(
+            df,
+            resample_by=optimization_config[optimization_method]["resample"],
+            verbose=True)
         temp_dict = dict(zip(df.columns, temp.weights))
         temp.weights = temp_dict
 
@@ -223,7 +224,10 @@ for optimization_method in models:
             rho=optimization_config[optimization_method]['rho'],
             lambd=optimization_config[optimization_method]['lambd'],
             k=optimization_config[optimization_method]['k'])
-        temp.allocate(df, resample_by="M", verbose=True)
+        temp.allocate(
+            df,
+            resample_by=optimization_config[optimization_method]["resample"],
+            verbose=True)
         temp_dict = dict(zip(df.columns, temp.expert_weights[0]))
         temp.weights = temp_dict
 
