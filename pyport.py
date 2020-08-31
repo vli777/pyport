@@ -253,25 +253,11 @@ for optimization_method in models:
     output(temp.weights, sort_by_weights, optimization_method)
 
 if len(stk) > 1:
-    t = [v for k, v in stk.items() if k not in ['olmar', 'rmr']]
+    t = [v for k, v in stk.items()]
     total = sum(map(Counter, t), Counter())
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
-    N2 = len(avg)
-    if N2 < 1:
-        N2 = N
 
-    for mr in ['olmar', 'rmr']:
-        if mr in stk.keys():
-            for k, v in stk[mr].items():
-                if N <= 8:
-                    mod = v / N2
-                else:
-                    mod = v / N
-                if k in avg.keys():
-                    avg[k] += mod
-                else:
-                    avg[k] = mod
     print('input files:', input_files)
     output(avg, sort_by_weights=True, optimization_method='stack')
 
@@ -282,11 +268,12 @@ if plot_returns:
     cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
     if dev_mode:
         print(cumulative_returns.head())
-    sorted_cols = cumulative_returns.sort_values(
-        cumulative_returns.index[-1],
-        axis=1
-    ).columns
-    cumulative_returns = cumulative_returns[sorted_cols]
+    if sort_by_weights:
+        sorted_cols = cumulative_returns.sort_values(
+            cumulative_returns.index[-1],
+            axis=1
+        ).columns
+        cumulative_returns = cumulative_returns[sorted_cols]
 
     if not use_plotly:
         ax1 = daily_returns.plot(
