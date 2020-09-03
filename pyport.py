@@ -66,7 +66,7 @@ for input_file in input_files:
     with open(CWD + input_file) as file:
         for line in file:
             name = line.rstrip()
-            name = name.split('.')[0]
+            # name = name.split('.')[0]
             if not name.startswith("#") and name[:1].isalpha() and name.upper() not in [
                     x.upper() for x in ignored_symbols]:
                 symbols.append(name.upper())
@@ -115,18 +115,20 @@ for sym in symbols:
 df.fillna(method='bfill', inplace=True)
 df.fillna(method='ffill', inplace=True)
 df = df.reindex(sorted(df.columns), axis=1)
+
 if dev_mode:
     df = df.head(int(len(df) * 0.72))
-    print(df.head(), df.tail(), df.isnull().values.any())
+    print(df.head(), df.tail(), 'Null check: ', df.isnull().values.any())
 
 def output(weights, sort_by_weights=False, optimization_method=None):
     if isinstance(weights, dict):
         clean_weights = weights
     else:
         clean_weights = weights.to_dict('records')[0]
+    if dev_mode:
+        print('raw weights', clean_weights)
 
-    scaled = scale_to_one(clean_weights)
-    clipped = {k: v for k, v in scaled.items() if v > min_weight}
+    clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
     scaled = scale_to_one(clipped)
     stk[optimization_method] = scaled
 
@@ -136,7 +138,7 @@ def output(weights, sort_by_weights=False, optimization_method=None):
             END_DATE,
             time_period_in_yrs))
     print('optimization method:', optimization_method)
-    print('portfolio allocation weights: ')
+    print('portfolio allocation weights (min {}):'.format(min_weight))
 
     if sort_by_weights:
         for sym, weight in sorted(scaled.items(),
@@ -157,7 +159,6 @@ def scale_to_one(weights):
         total_alloc > min_weight}
     return scaled
 
-
 stk = {}
 temp = None
 
@@ -171,17 +172,18 @@ for optimization_method in models:
             linkage=optimization_config[optimization_method]['linkage'],
         )
 
-    elif (optimization_method == 'herc'):
+    elif (optimization_method.find('herc') != -1):
         temp = HierarchicalEqualRiskContribution()
         temp.allocate(
             asset_prices=df,
             risk_measure=optimization_config[optimization_method]['risk_measure'],
-            linkage=optimization_config[optimization_method]['linkage'])
+            linkage=optimization_config[optimization_method]['linkage']
+            )
 
         if optimization_config[optimization_method]['plot_dendrogram']:
             z = temp.plot_clusters(assets=df.columns)
 
-    elif (optimization_method == 'cla'):
+    elif (optimization_method.find('cla') != -1):
         temp = CriticalLineAlgorithm()
         solution = optimization_config[optimization_method]['solution']
         temp.allocate(
@@ -202,6 +204,7 @@ for optimization_method in models:
         temp = RMR(
             epsilon=optimization_config[optimization_method]['epsilon'],
             n_iteration=optimization_config[optimization_method]['n_iteration'],
+            tau=optimization_config[optimization_method]['tau'],
             window=optimization_config[optimization_method]['window'])
         temp.allocate(
             asset_prices=df, 
@@ -226,12 +229,13 @@ for optimization_method in models:
             window=optimization_config[optimization_method]['window'],
             rho=optimization_config[optimization_method]['rho'],
             lambd=optimization_config[optimization_method]['lambd'],
-            k=optimization_config[optimization_method]['k'])
+            k=optimization_config[optimization_method]['k'], 
+            )
         temp.allocate(
-            df,
+            asset_prices=df,
             resample_by=optimization_config[optimization_method]["resample"],
             verbose=True)
-        temp_dict = dict(zip(df.columns, temp.expert_weights[0]))
+        temp_dict = dict(zip(df.columns, temp.weights[0]))
         temp.weights = temp_dict
 
     else:
@@ -257,7 +261,6 @@ if len(stk) > 1:
     total = sum(map(Counter, t), Counter())
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
-
     print('input files:', input_files)
     output(avg, sort_by_weights=True, optimization_method='stack')
 
@@ -271,70 +274,70 @@ if plot_returns:
     if sort_by_weights:
         sorted_cols = cumulative_returns.sort_values(
             cumulative_returns.index[-1],
+            ascending=False,
             axis=1
         ).columns
         cumulative_returns = cumulative_returns[sorted_cols]
 
-    if not use_plotly:
-        ax1 = daily_returns.plot(
-            kind='box',
-            title='daily returns',
-            grid=True,
-            legend=None
-        )
+        if not use_plotly:
+            ax1 = daily_returns.plot(
+                kind='box',
+                title='daily returns',
+                grid=True,
+                legend=None
+            )
 
-        try:
-            labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
-        except BaseException:
-            pass
+            try:
+                labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
+            except BaseException:
+                pass
 
-        ax2 = cumulative_returns.plot(
-            colormap='rainbow',
-            title='cumulative returns',
-            grid=True,
-            legend=None
-        )
+            ax2 = cumulative_returns.plot(
+                colormap='rainbow',
+                title='cumulative returns',
+                grid=True,
+                legend=None
+            )
 
-        for line, name in zip(ax2.lines, cumulative_returns.columns):
-            y = line.get_ydata()[-1]
-            percent = "{} {:.2f}%".format(name, y)
-            ax2.annotate(percent,
-                         xy=(1, y),
-                         xytext=(-25, 0),
-                         color="w",
-                         xycoords=ax2.get_yaxis_transform(),
-                         textcoords="offset points",
-                         bbox=dict(
-                             boxstyle="round, pad=0.5",
-                             fc=line.get_color(),
-                             edgecolor="none"),
-                         fontsize=8,
-                         va="center", ha="center"
-                         )
-        try:
-            labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
-        except BaseException:
-            pass
-        plt.tight_layout()
-        plt.show(block=False)
+            for line, name in zip(ax2.lines, cumulative_returns.columns):
+                y = line.get_ydata()[-1]
+                percent = "{} {:.2f}%".format(name, y)
+                ax2.annotate(percent,
+                            xy=(1, y),
+                            xytext=(-25, 0),
+                            color="w",
+                            xycoords=ax2.get_yaxis_transform(),
+                            textcoords="offset points",
+                            bbox=dict(
+                                boxstyle="round, pad=0.5",
+                                fc=line.get_color(),
+                                edgecolor="none"),
+                            fontsize=8,
+                            va="center", ha="center"
+                            )
+            try:
+                labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
+            except BaseException:
+                pass
+            plt.tight_layout()
+            plt.show(block=False)
 
-    else:
-        fig = px.line(cumulative_returns, title="Cumulative Returns")
-        c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
-                                                                     360, len(daily_returns.columns))]
-        fig2 = go.Figure(data=[go.Box(
-            y=daily_returns[col],
-            marker_color=c[i],
-            name=col
-        ) for i, col in enumerate(daily_returns.columns)])
+        else:
+            fig = px.line(cumulative_returns, title="Cumulative Returns")
+            c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
+                                                                        360, len(daily_returns.columns))]
+            fig2 = go.Figure(data=[go.Box(
+                y=daily_returns[col],
+                marker_color=c[i],
+                name=col
+            ) for i, col in enumerate(daily_returns.columns)])
 
-        fig2.update_layout(
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(zeroline=False, gridcolor='white'),
-            paper_bgcolor='rgb(233,233,233)',
-            plot_bgcolor='rgb(233,233,233)',
-        )
-
+            fig2.update_layout(
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(zeroline=False, gridcolor='white'),
+                paper_bgcolor='rgb(233,233,233)',
+                plot_bgcolor='rgb(233,233,233)',
+            )
         fig.show()
         fig2.show()
-plt.show()
+    plt.show()
