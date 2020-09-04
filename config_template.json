@@ -1,36 +1,38 @@
 {
-    "input_files": [  ],
-    "time_period_in_yrs": 1,
-    "min_weight": 0,
+    "input_files": [ "" ],
+    "ignored_symbols": [ "" ],
+    "time_period_in_yrs": [ 1.00 ],
+    "min_weight": 0.01,
     "use_cached_data": true,
     "sort_by_weights": true,
+    "verbose": false,
     "plot_returns": true,
-    "use_plotly": false,
-    "ignored_symbols": [],
-    "models": [ ],
+    "use_plotly": true,
+    "test_mode": false,
+    "models": [ "" ],
     "optimization_config": {
         "hrp": {
             "linkage": "single"
         },
         "herc": {
             "risk_measure": "conditional_drawdown_risk",
-            "linkage": "ward",
-            "plot_dendrogram": false
+            "linkage": "ward"
         },
         "olmar": {
             "method": 1,            
-            "epsilon": 10,  
-            "window": 10,
-            "alpha": 0.10
+            "epsilon": 1,  
+            "window": 1,
+            "alpha": 0.1
         },
         "rmr": {
-            "epsilon": 10,
-            "n_iteration": 10,
+            "epsilon": 1,
+            "n_iteration": 1,
             "window": 1,
+            "tau": 0.001,
             "resample": "W"
         },
         "scorn": {
-            "rho": 1,
+            "rho": 0.1,
             "window": 1,
             "resample": "W"
         },
@@ -41,11 +43,9 @@
             "k": 1,
             "resample": "W"
         },
-        "cla": {
-            "solution": "max_sharpe"
-        },
-        "efficient_risk": 1,   
-        "efficient_return": 0.3, 
+        "cla": { "solution": "max_sharpe" },
+        "efficient_risk": 0.3,   
+        "efficient_return": 0.1, 
         "risk_aversion": 10
     }
 }

@@ -38,6 +38,7 @@ input_files = config['input_files']
 ignored_symbols = config['ignored_symbols']
 use_cached_data = config['use_cached_data']
 min_weight = config['min_weight']
+verbose = config['verbose']
 plot_returns = config['plot_returns']
 use_plotly = config['use_plotly']
 models = config['models']
@@ -195,7 +196,7 @@ for times in time_period_in_yrs:
                 epsilon=optimization_config[optimization_method]['epsilon'],
                 window=optimization_config[optimization_method]['window'],
                 alpha=optimization_config[optimization_method]['alpha'])
-            temp.allocate(asset_prices=df, verbose=False)
+            temp.allocate(asset_prices=df, verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights))
             temp.weights = temp_dict
 
@@ -208,7 +209,7 @@ for times in time_period_in_yrs:
             temp.allocate(
                 asset_prices=df, 
                 resample_by=optimization_config[optimization_method]["resample"],
-                verbose=True)
+                verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights))
             temp.weights = temp_dict
 
@@ -219,7 +220,7 @@ for times in time_period_in_yrs:
             temp.allocate(
                 asset_prices=df,
                 resample_by=optimization_config[optimization_method]["resample"],
-                verbose=True)
+                verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights))
             temp.weights = temp_dict
 
@@ -233,7 +234,7 @@ for times in time_period_in_yrs:
             temp.allocate(
                 asset_prices=df,
                 resample_by=optimization_config[optimization_method]["resample"],
-                verbose=True)
+                verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights[0]))
             temp.weights = temp_dict
 
