@@ -32,7 +32,7 @@ yf.pdr_override()
 
 with open('config.json') as config_file:
     config = json.load(config_file)
-dev_mode = config['dev_mode']
+test_mode = config['test_mode']
 time_period_in_yrs = config['time_period_in_yrs']
 input_files = config['input_files']
 ignored_symbols = config['ignored_symbols']
@@ -43,218 +43,217 @@ use_plotly = config['use_plotly']
 models = config['models']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
-FOLDER = '{}yr'.format(time_period_in_yrs)
-if not os.path.exists(FOLDER):
-    os.makedirs(FOLDER)
-CWD = os.getcwd() + '/'
-PATH = CWD + FOLDER + '/'
-DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-TODAY = datetime.today()
-START_DATE = (
-    TODAY +
-    relativedelta(
-        months=-
-        round(
-            time_period_in_yrs *
-            12))).strftime('%Y-%m-%d')
-END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
 
-# get ticker symbols
-symbols = []
-for input_file in input_files:
-    input_file += '.csv'
-    with open(CWD + input_file) as file:
-        for line in file:
-            name = line.rstrip()
-            # name = name.split('.')[0]
-            if not name.startswith("#") and name[:1].isalpha() and name.upper() not in [
-                    x.upper() for x in ignored_symbols]:
-                symbols.append(name.upper())
-symbols = list(set(symbols))
-if dev_mode:
-    print(symbols)
+for times in time_period_in_yrs:
+    FOLDER = '{}yr'.format(times)
+    if not os.path.exists(FOLDER):
+        os.makedirs(FOLDER)
+    CWD = os.getcwd() + '/'
+    PATH = CWD + FOLDER + '/'
+    DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    TODAY = datetime.today()
+    START_DATE = (
+        TODAY +
+        relativedelta(
+            months=-
+            round(
+                times *
+                12))).strftime('%Y-%m-%d')
+    END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
 
-def get_stock_data(sym):
-    df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
-    df_sym.to_csv(sym_file)
-    return df_sym
+    # get ticker symbols
+    symbols = []
+    for input_file in input_files:
+        input_file += '.csv'
+        with open(CWD + input_file) as file:
+            for line in file:
+                name = line.rstrip()
+                # name = name.split('.')[0]
+                if not name.startswith("#") and name[:1].isalpha() and name.upper() not in [
+                        x.upper() for x in ignored_symbols]:
+                    symbols.append(name.upper())
+    symbols = list(set(symbols))
+    if test_mode:
+        print(symbols)
 
-df = pd.DataFrame()
-for sym in symbols:
-    if not sym:
-        continue
-    sym_file = PATH + '{}.csv'.format(sym)
+    def get_stock_data(sym):
+        df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
+        df_sym.to_csv(sym_file)
+        return df_sym
 
-    if use_cached_data:
-        try:
-            mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
-            time_elapsed = TODAY - \
-                mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
-            needs_refresh = time_elapsed > timedelta(
-                days=max(7, int(0.07 * time_period_in_yrs)))
-        except BaseException:
-            use_cached_data = False
+    df = pd.DataFrame()
+    for sym in symbols:
+        if not sym:
+            continue
+        sym_file = PATH + '{}.csv'.format(sym)
 
-    if not use_cached_data:
-        print(
-            '{} local data cache out of date. downloading latest price data...'.format(sym))
-        df_sym = get_stock_data(sym)
-    else:
-        df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
-        if df_sym.empty:
+        if use_cached_data:
+            try:
+                mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
+                time_elapsed = TODAY - \
+                    mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
+                needs_refresh = time_elapsed > timedelta(
+                    days=max(7, int(0.07 * times)))
+            except BaseException:
+                use_cached_data = False
+
+        if not use_cached_data:
+            print(
+                '{} local data cache out of date. downloading latest price data...'.format(sym))
             df_sym = get_stock_data(sym)
+        else:
+            df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
+            if df_sym.empty:
+                df_sym = get_stock_data(sym)
 
-    df_sym.rename(columns={'Adj Close': sym}, inplace=True)
-    df_sym.drop(['Open', 'High', 'Low', 'Close', 'Volume'], 1, inplace=True)
+        df_sym.rename(columns={'Adj Close': sym}, inplace=True)
+        df_sym.drop(['Open', 'High', 'Low', 'Close', 'Volume'], 1, inplace=True)
 
-    if df.empty:
-        df = df_sym
-    else:
-        df = df.join(df_sym, how='outer')
+        if df.empty:
+            df = df_sym
+        else:
+            df = df.join(df_sym, how='outer')
 
-df.fillna(method='bfill', inplace=True)
-df.fillna(method='ffill', inplace=True)
-df = df.reindex(sorted(df.columns), axis=1)
+    df.fillna(method='bfill', inplace=True)
+    df.fillna(method='ffill', inplace=True)
+    df = df.reindex(sorted(df.columns), axis=1)
 
-if dev_mode:
-    df = df.head(int(len(df) * 0.72))
-    print(df.head(), df.tail(), 'Null check: ', df.isnull().values.any())
+    if test_mode:
+        df = df.head(int(len(df) * 0.72))
+        print(df.head(), df.tail(), 'Null check: ', df.isnull().values.any())
 
-def output(weights, sort_by_weights=False, optimization_method=None):
-    if isinstance(weights, dict):
-        clean_weights = weights
-    else:
-        clean_weights = weights.to_dict('records')[0]
-    if dev_mode:
-        print('raw weights', clean_weights)
+    def output(weights, sort_by_weights=False, optimization_method=None):
+        if isinstance(weights, dict):
+            clean_weights = weights
+        else:
+            clean_weights = weights.to_dict('records')[0]
+        if test_mode:
+            print('raw weights', clean_weights)
 
-    clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
-    scaled = scale_to_one(clipped)
-    stk[optimization_method] = scaled
+        clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
+        scaled = scale_to_one(clipped)
+        stk[optimization_method] = scaled
 
-    print(
-        '\n{} to {} ({} yrs)'.format(
-            START_DATE,
-            END_DATE,
-            time_period_in_yrs))
-    print('optimization method:', optimization_method)
-    print('portfolio allocation weights (min {}):'.format(min_weight))
+        print(
+            '\n{} to {} ({} yrs)'.format(
+                START_DATE,
+                END_DATE,
+                ', '.join([str(t) for t in time_period_in_yrs])))
+        print('optimization method:', optimization_method)
+        print('portfolio allocation weights (min {}):'.format(min_weight))
 
-    if sort_by_weights:
-        for sym, weight in sorted(scaled.items(),
-                                  key=lambda kv: (kv[1], kv[0]), reverse=True
-                                  ):
-            print(sym, '\t% 5.3f' % (weight))
-    else:
-        for sym, weight in sorted(scaled.items()):
-            print(sym, '\t% 5.3f' % (weight))
+        if sort_by_weights:
+            for sym, weight in sorted(scaled.items(),
+                                    key=lambda kv: (kv[1], kv[0]), reverse=True
+                                    ):
+                print(sym, '\t% 5.3f' % (weight))
+        else:
+            for sym, weight in sorted(scaled.items()):
+                print(sym, '\t% 5.3f' % (weight))
 
 
-def scale_to_one(weights):
-    total_alloc = sum(weights.values())
-    scaled = {
-        k: v /
-        total_alloc for k,
-        v in weights.items() if v /
-        total_alloc > min_weight}
-    return scaled
+    def scale_to_one(weights):
+        total_alloc = sum(weights.values())
+        scaled = {
+            k: v /
+            total_alloc for k,
+            v in weights.items() if v /
+            total_alloc > min_weight}
+        return scaled
 
-stk = {}
-temp = None
+    stk = {}
+    temp = None
 
-for optimization_method in models:
-    print('\nCalculating...', optimization_method)
+    for optimization_method in models:
+        print('\nCalculating...', optimization_method)
 
-    if (optimization_method == 'hrp'):
-        temp = HierarchicalRiskParity()
-        temp.allocate(
-            asset_prices=df,
-            linkage=optimization_config[optimization_method]['linkage'],
-        )
-
-    elif (optimization_method.find('herc') != -1):
-        temp = HierarchicalEqualRiskContribution()
-        temp.allocate(
-            asset_prices=df,
-            risk_measure=optimization_config[optimization_method]['risk_measure'],
-            linkage=optimization_config[optimization_method]['linkage']
+        if (optimization_method == 'hrp'):
+            temp = HierarchicalRiskParity()
+            temp.allocate(
+                asset_prices=df,
+                linkage=optimization_config[optimization_method]['linkage'],
             )
 
-        if optimization_config[optimization_method]['plot_dendrogram']:
-            z = temp.plot_clusters(assets=df.columns)
+        elif (optimization_method.find('herc') != -1):
+            temp = HierarchicalEqualRiskContribution()
+            temp.allocate(
+                asset_prices=df,
+                risk_measure=optimization_config[optimization_method]['risk_measure'],
+                linkage=optimization_config[optimization_method]['linkage']
+                )
 
-    elif (optimization_method.find('cla') != -1):
-        temp = CriticalLineAlgorithm()
-        solution = optimization_config[optimization_method]['solution']
-        temp.allocate(
-            asset_prices=df,
-            solution=solution)
+        elif (optimization_method.find('cla') != -1):
+            temp = CriticalLineAlgorithm()
+            solution = optimization_config[optimization_method]['solution']
+            temp.allocate(
+                asset_prices=df,
+                solution=solution)
 
-    elif (optimization_method == 'olmar'):
-        temp = OLMAR(
-            reversion_method=optimization_config[optimization_method]['method'],
-            epsilon=optimization_config[optimization_method]['epsilon'],
-            window=optimization_config[optimization_method]['window'],
-            alpha=optimization_config[optimization_method]['alpha'])
-        temp.allocate(asset_prices=df, verbose=False)
-        temp_dict = dict(zip(df.columns, temp.weights))
-        temp.weights = temp_dict
+        elif (optimization_method == 'olmar'):
+            temp = OLMAR(
+                reversion_method=optimization_config[optimization_method]['method'],
+                epsilon=optimization_config[optimization_method]['epsilon'],
+                window=optimization_config[optimization_method]['window'],
+                alpha=optimization_config[optimization_method]['alpha'])
+            temp.allocate(asset_prices=df, verbose=False)
+            temp_dict = dict(zip(df.columns, temp.weights))
+            temp.weights = temp_dict
 
-    elif (optimization_method == 'rmr'):
-        temp = RMR(
-            epsilon=optimization_config[optimization_method]['epsilon'],
-            n_iteration=optimization_config[optimization_method]['n_iteration'],
-            tau=optimization_config[optimization_method]['tau'],
-            window=optimization_config[optimization_method]['window'])
-        temp.allocate(
-            asset_prices=df, 
-            resample_by=optimization_config[optimization_method]["resample"],
-            verbose=True)
-        temp_dict = dict(zip(df.columns, temp.weights))
-        temp.weights = temp_dict
+        elif (optimization_method == 'rmr'):
+            temp = RMR(
+                epsilon=optimization_config[optimization_method]['epsilon'],
+                n_iteration=optimization_config[optimization_method]['n_iteration'],
+                tau=optimization_config[optimization_method]['tau'],
+                window=optimization_config[optimization_method]['window'])
+            temp.allocate(
+                asset_prices=df, 
+                resample_by=optimization_config[optimization_method]["resample"],
+                verbose=True)
+            temp_dict = dict(zip(df.columns, temp.weights))
+            temp.weights = temp_dict
 
-    elif(optimization_method == 'scorn'):
-        temp = SCORN(
-            window=optimization_config[optimization_method]['window'],
-            rho=optimization_config[optimization_method]['rho'])
-        temp.allocate(
-            asset_prices=df,
-            resample_by=optimization_config[optimization_method]["resample"],
-            verbose=True)
-        temp_dict = dict(zip(df.columns, temp.weights))
-        temp.weights = temp_dict
+        elif(optimization_method == 'scorn'):
+            temp = SCORN(
+                window=optimization_config[optimization_method]['window'],
+                rho=optimization_config[optimization_method]['rho'])
+            temp.allocate(
+                asset_prices=df,
+                resample_by=optimization_config[optimization_method]["resample"],
+                verbose=True)
+            temp_dict = dict(zip(df.columns, temp.weights))
+            temp.weights = temp_dict
 
-    elif(optimization_method == 'fcornk'):
-        temp = FCORNK(
-            window=optimization_config[optimization_method]['window'],
-            rho=optimization_config[optimization_method]['rho'],
-            lambd=optimization_config[optimization_method]['lambd'],
-            k=optimization_config[optimization_method]['k'], 
-            )
-        temp.allocate(
-            asset_prices=df,
-            resample_by=optimization_config[optimization_method]["resample"],
-            verbose=True)
-        temp_dict = dict(zip(df.columns, temp.weights[0]))
-        temp.weights = temp_dict
+        elif(optimization_method == 'fcornk'):
+            temp = FCORNK(
+                window=optimization_config[optimization_method]['window'],
+                rho=optimization_config[optimization_method]['rho'],
+                lambd=optimization_config[optimization_method]['lambd'],
+                k=optimization_config[optimization_method]['k'], 
+                )
+            temp.allocate(
+                asset_prices=df,
+                resample_by=optimization_config[optimization_method]["resample"],
+                verbose=True)
+            temp_dict = dict(zip(df.columns, temp.weights[0]))
+            temp.weights = temp_dict
 
-    else:
-        temp = MeanVarianceOptimisation()
-        expected_returns = ReturnsEstimators(
-        ).calculate_mean_historical_returns(asset_prices=df)
-        covariance = ReturnsEstimators().calculate_returns(asset_prices=df).cov()
-        temp.allocate(asset_names=df.columns,
-                      asset_prices=df,
-                      expected_asset_returns=expected_returns,
-                      covariance_matrix=covariance,
-                      solution=optimization_method,
-                      target_return=optimization_config['efficient_risk'],
-                      target_risk=optimization_config['efficient_return'],
-                      risk_aversion=optimization_config['risk_aversion'],
-                      )
-        temp.get_portfolio_metrics()
+        else:
+            temp = MeanVarianceOptimisation()
+            expected_returns = ReturnsEstimators(
+            ).calculate_mean_historical_returns(asset_prices=df)
+            covariance = ReturnsEstimators().calculate_returns(asset_prices=df).cov()
+            temp.allocate(asset_names=df.columns,
+                        asset_prices=df,
+                        expected_asset_returns=expected_returns,
+                        covariance_matrix=covariance,
+                        solution=optimization_method,
+                        target_return=optimization_config['efficient_risk'],
+                        target_risk=optimization_config['efficient_return'],
+                        risk_aversion=optimization_config['risk_aversion'],
+                        )
+            temp.get_portfolio_metrics()
 
-    output(temp.weights, sort_by_weights, optimization_method)
+        output(temp.weights, sort_by_weights, optimization_method)
 
 if len(stk) > 1:
     t = [v for k, v in stk.items()]
@@ -262,14 +261,14 @@ if len(stk) > 1:
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
     print('input files:', input_files)
-    output(avg, sort_by_weights=True, optimization_method='stack')
+    output(avg, sort_by_weights=True, optimization_method=', '.join(models))
 
 if plot_returns:
     daily_returns = df.pct_change()
-    if dev_mode:
+    if test_mode:
         print(daily_returns.head())
     cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
-    if dev_mode:
+    if test_mode:
         print(cumulative_returns.head())
     if sort_by_weights:
         sorted_cols = cumulative_returns.sort_values(
