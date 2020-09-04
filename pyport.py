@@ -108,7 +108,8 @@ for times in time_period_in_yrs:
                 df_sym = get_stock_data(sym)
 
         df_sym.rename(columns={'Adj Close': sym}, inplace=True)
-        df_sym.drop(['Open', 'High', 'Low', 'Close', 'Volume'], 1, inplace=True)
+        df_sym.drop(['Open', 'High', 'Low', 'Close',
+                     'Volume'], 1, inplace=True)
 
         if df.empty:
             df = df_sym
@@ -144,14 +145,13 @@ for times in time_period_in_yrs:
         print('portfolio allocation weights (min {}):'.format(min_weight))
 
         if sort_by_weights:
-            for sym, weight in sorted(scaled.items(),
-                                    key=lambda kv: (kv[1], kv[0]), reverse=True
-                                    ):
+            for sym, weight in sorted(
+                scaled.items(), key=lambda kv: (
+                    kv[1], kv[0]), reverse=True):
                 print(sym, '\t% 5.3f' % (weight))
         else:
             for sym, weight in sorted(scaled.items()):
                 print(sym, '\t% 5.3f' % (weight))
-
 
     def scale_to_one(weights):
         total_alloc = sum(weights.values())
@@ -180,8 +180,7 @@ for times in time_period_in_yrs:
             temp.allocate(
                 asset_prices=df,
                 risk_measure=optimization_config[optimization_method]['risk_measure'],
-                linkage=optimization_config[optimization_method]['linkage']
-                )
+                linkage=optimization_config[optimization_method]['linkage'])
 
         elif (optimization_method.find('cla') != -1):
             temp = CriticalLineAlgorithm()
@@ -207,7 +206,7 @@ for times in time_period_in_yrs:
                 tau=optimization_config[optimization_method]['tau'],
                 window=optimization_config[optimization_method]['window'])
             temp.allocate(
-                asset_prices=df, 
+                asset_prices=df,
                 resample_by=optimization_config[optimization_method]["resample"],
                 verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights))
@@ -229,8 +228,8 @@ for times in time_period_in_yrs:
                 window=optimization_config[optimization_method]['window'],
                 rho=optimization_config[optimization_method]['rho'],
                 lambd=optimization_config[optimization_method]['lambd'],
-                k=optimization_config[optimization_method]['k'], 
-                )
+                k=optimization_config[optimization_method]['k'],
+            )
             temp.allocate(
                 asset_prices=df,
                 resample_by=optimization_config[optimization_method]["resample"],
@@ -244,14 +243,14 @@ for times in time_period_in_yrs:
             ).calculate_mean_historical_returns(asset_prices=df)
             covariance = ReturnsEstimators().calculate_returns(asset_prices=df).cov()
             temp.allocate(asset_names=df.columns,
-                        asset_prices=df,
-                        expected_asset_returns=expected_returns,
-                        covariance_matrix=covariance,
-                        solution=optimization_method,
-                        target_return=optimization_config['efficient_risk'],
-                        target_risk=optimization_config['efficient_return'],
-                        risk_aversion=optimization_config['risk_aversion'],
-                        )
+                          asset_prices=df,
+                          expected_asset_returns=expected_returns,
+                          covariance_matrix=covariance,
+                          solution=optimization_method,
+                          target_return=optimization_config['efficient_risk'],
+                          target_risk=optimization_config['efficient_return'],
+                          risk_aversion=optimization_config['risk_aversion'],
+                          )
             temp.get_portfolio_metrics()
 
         output(temp.weights, sort_by_weights, optimization_method)
@@ -303,18 +302,18 @@ if plot_returns:
                 y = line.get_ydata()[-1]
                 percent = "{} {:.2f}%".format(name, y)
                 ax2.annotate(percent,
-                            xy=(1, y),
-                            xytext=(-25, 0),
-                            color="w",
-                            xycoords=ax2.get_yaxis_transform(),
-                            textcoords="offset points",
-                            bbox=dict(
-                                boxstyle="round, pad=0.5",
-                                fc=line.get_color(),
-                                edgecolor="none"),
-                            fontsize=8,
-                            va="center", ha="center"
-                            )
+                             xy=(1, y),
+                             xytext=(-25, 0),
+                             color="w",
+                             xycoords=ax2.get_yaxis_transform(),
+                             textcoords="offset points",
+                             bbox=dict(
+                                 boxstyle="round, pad=0.5",
+                                 fc=line.get_color(),
+                                 edgecolor="none"),
+                             fontsize=8,
+                             va="center", ha="center"
+                             )
             try:
                 labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
             except BaseException:
@@ -325,7 +324,7 @@ if plot_returns:
         else:
             fig = px.line(cumulative_returns, title="Cumulative Returns")
             c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
-                                                                        360, len(daily_returns.columns))]
+                                                                         360, len(daily_returns.columns))]
             fig2 = go.Figure(data=[go.Box(
                 y=daily_returns[col],
                 marker_color=c[i],
@@ -333,8 +332,13 @@ if plot_returns:
             ) for i, col in enumerate(daily_returns.columns)])
 
             fig2.update_layout(
-                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                yaxis=dict(zeroline=False, gridcolor='white'),
+                xaxis=dict(
+                    showgrid=False,
+                    zeroline=False,
+                    showticklabels=False),
+                yaxis=dict(
+                    zeroline=False,
+                    gridcolor='white'),
                 paper_bgcolor='rgb(233,233,233)',
                 plot_bgcolor='rgb(233,233,233)',
             )
