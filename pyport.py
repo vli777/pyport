@@ -124,7 +124,11 @@ for times in time_period_in_yrs:
         df = df.head(int(len(df) * 0.72))
         print(df.head(), df.tail(), 'Null check: ', df.isnull().values.any())
 
-    def output(weights, sort_by_weights=False, optimization_method=None):
+    def output(
+            weights,
+            sort_by_weights=False,
+            optimization_method=None,
+            time_period=times):
         if isinstance(weights, dict):
             clean_weights = weights
         else:
@@ -140,7 +144,7 @@ for times in time_period_in_yrs:
             '\n{} to {} ({} yrs)'.format(
                 START_DATE,
                 END_DATE,
-                ', '.join([str(t) for t in time_period_in_yrs])))
+                time_period))
         print('optimization method:', optimization_method)
         print('portfolio allocation weights (min {}):'.format(min_weight))
 
@@ -261,7 +265,8 @@ if len(stk) > 1:
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
     print('input files:', input_files)
-    output(avg, sort_by_weights=True, optimization_method=', '.join(models))
+    output(avg, sort_by_weights=True, optimization_method=', '.join(
+        models), time_period=', '.join([str(t) for t in time_period_in_yrs]))
 
 if plot_returns:
     daily_returns = df.pct_change()
