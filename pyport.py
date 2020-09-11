@@ -1,9 +1,6 @@
-import yfinance as yf
-import re
 import os
 from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta
-from pandas_datareader import data as pdr
 import numpy as np
 import pandas as pd
 import csv
@@ -19,6 +16,7 @@ from mlfinlab.portfolio_optimization.herc import HierarchicalEqualRiskContributi
 from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
 from mlfinlab.portfolio_optimization.mean_variance import MeanVarianceOptimisation, ReturnsEstimators
 from mlfinlab.portfolio_optimization import CriticalLineAlgorithm
+from mlfinlab.portfolio_optimization.nco import NCO
 from mlfinlab.online_portfolio_selection.rmr import RMR
 from mlfinlab.online_portfolio_selection.olmar import OLMAR
 from mlfinlab.online_portfolio_selection.fcornk import FCORNK
@@ -26,9 +24,7 @@ from mlfinlab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.microstructural_features.third_generation import get_vpin
 from mlfinlab.data_structures import standard_data_structures
 import matplotlib.pyplot as plt
-import seaborn as sns
-sns.set()
-yf.pdr_override()
+import yfinance as yf
 
 with open('config.json') as config_file:
     config = json.load(config_file)
@@ -78,7 +74,10 @@ for times in time_period_in_yrs:
         print(symbols)
 
     def get_stock_data(sym):
-        df_sym = pdr.get_data_yahoo(sym, start=START_DATE, end=END_DATE)
+        df_sym = yf.download(
+            sym,
+            start=START_DATE,
+            end=END_DATE)
         df_sym.to_csv(sym_file)
         return df_sym
 
@@ -171,6 +170,7 @@ for times in time_period_in_yrs:
 
     for optimization_method in models:
         print('\nCalculating...', optimization_method)
+        optimization_method = optimization_method.lower()
 
         if (optimization_method == 'hrp'):
             temp = HierarchicalRiskParity()
@@ -185,6 +185,17 @@ for times in time_period_in_yrs:
                 asset_prices=df,
                 risk_measure=optimization_config[optimization_method]['risk_measure'],
                 linkage=optimization_config[optimization_method]['linkage'])
+
+        elif (optimization_method.find('nco') != -1):
+            asset_returns = np.log(df) - np.log(df.shift(1))
+            asset_returns = asset_returns.iloc[1:, :]
+  
+            temp = NCO()
+            weights = temp.allocate_nco(
+                cov = asset_returns.cov()
+            )
+            temp_dict = dict(zip(df.columns, weights))
+            temp.weights = temp_dict
 
         elif (optimization_method.find('cla') != -1):
             temp = CriticalLineAlgorithm()
