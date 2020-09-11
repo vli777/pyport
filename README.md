@@ -16,6 +16,7 @@ optimization models available:
 * robust median reversion
 * symmetric correlation driven nonparametric learning
 * functional correlation driven nonparametric learning
+* nested clustered optimization
 
 Instructions:
 1. Provide a single column csv containing the ticker symbols you want to includ
