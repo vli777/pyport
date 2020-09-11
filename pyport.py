@@ -23,6 +23,7 @@ from mlfinlab.online_portfolio_selection.fcornk import FCORNK
 from mlfinlab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.microstructural_features.third_generation import get_vpin
 from mlfinlab.data_structures import standard_data_structures
+from mlfinlab.backtest_statistics import sharpe_ratio, drawdown_and_time_under_water
 import matplotlib.pyplot as plt
 import yfinance as yf
 
@@ -138,6 +139,26 @@ for times in time_period_in_yrs:
         clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
         scaled = scale_to_one(clipped)
         stk[optimization_method] = scaled
+        portfolio = df[scaled.keys()]
+        asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
+        asset_returns = asset_returns.iloc[1:, :]
+
+        def apply_weights(row, weights):
+            for i, _ in enumerate(row):
+                row[i] *= weights[i]
+            return row
+
+        portfolio_returns = asset_returns.apply(
+            lambda row: apply_weights(
+                row,
+                list(scaled.values())
+            ), axis=1).sum(axis=1)
+
+        cumulative_returns = portfolio_returns.add(1).cumprod()
+        sharpe = sharpe_ratio(portfolio_returns)
+
+        dd, tuw = drawdown_and_time_under_water(cumulative_returns)
+        mdd, dd_time = dd.max(), tuw[dd.idxmax()] * 252
 
         print(
             '\n{} to {} ({} yrs)'.format(
@@ -145,6 +166,12 @@ for times in time_period_in_yrs:
                 END_DATE,
                 time_period))
         print('optimization method:', optimization_method)
+        print('sharpe ratio:', round(sharpe, 2))
+        print('drawdown: {}, {} days recovery after {}'.format(
+            round(mdd, 2),
+            round(dd_time, 2),
+            dd.idxmax().date()
+        ))
         print('portfolio allocation weights (min {}):'.format(min_weight))
 
         if sort_by_weights:
@@ -189,10 +216,10 @@ for times in time_period_in_yrs:
         elif (optimization_method.find('nco') != -1):
             asset_returns = np.log(df) - np.log(df.shift(1))
             asset_returns = asset_returns.iloc[1:, :]
-  
+
             temp = NCO()
             weights = temp.allocate_nco(
-                cov = asset_returns.cov()
+                cov=asset_returns.cov()
             )
             temp_dict = dict(zip(df.columns, weights))
             temp.weights = temp_dict
