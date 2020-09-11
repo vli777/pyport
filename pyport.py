@@ -139,40 +139,44 @@ for times in time_period_in_yrs:
         clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
         scaled = scale_to_one(clipped)
         stk[optimization_method] = scaled
-        portfolio = df[scaled.keys()]
-        asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
-        asset_returns = asset_returns.iloc[1:, :]
+        
+        if len(scaled) > 0:
+            portfolio = df[scaled.keys()]
+            asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
+            asset_returns = asset_returns.iloc[1:, :]
 
-        def apply_weights(row, weights):
-            for i, _ in enumerate(row):
-                row[i] *= weights[i]
-            return row
+            def apply_weights(row, weights):
+                for i, _ in enumerate(row):
+                    row[i] *= weights[i]
+                return row
 
-        portfolio_returns = asset_returns.apply(
-            lambda row: apply_weights(
-                row,
-                list(scaled.values())
-            ), axis=1).sum(axis=1)
+            portfolio_returns = asset_returns.apply(
+                lambda row: apply_weights(
+                    row,
+                    list(scaled.values())
+                ), axis=1).sum(axis=1)
 
-        cumulative_returns = portfolio_returns.add(1).cumprod()
-        sharpe = sharpe_ratio(portfolio_returns)
+            cumulative_returns = portfolio_returns.add(1).cumprod()
+            sharpe = sharpe_ratio(portfolio_returns)
 
-        dd, tuw = drawdown_and_time_under_water(cumulative_returns)
-        mdd, dd_time = dd.max(), tuw[dd.idxmax()] * 252
+            dd, tuw = drawdown_and_time_under_water(cumulative_returns)
+            mdd, dd_time = dd.max(), tuw[dd.idxmax()] * 252
 
-        print(
-            '\n{} to {} ({} yrs)'.format(
-                START_DATE,
-                END_DATE,
-                time_period))
-        print('optimization method:', optimization_method)
-        print('sharpe ratio:', round(sharpe, 2))
-        print('drawdown: {}, {} days recovery after {}'.format(
-            round(mdd, 2),
-            round(dd_time, 2),
-            dd.idxmax().date()
-        ))
-        print('portfolio allocation weights (min {}):'.format(min_weight))
+            print(
+                '\n{} to {} ({} yrs)'.format(
+                    START_DATE,
+                    END_DATE,
+                    time_period))
+            print('optimization method:', optimization_method)
+            print('sharpe ratio:', round(sharpe, 2))
+            print('drawdown: -{}, {} days to recover after {}'.format(
+                round(mdd, 2),
+                round(dd_time, 2),
+                dd.idxmax().date()
+            ))
+            print('portfolio allocation weights (min {}):'.format(min_weight))
+        else:
+            print('max diversification recommended')
 
         if sort_by_weights:
             for sym, weight in sorted(
