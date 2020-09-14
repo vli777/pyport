@@ -41,6 +41,7 @@ use_plotly = config['use_plotly']
 models = config['models']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
+stk = {}
 
 for times in time_period_in_yrs:
     FOLDER = '{}yr'.format(times)
@@ -138,8 +139,8 @@ for times in time_period_in_yrs:
 
         clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
         scaled = scale_to_one(clipped)
-        stk[optimization_method] = scaled
-        
+        stk[optimization_method + str(times)] = scaled
+
         if len(scaled) > 0:
             portfolio = df[scaled.keys()]
             asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
@@ -174,6 +175,7 @@ for times in time_period_in_yrs:
                 round(dd_time, 2),
                 dd.idxmax().date()
             ))
+            print('run at:', datetime.now())
             print('portfolio allocation weights (min {}):'.format(min_weight))
         else:
             print('max diversification recommended')
@@ -196,10 +198,8 @@ for times in time_period_in_yrs:
             total_alloc > min_weight}
         return scaled
 
-    stk = {}
-    temp = None
-
     for optimization_method in models:
+        temp = None
         print('\nCalculating...', optimization_method)
         optimization_method = optimization_method.lower()
 
@@ -209,32 +209,28 @@ for times in time_period_in_yrs:
                 asset_prices=df,
                 linkage=optimization_config[optimization_method]['linkage'],
             )
-
         elif (optimization_method.find('herc') != -1):
             temp = HierarchicalEqualRiskContribution()
             temp.allocate(
                 asset_prices=df,
                 risk_measure=optimization_config[optimization_method]['risk_measure'],
                 linkage=optimization_config[optimization_method]['linkage'])
-
         elif (optimization_method.find('nco') != -1):
             asset_returns = np.log(df) - np.log(df.shift(1))
-            asset_returns = asset_returns.iloc[1:, :]
-
+            asset_returns = asset_returns.iloc[1:, :] 
             temp = NCO()
             weights = temp.allocate_nco(
-                cov=asset_returns.cov()
+                cov=asset_returns.cov(),
+                # mu_vec=asset_returns.mean()
             )
             temp_dict = dict(zip(df.columns, weights))
             temp.weights = temp_dict
-
         elif (optimization_method.find('cla') != -1):
             temp = CriticalLineAlgorithm()
             solution = optimization_config[optimization_method]['solution']
             temp.allocate(
                 asset_prices=df,
                 solution=solution)
-
         elif (optimization_method == 'olmar'):
             temp = OLMAR(
                 reversion_method=optimization_config[optimization_method]['method'],
@@ -244,7 +240,6 @@ for times in time_period_in_yrs:
             temp.allocate(asset_prices=df, verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights))
             temp.weights = temp_dict
-
         elif (optimization_method == 'rmr'):
             temp = RMR(
                 epsilon=optimization_config[optimization_method]['epsilon'],
@@ -257,7 +252,6 @@ for times in time_period_in_yrs:
                 verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights))
             temp.weights = temp_dict
-
         elif(optimization_method == 'scorn'):
             temp = SCORN(
                 window=optimization_config[optimization_method]['window'],
@@ -268,7 +262,6 @@ for times in time_period_in_yrs:
                 verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights))
             temp.weights = temp_dict
-
         elif(optimization_method == 'fcornk'):
             temp = FCORNK(
                 window=optimization_config[optimization_method]['window'],
@@ -282,7 +275,6 @@ for times in time_period_in_yrs:
                 verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights[0]))
             temp.weights = temp_dict
-
         else:
             temp = MeanVarianceOptimisation()
             expected_returns = ReturnsEstimators(
