@@ -6,7 +6,7 @@
     "use_cached_data": true,
     "sort_by_weights": true,
     "verbose": false,
-    "plot_returns": true,
+    "plot_returns": false,
     "use_plotly": true,
     "test_mode": false,
     "models": [ "" ],
@@ -17,6 +17,9 @@
         "herc": {
             "risk_measure": "conditional_drawdown_risk",
             "linkage": "ward"
+        },
+        "nco": {
+            "sharpe": false
         },
         "olmar": {
             "method": 1,            

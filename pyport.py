@@ -219,9 +219,13 @@ for times in time_period_in_yrs:
             asset_returns = np.log(df) - np.log(df.shift(1))
             asset_returns = asset_returns.iloc[1:, :] 
             temp = NCO()
+            if optimization_config[optimization_method]['sharpe']:
+                mu_vec = np.array(asset_returns.mean())
+            else:
+                mu_vec = np.ones(len(df.columns))
             weights = temp.allocate_nco(
-                cov=asset_returns.cov(),
-                # mu_vec=asset_returns.mean()
+                cov=np.array(asset_returns.cov()),
+                mu_vec=mu_vec.reshape(-1, 1)
             )
             temp_dict = dict(zip(df.columns, weights))
             temp.weights = temp_dict
