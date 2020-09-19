@@ -30,7 +30,7 @@ import yfinance as yf
 with open('config.json') as config_file:
     config = json.load(config_file)
 test_mode = config['test_mode']
-time_period_in_yrs = config['time_period_in_yrs']
+models = config['models']
 input_files = config['input_files']
 ignored_symbols = config['ignored_symbols']
 use_cached_data = config['use_cached_data']
@@ -38,12 +38,11 @@ min_weight = config['min_weight']
 verbose = config['verbose']
 plot_returns = config['plot_returns']
 use_plotly = config['use_plotly']
-models = config['models']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
 stk = {}
 
-for times in time_period_in_yrs:
+for times in models.keys():
     FOLDER = '{}yr'.format(times)
     if not os.path.exists(FOLDER):
         os.makedirs(FOLDER)
@@ -56,7 +55,7 @@ for times in time_period_in_yrs:
         relativedelta(
             months=-
             round(
-                times *
+                float(times) *
                 12))).strftime('%Y-%m-%d')
     END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
 
@@ -144,7 +143,7 @@ for times in time_period_in_yrs:
 
         clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
         scaled = scale_to_one(clipped)
-        stk[optimization_method + str(times)] = scaled
+        stk[optimization_method + times] = scaled
 
         if len(scaled) > 0:
             portfolio = df[scaled.keys()]
@@ -204,9 +203,9 @@ for times in time_period_in_yrs:
             total_alloc > min_weight}
         return scaled
 
-    for optimization_method in models:
+    for optimization_method in models[times]:
         temp = None
-        print('\nCalculating...', optimization_method)
+        print('\nCalculating {}...'.format(optimization_method.upper()))
         optimization_method = optimization_method.lower()
 
         if (optimization_method == 'hrp'):
@@ -307,15 +306,15 @@ for times in time_period_in_yrs:
             sort_by_weights = sort_by_weights, 
             optimization_method = optimization_method, 
             )
-
+# stacked output
 if len(stk) > 1:
     t = [v for k, v in stk.items()]
     total = sum(map(Counter, t), Counter())
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
     output(avg, sort_by_weights=True, 
-        optimization_method=', '.join(models), 
-        time_period=', '.join([str(t) for t in time_period_in_yrs]),
+        optimization_method=', '.join(list(set([v for model_list in models.values() for v in model_list]))), 
+        time_period=', '.join(models.keys()),
         inputs=', '.join([str(i) for i in input_files])
         )
 
