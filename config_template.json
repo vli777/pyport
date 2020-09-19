@@ -1,15 +1,16 @@
 {
+    "test_mode": false,
     "input_files": [ "" ],
     "ignored_symbols": [ "" ],
-    "time_period_in_yrs": [ 1.00 ],
+    "models": { 
+        "1.00": [ "herc" ]
+    },
     "min_weight": 0.01,
     "use_cached_data": true,
     "sort_by_weights": true,
     "verbose": false,
     "plot_returns": false,
     "use_plotly": true,
-    "test_mode": false,
-    "models": [ "" ],
     "optimization_config": {
         "hrp": {
             "linkage": "single"
@@ -47,7 +48,7 @@
             "resample": "W"
         },
         "cla": { "solution": "max_sharpe" },
-        "efficient_risk": 0.3,   
+        "efficient_risk": 0.2,   
         "efficient_return": 0.1, 
         "risk_aversion": 10
     }
