@@ -92,10 +92,13 @@ for times in time_period_in_yrs:
         if use_cached_data:
             try:
                 mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
+                is_weekday = TODAY.weekday() < 5
+                days_until_refresh = 3
+                if is_weekday:
+                    days_until_refresh = 1
                 time_elapsed = TODAY - \
                     mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
-                needs_refresh = time_elapsed > timedelta(
-                    days=max(7, int(0.07 * times)))
+                needs_refresh = time_elapsed > timedelta(days=days_until_refresh)
             except BaseException:
                 use_cached_data = False
 
@@ -127,9 +130,11 @@ for times in time_period_in_yrs:
 
     def output(
             weights,
+            inputs,
             sort_by_weights=False,
             optimization_method=None,
-            time_period=times):
+            time_period=times,
+            ):
         if isinstance(weights, dict):
             clean_weights = weights
         else:
@@ -164,18 +169,19 @@ for times in time_period_in_yrs:
             mdd, dd_time = dd.max(), tuw[dd.idxmax()] * 252
 
             print(
-                '\n{} to {} ({} yrs)'.format(
+                '\ntime period: {} to {} ({} yrs)'.format(
                     START_DATE,
                     END_DATE,
                     time_period))
-            print('optimization method:', optimization_method)
+            print('inputs:', inputs)
+            print('optimization methods:', optimization_method)
             print('sharpe ratio:', round(sharpe, 2))
             print('drawdown: -{}, {} days to recover after {}'.format(
                 round(mdd, 2),
                 round(dd_time, 2),
                 dd.idxmax().date()
             ))
-            print('run at:', datetime.now())
+            print('run on:', datetime.now())
             print('portfolio allocation weights (min {}):'.format(min_weight))
         else:
             print('max diversification recommended')
@@ -295,16 +301,23 @@ for times in time_period_in_yrs:
                           )
             temp.get_portfolio_metrics()
 
-        output(temp.weights, sort_by_weights, optimization_method)
+        output(
+            weights = temp.weights, 
+            inputs = ', '.join([str(i) for i in input_files]),
+            sort_by_weights = sort_by_weights, 
+            optimization_method = optimization_method, 
+            )
 
 if len(stk) > 1:
     t = [v for k, v in stk.items()]
     total = sum(map(Counter, t), Counter())
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
-    print('input files:', input_files)
-    output(avg, sort_by_weights=True, optimization_method=', '.join(
-        models), time_period=', '.join([str(t) for t in time_period_in_yrs]))
+    output(avg, sort_by_weights=True, 
+        optimization_method=', '.join(models), 
+        time_period=', '.join([str(t) for t in time_period_in_yrs]),
+        inputs=', '.join([str(i) for i in input_files])
+        )
 
 if plot_returns:
     daily_returns = df.pct_change()
