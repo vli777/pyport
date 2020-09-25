@@ -1,9 +1,11 @@
 {
     "test_mode": false,
-    "input_files": [ "" ],
+    "input_files": [ "inputs" ],
     "ignored_symbols": [ "" ],
     "models": { 
-        "1.00": [ "herc" ]
+        "1.00": [ 
+            { "model": "herc", "weight": 1.0 }
+        ]
     },
     "min_weight": 0.01,
     "use_cached_data": true,

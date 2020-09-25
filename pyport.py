@@ -92,12 +92,13 @@ for times in models.keys():
             try:
                 mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
                 is_weekday = TODAY.weekday() < 5
-                days_until_refresh = 3
+                days_until_refresh = 2
                 if is_weekday:
-                    days_until_refresh = 1
+                    days_until_refresh = 0
                 time_elapsed = TODAY - \
                     mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
-                needs_refresh = time_elapsed > timedelta(days=days_until_refresh)
+                needs_refresh = time_elapsed > timedelta(
+                    days=days_until_refresh)
             except BaseException:
                 use_cached_data = False
 
@@ -130,10 +131,11 @@ for times in models.keys():
     def output(
             weights,
             inputs,
+            scaling=None,
             sort_by_weights=False,
             optimization_method=None,
             time_period=times,
-            ):
+    ):
         if isinstance(weights, dict):
             clean_weights = weights
         else:
@@ -143,8 +145,11 @@ for times in models.keys():
 
         clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
         scaled = scale_to_one(clipped)
-        stk[optimization_method + times] = scaled
-
+        if scaling:
+            stk[optimization_method + times] = custom_scaling(weights_dict=scaled, scaling=scaling)
+        else:
+            stk[optimization_method + times] = scaled
+        
         if len(scaled) > 0:
             portfolio = df[scaled.keys()]
             asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
@@ -203,10 +208,17 @@ for times in models.keys():
             total_alloc > min_weight}
         return scaled
 
-    for optimization_method in models[times]:
+    def custom_scaling(weights_dict, scaling):
+        return {k: v * scaling for k, v in weights_dict.items()}
+
+    for optimization in models[times]:
+        optimization_method, weighting = optimization['model'].lower(
+        ), optimization['weight']
         temp = None
-        print('\nCalculating {}...'.format(optimization_method.upper()))
-        optimization_method = optimization_method.lower()
+
+        print(
+            '\nCalculating {} allocation'.format(
+                optimization_method.upper()))
 
         if (optimization_method == 'hrp'):
             temp = HierarchicalRiskParity()
@@ -222,7 +234,7 @@ for times in models.keys():
                 linkage=optimization_config[optimization_method]['linkage'])
         elif (optimization_method.find('nco') != -1):
             asset_returns = np.log(df) - np.log(df.shift(1))
-            asset_returns = asset_returns.iloc[1:, :] 
+            asset_returns = asset_returns.iloc[1:, :]
             temp = NCO()
             if optimization_config[optimization_method]['sharpe']:
                 mu_vec = np.array(asset_returns.mean())
@@ -301,22 +313,22 @@ for times in models.keys():
             temp.get_portfolio_metrics()
 
         output(
-            weights = temp.weights, 
-            inputs = ', '.join([str(i) for i in input_files]),
-            sort_by_weights = sort_by_weights, 
-            optimization_method = optimization_method, 
-            )
+            weights=temp.weights,
+            scaling=weighting,
+            inputs=', '.join([str(i) for i in input_files]),
+            sort_by_weights=sort_by_weights,
+            optimization_method=optimization_method,
+        )
 # stacked output
 if len(stk) > 1:
     t = [v for k, v in stk.items()]
     total = sum(map(Counter, t), Counter())
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
-    output(avg, sort_by_weights=True, 
-        optimization_method=', '.join(list(set([v for model_list in models.values() for v in model_list]))), 
-        time_period=', '.join(models.keys()),
-        inputs=', '.join([str(i) for i in input_files])
-        )
+    output(weights=avg, inputs=', '.join([str(i) for i in input_files]), sort_by_weights=True,
+           optimization_method=', '.join(list(set([v['model'] for model_list in models.values() for v in model_list]))),
+           time_period=', '.join(models.keys()),
+           )
 
 if plot_returns:
     daily_returns = df.pct_change()
