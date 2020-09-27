@@ -6,7 +6,6 @@ import pandas as pd
 import csv
 from collections import Counter
 from scipy.cluster.hierarchy import dendrogram
-from labellines import labelLine, labelLines
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import plotly.express as px
@@ -24,7 +23,6 @@ from mlfinlab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.microstructural_features.third_generation import get_vpin
 from mlfinlab.data_structures import standard_data_structures
 from mlfinlab.backtest_statistics import sharpe_ratio, drawdown_and_time_under_water
-import matplotlib.pyplot as plt
 import yfinance as yf
 
 with open('config.json') as config_file:
@@ -37,7 +35,6 @@ use_cached_data = config['use_cached_data']
 min_weight = config['min_weight']
 verbose = config['verbose']
 plot_returns = config['plot_returns']
-use_plotly = config['use_plotly']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
 stk = {}
@@ -146,10 +143,11 @@ for times in models.keys():
         clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
         scaled = scale_to_one(clipped)
         if scaling:
-            stk[optimization_method + times] = custom_scaling(weights_dict=scaled, scaling=scaling)
+            stk[optimization_method +
+                times] = custom_scaling(weights_dict=scaled, scaling=scaling)
         else:
             stk[optimization_method + times] = scaled
-        
+
         if len(scaled) > 0:
             portfolio = df[scaled.keys()]
             asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
@@ -326,7 +324,8 @@ if len(stk) > 1:
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
     output(weights=avg, inputs=', '.join([str(i) for i in input_files]), sort_by_weights=True,
-           optimization_method=', '.join(list(set([v['model'] for model_list in models.values() for v in model_list]))),
+           optimization_method=', '.join(
+               list(set([v['model'] for model_list in models.values() for v in model_list]))),
            time_period=', '.join(models.keys()),
            )
 
@@ -345,70 +344,25 @@ if plot_returns:
         ).columns
         cumulative_returns = cumulative_returns[sorted_cols]
 
-        if not use_plotly:
-            ax1 = daily_returns.plot(
-                kind='box',
-                title='daily returns',
-                grid=True,
-                legend=None
-            )
+        fig = px.line(cumulative_returns, title="Cumulative Returns")
+        c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
+                                                                     360, len(daily_returns.columns))]
+        fig2 = go.Figure(data=[go.Box(
+            y=daily_returns[col],
+            marker_color=c[i],
+            name=col
+        ) for i, col in enumerate(daily_returns.columns)])
 
-            try:
-                labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
-            except BaseException:
-                pass
-
-            ax2 = cumulative_returns.plot(
-                colormap='rainbow',
-                title='cumulative returns',
-                grid=True,
-                legend=None
-            )
-
-            for line, name in zip(ax2.lines, cumulative_returns.columns):
-                y = line.get_ydata()[-1]
-                percent = "{} {:.2f}%".format(name, y)
-                ax2.annotate(percent,
-                             xy=(1, y),
-                             xytext=(-25, 0),
-                             color="w",
-                             xycoords=ax2.get_yaxis_transform(),
-                             textcoords="offset points",
-                             bbox=dict(
-                                 boxstyle="round, pad=0.5",
-                                 fc=line.get_color(),
-                                 edgecolor="none"),
-                             fontsize=8,
-                             va="center", ha="center"
-                             )
-            try:
-                labelLines(plt.gca().get_lines(), align=False, zorder=2.5)
-            except BaseException:
-                pass
-            plt.tight_layout()
-            plt.show(block=False)
-
-        else:
-            fig = px.line(cumulative_returns, title="Cumulative Returns")
-            c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
-                                                                         360, len(daily_returns.columns))]
-            fig2 = go.Figure(data=[go.Box(
-                y=daily_returns[col],
-                marker_color=c[i],
-                name=col
-            ) for i, col in enumerate(daily_returns.columns)])
-
-            fig2.update_layout(
-                xaxis=dict(
-                    showgrid=False,
-                    zeroline=False,
-                    showticklabels=False),
-                yaxis=dict(
-                    zeroline=False,
-                    gridcolor='white'),
-                paper_bgcolor='rgb(233,233,233)',
-                plot_bgcolor='rgb(233,233,233)',
-            )
+        fig2.update_layout(
+            xaxis=dict(
+                showgrid=False,
+                zeroline=False,
+                showticklabels=False),
+            yaxis=dict(
+                zeroline=False,
+                gridcolor='white'),
+            paper_bgcolor='rgb(233,233,233)',
+            plot_bgcolor='rgb(233,233,233)',
+        )
         fig.show()
         fig2.show()
-    plt.show()
