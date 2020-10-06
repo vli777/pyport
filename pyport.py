@@ -91,7 +91,7 @@ for times in models.keys():
                 mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
                 is_weekday = TODAY.weekday() < 5
                 days_until_refresh = 2
-                
+
                 if is_weekday:
                     days_until_refresh = 1
                 time_elapsed = TODAY - \
@@ -346,15 +346,16 @@ if plot_returns:
             axis=1
         ).columns
         cumulative_returns = cumulative_returns[sorted_cols]
-        
+
         fig = go.Figure()
         for col in cumulative_returns.columns:
             fig.add_trace(go.Scatter(
-                x=cumulative_returns.index, 
-                y = cumulative_returns[col], 
-                mode = "lines",
-                name= col,
-                opacity=1 if col in avg.keys() else 0.33,
+                x=cumulative_returns.index,
+                y=cumulative_returns[col],
+                mode="lines",
+                name=col,
+                line=dict(width=3 if col in avg.keys() else 1),
+                opacity=1 if col in avg.keys() else 0.8,
             ))
 
         c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
