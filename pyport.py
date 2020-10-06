@@ -69,6 +69,7 @@ for times in models.keys():
                     symbols.append(name.upper())
     symbols = list(set(symbols))
     if test_mode:
+        symbols.sort()
         print(symbols)
 
     def get_stock_data(sym):
@@ -90,16 +91,18 @@ for times in models.keys():
                 mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
                 is_weekday = TODAY.weekday() < 5
                 days_until_refresh = 2
+                
                 if is_weekday:
-                    days_until_refresh = 0
+                    days_until_refresh = 1
                 time_elapsed = TODAY - \
                     mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
                 needs_refresh = time_elapsed > timedelta(
                     days=days_until_refresh)
+
             except BaseException:
                 use_cached_data = False
 
-        if not use_cached_data:
+        if not use_cached_data or needs_refresh:
             print(
                 '{} local data cache out of date. downloading latest price data...'.format(sym))
             df_sym = get_stock_data(sym)
@@ -343,8 +346,17 @@ if plot_returns:
             axis=1
         ).columns
         cumulative_returns = cumulative_returns[sorted_cols]
+        
+        fig = go.Figure()
+        for col in cumulative_returns.columns:
+            fig.add_trace(go.Scatter(
+                x=cumulative_returns.index, 
+                y = cumulative_returns[col], 
+                mode = "lines",
+                name= col,
+                opacity=1 if col in avg.keys() else 0.33,
+            ))
 
-        fig = px.line(cumulative_returns, title="Cumulative Returns")
         c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
                                                                      360, len(daily_returns.columns))]
         fig2 = go.Figure(data=[go.Box(
