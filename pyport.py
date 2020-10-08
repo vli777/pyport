@@ -42,6 +42,30 @@ stk = {}
 avg = {}
 df = pd.DataFrame()
 
+
+def get_stock_data(sym):
+    df_sym = yf.download(
+        sym,
+        start=START_DATE,
+        end=END_DATE)
+    df_sym.to_csv(sym_file)
+    return df_sym
+
+
+def scale_to_one(weights):
+    total_alloc = sum(weights.values())
+    scaled = {
+        k: v /
+        total_alloc for k,
+        v in weights.items() if v /
+        total_alloc > min_weight}
+    return scaled
+
+
+def custom_scaling(weights_dict, scaling):
+    return {k: v * scaling for k, v in weights_dict.items()}
+
+
 def output(
     weights,
     inputs,
@@ -148,14 +172,6 @@ for times in models.keys():
         symbols.sort()
         print(symbols)
 
-    def get_stock_data(sym):
-        df_sym = yf.download(
-            sym,
-            start=START_DATE,
-            end=END_DATE)
-        df_sym.to_csv(sym_file)
-        return df_sym
-
     df = pd.DataFrame()
 
     for sym in symbols:
@@ -207,18 +223,6 @@ for times in models.keys():
     if test_mode:
         df = df.head(int(len(df) * 0.72))
         print(df.head(), df.tail(), 'Null check: ', df.isnull().values.any())
-
-    def scale_to_one(weights):
-        total_alloc = sum(weights.values())
-        scaled = {
-            k: v /
-            total_alloc for k,
-            v in weights.items() if v /
-            total_alloc > min_weight}
-        return scaled
-
-    def custom_scaling(weights_dict, scaling):
-        return {k: v * scaling for k, v in weights_dict.items()}
 
     for optimization in models[times]:
         optimization_method, weighting = optimization['model'].lower(
@@ -327,7 +331,7 @@ for times in models.keys():
             inputs=', '.join([str(i) for i in input_files]),
             sort_by_weights=sort_by_weights,
             optimization_method=optimization_method,
-            time_period = times,
+            time_period=times,
         )
 # stacked output
 if len(stk) > 1:
