@@ -37,7 +37,83 @@ verbose = config['verbose']
 plot_returns = config['plot_returns']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
+
 stk = {}
+avg = {}
+df = pd.DataFrame()
+
+def output(
+    weights,
+    inputs,
+    scaling=None,
+    sort_by_weights=False,
+    optimization_method=None,
+    time_period=1.0,
+):
+    if isinstance(weights, dict):
+        clean_weights = weights
+    else:
+        clean_weights = weights.to_dict('records')[0]
+    if test_mode:
+        print('raw weights', clean_weights)
+
+    clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
+    scaled = scale_to_one(clipped)
+    if scaling:
+        stk[optimization_method +
+            times] = custom_scaling(weights_dict=scaled, scaling=scaling)
+    else:
+        stk[optimization_method + times] = scaled
+
+    if len(scaled) > 0:
+        portfolio = df[scaled.keys()]
+        asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
+        asset_returns = asset_returns.iloc[1:, :]
+
+        def apply_weights(row, weights):
+            for i, _ in enumerate(row):
+                row[i] *= weights[i]
+            return row
+
+        portfolio_returns = asset_returns.apply(
+            lambda row: apply_weights(
+                row,
+                list(scaled.values())
+            ), axis=1).sum(axis=1)
+
+        cumulative_returns = portfolio_returns.add(1).cumprod()
+        sharpe = sharpe_ratio(portfolio_returns)
+
+        dd, tuw = drawdown_and_time_under_water(cumulative_returns)
+        mdd, dd_time = dd.max(), tuw[dd.idxmax()] * 252
+
+        print(
+            '\ntime period: {} to {} ({} yrs)'.format(
+                START_DATE,
+                END_DATE,
+                time_period))
+        print('inputs:', inputs)
+        print('optimization methods:', optimization_method)
+        print('sharpe ratio:', round(sharpe, 2))
+        print('drawdown: -{}, {} days to recover after {}'.format(
+            round(mdd, 2),
+            round(dd_time, 2),
+            dd.idxmax().date()
+        ))
+        print('run on:', datetime.now())
+        print('portfolio allocation weights (min {}):'.format(min_weight))
+    else:
+        print('max diversification recommended')
+
+    if sort_by_weights:
+        for sym, weight in sorted(
+            scaled.items(), key=lambda kv: (
+                kv[1], kv[0]), reverse=True):
+            print(sym, '\t% 5.3f' % (weight))
+    else:
+        for sym, weight in sorted(scaled.items()):
+            print(sym, '\t% 5.3f' % (weight))
+
 
 for times in models.keys():
     FOLDER = '{}yr'.format(times)
@@ -81,10 +157,13 @@ for times in models.keys():
         return df_sym
 
     df = pd.DataFrame()
+
     for sym in symbols:
         if not sym:
             continue
         sym_file = PATH + '{}.csv'.format(sym)
+
+        needs_refresh = False
 
         if use_cached_data:
             try:
@@ -100,9 +179,10 @@ for times in models.keys():
                     days=days_until_refresh)
 
             except BaseException:
-                use_cached_data = False
-
-        if not use_cached_data or needs_refresh:
+                needs_refresh = True
+        else:
+            needs_refresh = True
+        if needs_refresh:
             print(
                 '{} local data cache out of date. downloading latest price data...'.format(sym))
             df_sym = get_stock_data(sym)
@@ -127,78 +207,6 @@ for times in models.keys():
     if test_mode:
         df = df.head(int(len(df) * 0.72))
         print(df.head(), df.tail(), 'Null check: ', df.isnull().values.any())
-
-    def output(
-            weights,
-            inputs,
-            scaling=None,
-            sort_by_weights=False,
-            optimization_method=None,
-            time_period=times,
-    ):
-        if isinstance(weights, dict):
-            clean_weights = weights
-        else:
-            clean_weights = weights.to_dict('records')[0]
-        if test_mode:
-            print('raw weights', clean_weights)
-
-        clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
-        scaled = scale_to_one(clipped)
-        if scaling:
-            stk[optimization_method +
-                times] = custom_scaling(weights_dict=scaled, scaling=scaling)
-        else:
-            stk[optimization_method + times] = scaled
-
-        if len(scaled) > 0:
-            portfolio = df[scaled.keys()]
-            asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
-            asset_returns = asset_returns.iloc[1:, :]
-
-            def apply_weights(row, weights):
-                for i, _ in enumerate(row):
-                    row[i] *= weights[i]
-                return row
-
-            portfolio_returns = asset_returns.apply(
-                lambda row: apply_weights(
-                    row,
-                    list(scaled.values())
-                ), axis=1).sum(axis=1)
-
-            cumulative_returns = portfolio_returns.add(1).cumprod()
-            sharpe = sharpe_ratio(portfolio_returns)
-
-            dd, tuw = drawdown_and_time_under_water(cumulative_returns)
-            mdd, dd_time = dd.max(), tuw[dd.idxmax()] * 252
-
-            print(
-                '\ntime period: {} to {} ({} yrs)'.format(
-                    START_DATE,
-                    END_DATE,
-                    time_period))
-            print('inputs:', inputs)
-            print('optimization methods:', optimization_method)
-            print('sharpe ratio:', round(sharpe, 2))
-            print('drawdown: -{}, {} days to recover after {}'.format(
-                round(mdd, 2),
-                round(dd_time, 2),
-                dd.idxmax().date()
-            ))
-            print('run on:', datetime.now())
-            print('portfolio allocation weights (min {}):'.format(min_weight))
-        else:
-            print('max diversification recommended')
-
-        if sort_by_weights:
-            for sym, weight in sorted(
-                scaled.items(), key=lambda kv: (
-                    kv[1], kv[0]), reverse=True):
-                print(sym, '\t% 5.3f' % (weight))
-        else:
-            for sym, weight in sorted(scaled.items()):
-                print(sym, '\t% 5.3f' % (weight))
 
     def scale_to_one(weights):
         total_alloc = sum(weights.values())
@@ -319,6 +327,7 @@ for times in models.keys():
             inputs=', '.join([str(i) for i in input_files]),
             sort_by_weights=sort_by_weights,
             optimization_method=optimization_method,
+            time_period = times,
         )
 # stacked output
 if len(stk) > 1:
