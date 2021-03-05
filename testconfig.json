@@ -1,0 +1,59 @@
+{
+    "input_files": [ "test" ],
+    "ignored_symbols": [  ],
+    "models": { 
+        "3.00": [
+            { "model": "rmr", "weight": 0.42 }
+        ]
+    },
+    "min_weight": 0.03,
+    "use_cached_data": true,
+    "sort_by_weights": true,
+    "plot_returns": false,
+    "verbose": false,
+    "test_mode": true,
+    "optimization_config": {
+        "hrp": {
+            "linkage": "single"
+        },
+        "herc": {
+            "risk_measure": "conditional_drawdown_risk",
+            "linkage": "ward"
+        },
+        "nco": {
+            "sharpe": false
+        },
+        "nco2": {
+            "sharpe": true
+        },
+        "olmar": {
+            "method": 1,            
+            "epsilon": 11,  
+            "window": 3,
+            "alpha": 0.11
+        },
+        "rmr": {
+            "epsilon": 17,
+            "n_iteration": 60,
+            "window": 72,
+            "tau": 0.07
+        },
+        "scorn": {
+            "rho": 0.21,
+            "window": 21,
+            "resample": "D"
+        },
+        "fcornk": {
+            "rho": 5,
+            "window": 3,
+            "lambd": 3,
+            "k": 5,
+            "resample": "W"
+        },
+        "cla": { "solution": "min_volatility" },
+        "cla2": { "solution": "max_sharpe" },
+        "efficient_risk": 1.83,   
+        "efficient_return": 0.28, 
+        "risk_aversion": 2
+    }
+}

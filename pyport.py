@@ -25,7 +25,9 @@ from mlfinlab.data_structures import standard_data_structures
 from mlfinlab.backtest_statistics import sharpe_ratio, drawdown_and_time_under_water
 import yfinance as yf
 
-with open('config.json') as config_file:
+config_filename = 'config.json'
+
+with open(config_filename) as config_file:
     config = json.load(config_file)
 test_mode = config['test_mode']
 models = config['models']
@@ -119,6 +121,8 @@ def output(
         print('inputs:', inputs)
         print('optimization methods:', optimization_method)
         print('sharpe ratio:', round(sharpe, 2))
+        print('cumulative return: {}%'.format(
+            round(cumulative_returns[-1] * 100, 2)))
         print('drawdown: -{}, {} days to recover after {}'.format(
             round(mdd, 2),
             round(dd_time, 2),
@@ -222,7 +226,7 @@ for times in models.keys():
 
     if test_mode:
         df = df.head(int(len(df) * 0.72))
-        print(df.head(), df.tail(), 'Null check: ', df.isnull().values.any())
+        print(df.head(), df.tail(), 'Null values present: ', df.isnull().values.any())
 
     for optimization in models[times]:
         optimization_method, weighting = optimization['model'].lower(
@@ -282,7 +286,6 @@ for times in models.keys():
                 window=optimization_config[optimization_method]['window'])
             temp.allocate(
                 asset_prices=df,
-                resample_by=optimization_config[optimization_method]["resample"],
                 verbose=verbose)
             temp_dict = dict(zip(df.columns, temp.weights))
             temp.weights = temp_dict
@@ -367,8 +370,8 @@ if plot_returns:
                 y=cumulative_returns[col],
                 mode="lines",
                 name=col,
-                line=dict(width=3 if col in avg.keys() else 1),
-                opacity=1 if col in avg.keys() else 0.8,
+                line=dict(width=3 if col in avg.keys() else 2),
+                opacity=1 if col in avg.keys() else 0.6,
             ))
 
         c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
