@@ -71,10 +71,10 @@ def custom_scaling(weights_dict, scaling):
 def output(
     weights,
     inputs,
-    scaling=None,
     sort_by_weights=False,
     optimization_method=None,
     time_period=1.0,
+    scaling=1,
 ):
     if isinstance(weights, dict):
         clean_weights = weights
@@ -85,11 +85,7 @@ def output(
 
     clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
     scaled = scale_to_one(clipped)
-    if scaling:
-        stk[optimization_method +
-            times] = custom_scaling(weights_dict=scaled, scaling=scaling)
-    else:
-        stk[optimization_method + times] = scaled
+    stk[optimization_method + times] = [scaled, len(scaled)]
 
     if len(scaled) > 0:
         portfolio = df[scaled.keys()]
@@ -226,11 +222,16 @@ for times in models.keys():
 
     if test_mode:
         df = df.head(int(len(df) * 0.72))
-        print(df.head(), df.tail(), 'Null values present: ', df.isnull().values.any())
+        print(
+            df.head(),
+            df.tail(),
+            'Null values present: ',
+            df.isnull().values.any())
+
+    # for each included model, run optimization
 
     for optimization in models[times]:
-        optimization_method, weighting = optimization['model'].lower(
-        ), optimization['weight']
+        optimization_method = optimization.lower()
         temp = None
 
         print(
@@ -328,23 +329,39 @@ for times in models.keys():
                           )
             temp.get_portfolio_metrics()
 
+        # send to output
         output(
             weights=temp.weights,
-            scaling=weighting,
             inputs=', '.join([str(i) for i in input_files]),
             sort_by_weights=sort_by_weights,
             optimization_method=optimization_method,
             time_period=times,
         )
-# stacked output
-if len(stk) > 1:
+
+
+def stacked_output(stk):
+    maxlen = max([v[1] for v in stk.values()])
+
+    for model in stk:
+        portfolio, n = stk[model]
+        stk[model] = custom_scaling(weights_dict=portfolio, scaling=n / maxlen)
+
     t = [v for k, v in stk.items()]
     total = sum(map(Counter, t), Counter())
     N = float(len(stk))
     avg = {k: v / N for k, v in total.items()}
-    output(weights=avg, inputs=', '.join([str(i) for i in input_files]), sort_by_weights=True,
-           optimization_method=', '.join(
-               list(set([v['model'] for model_list in models.values() for v in model_list]))),
+
+    return avg
+
+
+if len(stk) > 1:
+    avg = stacked_output(stk)
+
+    output(weights=avg,
+           inputs=', '.join([str(i) for i in input_files]),
+           sort_by_weights=True,
+           optimization_method=', '.join(list(set(sum(models.values(),
+                                                      [])))),
            time_period=', '.join(models.keys()),
            )
 
@@ -364,6 +381,7 @@ if plot_returns:
         cumulative_returns = cumulative_returns[sorted_cols]
 
         fig = go.Figure()
+
         for col in cumulative_returns.columns:
             fig.add_trace(go.Scatter(
                 x=cumulative_returns.index,
@@ -376,6 +394,7 @@ if plot_returns:
 
         c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
                                                                      360, len(daily_returns.columns))]
+
         fig2 = go.Figure(data=[go.Box(
             y=daily_returns[col],
             marker_color=c[i],
@@ -393,5 +412,6 @@ if plot_returns:
             paper_bgcolor='rgb(233,233,233)',
             plot_bgcolor='rgb(233,233,233)',
         )
+
         fig.show()
         fig2.show()
