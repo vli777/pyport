@@ -54,13 +54,13 @@ def get_stock_data(sym):
     return df_sym
 
 
-def scale_to_one(weights):
+def scale_to_one(weights, min_weight):
     total_alloc = sum(weights.values())
     scaled = {
         k: v /
         total_alloc for k,
         v in weights.items() if v /
-        total_alloc > min_weight}
+        total_alloc >= min_weight}
     return scaled
 
 
@@ -74,7 +74,7 @@ def output(
     sort_by_weights=False,
     optimization_method=None,
     time_period=1.0,
-    scaling=1,
+    min_weight=0.01
 ):
     if isinstance(weights, dict):
         clean_weights = weights
@@ -83,8 +83,8 @@ def output(
     if test_mode:
         print('raw weights', clean_weights)
 
-    clipped = {k: v for k, v in clean_weights.items() if v > min_weight}
-    scaled = scale_to_one(clipped)
+    clipped = {k: v for k, v in clean_weights.items() if v >= min_weight}
+    scaled = scale_to_one(clipped, min_weight)
     stk[optimization_method + times] = [scaled, len(scaled)]
 
     if len(scaled) > 0:
@@ -336,6 +336,7 @@ for times in models.keys():
             sort_by_weights=sort_by_weights,
             optimization_method=optimization_method,
             time_period=times,
+            min_weight=min_weight
         )
 
 
@@ -348,10 +349,8 @@ def stacked_output(stk):
 
     t = [v for k, v in stk.items()]
     total = sum(map(Counter, t), Counter())
-    N = float(len(stk))
-    avg = {k: v / N for k, v in total.items()}
-
-    return avg
+    
+    return total
 
 
 if len(stk) > 1:
