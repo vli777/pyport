@@ -3,9 +3,7 @@
     "input_files": [ "inputs" ],
     "ignored_symbols": [ "" ],
     "models": { 
-        "1.00": [ 
-            { "model": "herc", "weight": 1.0 }
-        ]
+        "1.00": [ "cla" ]
     },
     "min_weight": 0.01,
     "use_cached_data": true,

@@ -4,5 +4,6 @@ settings.json
 .mps
 helpers.py
 config.json
+testconfig.json
 .env
 *.bat

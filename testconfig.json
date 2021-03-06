@@ -2,9 +2,7 @@
     "input_files": [ "test" ],
     "ignored_symbols": [  ],
     "models": { 
-        "3.00": [
-            { "model": "rmr", "weight": 0.42 }
-        ]
+        "3.00": [ "rmr" ]
     },
     "min_weight": 0.03,
     "use_cached_data": true,
