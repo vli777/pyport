@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import csv
-from collections import Counter
+from collections import Counter, OrderedDict
 from scipy.cluster.hierarchy import dendrogram
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
@@ -39,6 +39,7 @@ verbose = config['verbose']
 plot_returns = config['plot_returns']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
+portfolio_max_size = config['portfolio_max_size']
 
 stk = {}
 avg = {}
@@ -349,14 +350,17 @@ def stacked_output(stk):
 
     t = [v for k, v in stk.items()]
     total = sum(map(Counter, t), Counter())
-    
+
     return total
 
 
 if len(stk) > 1:
     avg = stacked_output(stk)
+    sorted_avg = OrderedDict(sorted(avg.items()), key=avg.get)
+    while len(sorted_avg) > portfolio_max_size:
+        sorted_avg.popitem()
 
-    output(weights=avg,
+    output(weights=sorted_avg,
            inputs=', '.join([str(i) for i in input_files]),
            sort_by_weights=True,
            optimization_method=', '.join(list(set(sum(models.values(),
