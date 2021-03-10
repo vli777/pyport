@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import csv
-from collections import Counter, OrderedDict
+from collections import Counter
 from scipy.cluster.hierarchy import dendrogram
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
@@ -86,16 +86,26 @@ def apply_weights(row, weights):
         row[i] *= weights[i]
     return row
 
+
 def clip_by_weight(weights, min_weight):
-    return {k: v for k, v in weights.items() if v >= min_weight}
+    return {k: v for k, v in weights.items() if v > min_weight}
+
+
+def get_min_by_size(weights, size, min_weight=0.01):    
+    if (len(weights) > size):
+        sorted_weights = sorted(weights.values(), reverse=True)
+        min_weight = sorted_weights[size]
+    return min_weight
+
 
 def output(
     weights,
     inputs,
+    max_size=21,
     sort_by_weights=False,
     optimization_method=None,
     time_period=1.0,
-    min_weight=0.01
+    min_weight=0.01,
 ):
     if isinstance(weights, dict):
         clean_weights = weights
@@ -107,9 +117,10 @@ def output(
     scaled = scale_to_one(clean_weights)
     if (max(scaled.values()) < min_weight):
         scaled = { 'SPY': 1 }
-    while (min(scaled.values()) < min_weight):
+    while ( min(scaled.values()) < min_weight or len(scaled) > max_size):
         clipped = clip_by_weight(scaled, min_weight)
         scaled = scale_to_one(clipped)
+        min_weight = get_min_by_size(scaled, max_size, min_weight=min_weight)
 
     # store portfolio
     stk[optimization_method + times] = [scaled, len(scaled)]
@@ -358,17 +369,13 @@ for times in models.keys():
             sort_by_weights=sort_by_weights,
             optimization_method=optimization_method,
             time_period=times,
-            min_weight=min_weight
+            min_weight=min_weight,
         )
 
 if len(stk) > 1:
     avg = stacked_output(stk)
     sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
-    min_weight = 0.01
-
-    if (len(sorted_avg) > portfolio_max_size):
-        sorted_weights = sorted(sorted_avg.values(), reverse=True)
-        min_weight = sorted_weights[portfolio_max_size]
+    min_weight = get_min_by_size(sorted_avg, portfolio_max_size)
 
     output(weights=sorted_avg,
            inputs=', '.join([str(i) for i in input_files]),
@@ -376,7 +383,8 @@ if len(stk) > 1:
            optimization_method=', '.join(list(set(sum(models.values(),
                                                       [])))),
            time_period=', '.join(models.keys()),
-           min_weight = min_weight
+           min_weight = min_weight,
+           max_size = portfolio_max_size
            )
 
 if plot_returns:
