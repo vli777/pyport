@@ -55,19 +55,39 @@ def get_stock_data(sym):
     return df_sym
 
 
-def scale_to_one(weights, min_weight):
+def scale_to_one(weights):
     total_alloc = sum(weights.values())
     scaled = {
         k: v /
         total_alloc for k,
-        v in weights.items() if v /
-        total_alloc >= min_weight}
+        v in weights.items()}
     return scaled
 
 
 def custom_scaling(weights_dict, scaling):
     return {k: v * scaling for k, v in weights_dict.items()}
 
+
+def stacked_output(stk):
+    maxlen = max([v[1] for v in stk.values()])
+    
+    for model in stk:
+        portfolio, n = stk[model]
+        stk[model] = custom_scaling(weights_dict=portfolio, scaling=n / maxlen)
+
+    t = [v for k, v in stk.items()]
+    total = sum(map(Counter, t), Counter())
+    avg = {k: v / len(stk) for k, v in total.items()}
+    return avg
+
+
+def apply_weights(row, weights):
+    for i, _ in enumerate(row):
+        row[i] *= weights[i]
+    return row
+
+def clip_by_weight(weights, min_weight):
+    return {k: v for k, v in weights.items() if v >= min_weight}
 
 def output(
     weights,
@@ -84,19 +104,20 @@ def output(
     if test_mode:
         print('raw weights', clean_weights)
 
-    clipped = {k: v for k, v in clean_weights.items() if v >= min_weight}
-    scaled = scale_to_one(clipped, min_weight)
+    scaled = scale_to_one(clean_weights)
+    if (max(scaled.values()) < min_weight):
+        scaled = { 'SPY': 1 }
+    while (min(scaled.values()) < min_weight):
+        clipped = clip_by_weight(scaled, min_weight)
+        scaled = scale_to_one(clipped)
+
+    # store portfolio
     stk[optimization_method + times] = [scaled, len(scaled)]
 
     if len(scaled) > 0:
         portfolio = df[scaled.keys()]
         asset_returns = np.log(portfolio) - np.log(portfolio.shift(1))
         asset_returns = asset_returns.iloc[1:, :]
-
-        def apply_weights(row, weights):
-            for i, _ in enumerate(row):
-                row[i] *= weights[i]
-            return row
 
         portfolio_returns = asset_returns.apply(
             lambda row: apply_weights(
@@ -340,25 +361,14 @@ for times in models.keys():
             min_weight=min_weight
         )
 
-
-def stacked_output(stk):
-    maxlen = max([v[1] for v in stk.values()])
-
-    for model in stk:
-        portfolio, n = stk[model]
-        stk[model] = custom_scaling(weights_dict=portfolio, scaling=n / maxlen)
-
-    t = [v for k, v in stk.items()]
-    total = sum(map(Counter, t), Counter())
-
-    return total
-
-
 if len(stk) > 1:
     avg = stacked_output(stk)
-    sorted_avg = OrderedDict(sorted(avg.items()), key=avg.get)
-    while len(sorted_avg) > portfolio_max_size:
-        sorted_avg.popitem()
+    sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
+    min_weight = 0.01
+
+    if (len(sorted_avg) > portfolio_max_size):
+        sorted_weights = sorted(sorted_avg.values(), reverse=True)
+        min_weight = sorted_weights[portfolio_max_size]
 
     output(weights=sorted_avg,
            inputs=', '.join([str(i) for i in input_files]),
@@ -366,6 +376,7 @@ if len(stk) > 1:
            optimization_method=', '.join(list(set(sum(models.values(),
                                                       [])))),
            time_period=', '.join(models.keys()),
+           min_weight = min_weight
            )
 
 if plot_returns:
