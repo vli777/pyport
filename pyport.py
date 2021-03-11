@@ -71,7 +71,7 @@ def custom_scaling(weights_dict, scaling):
 
 def stacked_output(stk):
     maxlen = max([v[1] for v in stk.values()])
-    
+
     for model in stk:
         portfolio, n = stk[model]
         stk[model] = custom_scaling(weights_dict=portfolio, scaling=n / maxlen)
@@ -92,7 +92,7 @@ def clip_by_weight(weights, min_weight):
     return {k: v for k, v in weights.items() if v > min_weight}
 
 
-def get_min_by_size(weights, size, min_weight=0.01):    
+def get_min_by_size(weights, size, min_weight=0.01):
     if (len(weights) > size):
         sorted_weights = sorted(weights.values(), reverse=True)
         min_weight = sorted_weights[size]
@@ -117,8 +117,8 @@ def output(
 
     scaled = scale_to_one(clean_weights)
     if (max(scaled.values()) < min_weight):
-        scaled = { 'SPY': 1 }
-    while ( min(scaled.values()) < min_weight or len(scaled) > max_size):
+        scaled = {'SPY': 1}
+    while (min(scaled.values()) < min_weight or len(scaled) > max_size):
         clipped = clip_by_weight(scaled, min_weight)
         scaled = scale_to_one(clipped)
         min_weight = get_min_by_size(scaled, max_size, min_weight=min_weight)
@@ -127,8 +127,9 @@ def output(
     stk[optimization_method + times] = [scaled, len(scaled)]
     if not os.path.exists(CWD + 'cache'):
         os.makedirs(CWD + 'cache')
-    output_file = CWD + 'cache/' + '{}{}.csv'.format(optimization_method, times)
-    
+    output_file = CWD + 'cache/' + \
+        '{}-{}-{}.csv'.format(inputs, optimization_method, times)
+
     if needs_refresh or not os.path.isfile(output_file):
         w = csv.writer(open(output_file, "w", newline=''))
         for key, val in scaled.items():
@@ -278,19 +279,24 @@ for times in models.keys():
         print(
             '\nCalculating {} allocation'.format(
                 optimization_method.upper()))
-        
-        model_cache_file = CWD + 'cache/{}{}.csv'.format(optimization_method, times)
+
+        inputs_list = ', '.join([str(i) for i in input_files])
+        model_cache_file = CWD + \
+            'cache/{}-{}-{}.csv'.format(inputs_list, optimization_method, times)
+
         if not needs_refresh and os.path.isfile(model_cache_file):
-            with open(model_cache_file, newline='') as data: 
+            with open(model_cache_file, newline='') as data:
                 reader = csv.reader(data, delimiter=',')
-                result = { row[0]: float(row[1]) for row in reader }
-            
-            weights = pd.DataFrame(result, index = pd.RangeIndex(start=0, stop=1, step=1))
+                result = {row[0]: float(row[1]) for row in reader}
+
+            weights = pd.DataFrame(
+                result, index=pd.RangeIndex(
+                    start=0, stop=1, step=1))
 
             # send to output
             output(
                 weights=weights,
-                inputs=', '.join([str(i) for i in input_files]),
+                inputs=inputs_list,
                 sort_by_weights=sort_by_weights,
                 optimization_method=optimization_method,
                 time_period=times,
@@ -377,21 +383,22 @@ for times in models.keys():
                 expected_returns = ReturnsEstimators(
                 ).calculate_mean_historical_returns(asset_prices=df)
                 covariance = ReturnsEstimators().calculate_returns(asset_prices=df).cov()
-                temp.allocate(asset_names=df.columns,
-                            asset_prices=df,
-                            expected_asset_returns=expected_returns,
-                            covariance_matrix=covariance,
-                            solution=optimization_method,
-                            target_return=optimization_config['efficient_risk'],
-                            target_risk=optimization_config['efficient_return'],
-                            risk_aversion=optimization_config['risk_aversion'],
-                            )
+                temp.allocate(
+                    asset_names=df.columns,
+                    asset_prices=df,
+                    expected_asset_returns=expected_returns,
+                    covariance_matrix=covariance,
+                    solution=optimization_method,
+                    target_return=optimization_config['efficient_risk'],
+                    target_risk=optimization_config['efficient_return'],
+                    risk_aversion=optimization_config['risk_aversion'],
+                )
                 temp.get_portfolio_metrics()
-    
+
             # send to output
             output(
                 weights=temp.weights,
-                inputs=', '.join([str(i) for i in input_files]),
+                inputs=inputs_list,
                 sort_by_weights=sort_by_weights,
                 optimization_method=optimization_method,
                 time_period=times,
@@ -409,8 +416,8 @@ if len(stk) > 1:
            optimization_method=', '.join(list(set(sum(models.values(),
                                                       [])))),
            time_period=', '.join(models.keys()),
-           min_weight = min_weight,
-           max_size = portfolio_max_size
+           min_weight=min_weight,
+           max_size=portfolio_max_size
            )
 
 if plot_returns:
