@@ -280,7 +280,7 @@ for times in models.keys():
             '\nCalculating {} allocation'.format(
                 optimization_method.upper()))
 
-        inputs_list = ', '.join([str(i) for i in input_files])
+        inputs_list = ', '.join([str(i) for i in sorted(input_files)])
         model_cache_file = CWD + \
             'cache/{}-{}-{}.csv'.format(inputs_list, optimization_method, times)
 
@@ -411,10 +411,10 @@ if len(stk) > 1:
     min_weight = get_min_by_size(sorted_avg, portfolio_max_size)
 
     output(weights=sorted_avg,
-           inputs=', '.join([str(i) for i in input_files]),
+           inputs=', '.join([str(i) for i in sorted(input_files)]),
            sort_by_weights=True,
-           optimization_method=', '.join(list(set(sum(models.values(),
-                                                      [])))),
+           optimization_method=', '.join(sorted(list(set(sum(models.values(),
+                                                      []))))),
            time_period=', '.join(models.keys()),
            min_weight=min_weight,
            max_size=portfolio_max_size
