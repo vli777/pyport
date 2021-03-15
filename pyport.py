@@ -238,16 +238,17 @@ for times in models.keys():
 
         if use_cached_data:
             try:
-                mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
                 is_weekday = TODAY.weekday() < 5
                 days_until_refresh = 2
-
                 if is_weekday:
                     days_until_refresh = 1
+
+                mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
                 time_elapsed = TODAY - \
-                    mod_time.replace(hour=0, minute=0, second=0, microsecond=0)
-                needs_refresh = time_elapsed > timedelta(
+                    mod_time.replace(hour=16, minute=0, second=0, microsecond=0)
+                next_time_to_refresh = timedelta(
                     days=days_until_refresh)
+                needs_refresh = time_elapsed > next_time_to_refresh
 
             except BaseException:
                 needs_refresh = True
