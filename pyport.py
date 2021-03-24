@@ -24,11 +24,12 @@ from mlfinlab.microstructural_features.third_generation import get_vpin
 from mlfinlab.data_structures import standard_data_structures
 from mlfinlab.backtest_statistics import sharpe_ratio, drawdown_and_time_under_water
 import yfinance as yf
+import yaml
 
-config_filename = 'config.json'
-
+# setup
+config_filename = 'config.yaml'
 with open(config_filename) as config_file:
-    config = json.load(config_file)
+    config = yaml.load(config_file, Loader=yaml.FullLoader)
 test_mode = config['test_mode']
 models = config['models']
 input_files = config['input_files']
@@ -40,7 +41,6 @@ plot_returns = config['plot_returns']
 optimization_config = config['optimization_config']
 sort_by_weights = config['sort_by_weights']
 portfolio_max_size = config['portfolio_max_size']
-
 stk = {}
 avg = {}
 df = pd.DataFrame()

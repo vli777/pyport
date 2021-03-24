@@ -1,9 +1,9 @@
 *.csv
 tempCodeRunnerFile.py
-settings.json
 .mps
-helpers.py
-config.json
-testconfig.json
 .env
 *.bat
+
+config.yaml
+config.json
+testconfig.json
