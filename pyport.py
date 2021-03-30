@@ -197,6 +197,9 @@ def output(
 
 
 for times in models.keys():
+    if not models[times]:
+        continue
+
     FOLDER = '{}yr'.format(times)
     if not os.path.exists(FOLDER):
         os.makedirs(FOLDER)
@@ -239,13 +242,16 @@ for times in models.keys():
         if use_cached_data:
             try:
                 is_weekday = TODAY.weekday() < 5
-                days_until_refresh = 2
                 if is_weekday:
                     days_until_refresh = 1
+                else:
+                    days_until_refresh = datetime.timedelta(
+                        days=TODAY.isoweekday() % 5)
 
                 mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
                 time_elapsed = TODAY - \
-                    mod_time.replace(hour=16, minute=0, second=0, microsecond=0)
+                    mod_time.replace(
+                        hour=16, minute=0, second=0, microsecond=0)
                 next_time_to_refresh = timedelta(
                     days=days_until_refresh)
                 needs_refresh = time_elapsed > next_time_to_refresh
@@ -297,7 +303,8 @@ for times in models.keys():
 
         inputs_list = ', '.join([str(i) for i in sorted(input_files)])
         model_cache_file = CWD + \
-            'cache/{}-{}-{}.csv'.format(inputs_list, optimization_method, times)
+            'cache/{}-{}-{}.csv'.format(inputs_list,
+                                        optimization_method, times)
 
         if not needs_refresh and os.path.isfile(model_cache_file):
             with open(model_cache_file, newline='') as data:
@@ -424,10 +431,11 @@ for times in models.keys():
             needs_refresh=True
         )
 
-if len(stk) > 1:
+if len(stk) > 0:
     avg = stacked_output(stk)
     sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
     min_weight = get_min_by_size(sorted_avg, portfolio_max_size)
+    models = {k: v for k, v in models.items() if v is not None}
 
     output(weights=sorted_avg,
            inputs=', '.join([str(i) for i in sorted(input_files)]),
