@@ -5,5 +5,4 @@ tempCodeRunnerFile.py
 *.bat
 
 config.yaml
-config.json
-testconfig.json
+testconfig.yaml

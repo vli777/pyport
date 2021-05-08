@@ -5,23 +5,16 @@ import numpy as np
 import pandas as pd
 import csv
 from collections import Counter
-from scipy.cluster.hierarchy import dendrogram
-from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import plotly.express as px
-import plotly.offline as py
-import json
-from mlfinlab.portfolio_optimization.herc import HierarchicalEqualRiskContribution
-from mlfinlab.portfolio_optimization.hrp import HierarchicalRiskParity
-from mlfinlab.portfolio_optimization.mean_variance import MeanVarianceOptimisation, ReturnsEstimators
-from mlfinlab.portfolio_optimization import CriticalLineAlgorithm
-from mlfinlab.portfolio_optimization.nco import NCO
-from mlfinlab.online_portfolio_selection.rmr import RMR
-from mlfinlab.online_portfolio_selection.olmar import OLMAR
-from mlfinlab.online_portfolio_selection.fcornk import FCORNK
-from mlfinlab.online_portfolio_selection.scorn import SCORN
-from mlfinlab.microstructural_features.third_generation import get_vpin
-from mlfinlab.data_structures import standard_data_structures
+from portfoliolab.clustering.herc import HierarchicalEqualRiskContribution
+from portfoliolab.clustering.hrp import HierarchicalRiskParity
+from portfoliolab.modern_portfolio_theory.mean_variance import MeanVarianceOptimisation, ReturnsEstimators
+from portfoliolab.modern_portfolio_theory import CriticalLineAlgorithm
+from portfoliolab.clustering.nco import NestedClusteredOptimisation
+from portfoliolab.online_portfolio_selection.rmr import RMR
+from portfoliolab.online_portfolio_selection.olmar import OLMAR
+from portfoliolab.online_portfolio_selection.fcornk import FCORNK
+from portfoliolab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.backtest_statistics import sharpe_ratio, drawdown_and_time_under_water
 import yfinance as yf
 import yaml
@@ -30,17 +23,8 @@ import yaml
 config_filename = 'config.yaml'
 with open(config_filename) as config_file:
     config = yaml.load(config_file, Loader=yaml.FullLoader)
-test_mode = config['test_mode']
-models = config['models']
-input_files = config['input_files']
-ignored_symbols = config['ignored_symbols']
-use_cached_data = config['use_cached_data']
-min_weight = config['min_weight']
-verbose = config['verbose']
-plot_returns = config['plot_returns']
-optimization_config = config['optimization_config']
-sort_by_weights = config['sort_by_weights']
-portfolio_max_size = config['portfolio_max_size']
+locals().update(config)
+
 stk = {}
 avg = {}
 df = pd.DataFrame()
@@ -127,7 +111,9 @@ def output(
         print('raw weights', clean_weights)
 
     scaled = scale_to_one(clean_weights)
-    if (max(scaled.values()) < min_weight):
+
+    if len(scaled) == 1 or any(np.isnan(val)
+                               for val in scaled.values()) or max(scaled.values()) < min_weight:
         scaled = {'SPY': 1}
     while (min(scaled.values()) < min_weight or len(scaled) > max_size):
         clipped = clip_by_weight(scaled, min_weight)
@@ -182,7 +168,7 @@ def output(
             dd.idxmax().date()
         ))
         print('run on:', datetime.now())
-        print('portfolio allocation weights (min {}):'.format(min_weight))
+        print('portfolio allocation weights (min {:.2f}):'.format(min_weight))
     else:
         print('max diversification recommended')
 
@@ -284,6 +270,8 @@ for times in models.keys():
     df = df.reindex(sorted(df.columns), axis=1)
 
     if test_mode:
+        # see whole df
+        df.to_csv('full_df.csv')
         df = df.head(int(len(df) * 0.72))
         print(
             df.head(),
@@ -343,17 +331,17 @@ for times in models.keys():
         elif (optimization_method.find('nco') != -1):
             asset_returns = np.log(df) - np.log(df.shift(1))
             asset_returns = asset_returns.iloc[1:, :]
-            temp = NCO()
+            temp = NestedClusteredOptimisation()
             if optimization_config[optimization_method]['sharpe']:
                 mu_vec = np.array(asset_returns.mean())
             else:
                 mu_vec = np.ones(len(df.columns))
             weights = temp.allocate_nco(
+                asset_names=df.columns,
                 cov=np.array(asset_returns.cov()),
                 mu_vec=mu_vec.reshape(-1, 1)
             )
-            temp_dict = dict(zip(df.columns, weights))
-            temp.weights = temp_dict
+            temp.weights = weights
         elif (optimization_method.find('cla') != -1):
             temp = CriticalLineAlgorithm()
             solution = optimization_config[optimization_method]['solution']
