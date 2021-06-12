@@ -11,6 +11,7 @@ from portfoliolab.clustering.hrp import HierarchicalRiskParity
 from portfoliolab.modern_portfolio_theory.mean_variance import MeanVarianceOptimisation, ReturnsEstimators
 from portfoliolab.modern_portfolio_theory import CriticalLineAlgorithm
 from portfoliolab.clustering.nco import NestedClusteredOptimisation
+from portfoliolab.estimators.risk_estimators import RiskEstimators
 from portfoliolab.online_portfolio_selection.rmr import RMR
 from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
@@ -224,24 +225,21 @@ for times in models.keys():
         if not sym:
             continue
         sym_file = PATH + '{}.csv'.format(sym)
-
+        
         if use_cached_data:
-            try:
-                is_weekday = TODAY.weekday() < 5
-                if is_weekday:
-                    days_until_refresh = 1
-                else:
-                    days_until_refresh = datetime.timedelta(
-                        days=TODAY.isoweekday() % 5)
-
-                mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file))
-                time_elapsed = TODAY - \
-                    mod_time.replace(
-                        hour=16, minute=0, second=0, microsecond=0)
-                next_time_to_refresh = timedelta(
+            is_weekday = TODAY.weekday() < 5
+            if is_weekday:
+                days_until_refresh = 1
+            else:
+                days_until_refresh = timedelta(
+                    days=3 - TODAY.isoweekday() % 5).days
+                next_time_to_refresh = datetime.now().replace(
+                        hour=16, minute=5, second=0, microsecond=0) + timedelta(
                     days=days_until_refresh)
-                needs_refresh = time_elapsed > next_time_to_refresh
-
+            try:
+                mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file)).replace(
+                        hour=16, minute=0, second=0, microsecond=0)    
+                needs_refresh = mod_time > next_time_to_refresh
             except BaseException:
                 needs_refresh = True
         else:
@@ -342,6 +340,24 @@ for times in models.keys():
                 mu_vec=mu_vec.reshape(-1, 1)
             )
             temp.weights = weights
+        elif (optimization_method.find('mc') != -1):
+            asset_returns = np.log(df) - np.log(df.shift(1))
+            asset_returns = asset_returns.iloc[1:, :]
+            temp = NestedClusteredOptimisation()
+            mu_vec = np.array(asset_returns.mean())
+            w_cvo, w_nco = temp.allocate_mcos(
+                mu_vec=mu_vec.reshape(-1, 1),
+                cov=np.array(asset_returns.cov()),
+                num_obs=optimization_config[optimization_method]['num_obs'],
+                num_sims=optimization_config[optimization_method]['num_sims'],
+                kde_bwidth=optimization_config[optimization_method]['kde_bandwidth'],
+                min_var_portf=not optimization_config[optimization_method]['sharpe'],
+                lw_shrinkage=optimization_config[optimization_method]['lw_shrinkage']
+
+            )
+            w_nco = w_nco.mean(axis=0)
+            temp_dict = dict(zip(df.columns, w_nco))
+            temp.weights = temp_dict
         elif (optimization_method.find('cla') != -1):
             temp = CriticalLineAlgorithm()
             solution = optimization_config[optimization_method]['solution']
