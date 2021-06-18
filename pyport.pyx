@@ -227,20 +227,21 @@ for times in models.keys():
         sym_file = PATH + '{}.csv'.format(sym)
         
         if use_cached_data:
-            is_weekday = TODAY.weekday() < 5
-            if is_weekday:
+            if TODAY.weekday() < 5:
                 days_until_refresh = 1
             else:
                 days_until_refresh = timedelta(
-                    days=3 - TODAY.isoweekday() % 5).days
-                next_time_to_refresh = datetime.now().replace(
-                        hour=16, minute=5, second=0, microsecond=0) + timedelta(
-                    days=days_until_refresh)
+                    days= 3 - TODAY.isoweekday() % 5).days
+            
+            next_time_to_refresh = datetime.now().replace(
+                hour=16, minute=5, second=0, microsecond=0) + timedelta(
+                days=days_until_refresh)
+
             try:
                 mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file)).replace(
                         hour=16, minute=0, second=0, microsecond=0)    
                 needs_refresh = mod_time > next_time_to_refresh
-            except BaseException:
+            except:                
                 needs_refresh = True
         else:
             needs_refresh = True
@@ -353,7 +354,6 @@ for times in models.keys():
                 kde_bwidth=optimization_config[optimization_method]['kde_bandwidth'],
                 min_var_portf=not optimization_config[optimization_method]['sharpe'],
                 lw_shrinkage=optimization_config[optimization_method]['lw_shrinkage']
-
             )
             w_nco = w_nco.mean(axis=0)
             temp_dict = dict(zip(df.columns, w_nco))
