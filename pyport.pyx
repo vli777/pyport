@@ -84,12 +84,12 @@ def get_min_by_size(weights, size, min_weight=0.01):
     return min_weight
 
 
-def holdings_match(dict, list):
-    for sym in dict.keys():
-        if sym not in list:
+def holdings_match(cached_dict, symbols):
+    for sym in cached_dict.keys():
+        if sym not in symbols:
             return False
-    for sym in list:
-        if sym not in dict.keys():
+    for sym in symbols:
+        if sym not in cached_dict.keys():
             return False
     return True
 
@@ -202,7 +202,7 @@ for times in models.keys():
                 float(times) *
                 12))).strftime('%Y-%m-%d')
     END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
-
+    
     # get ticker symbols
     symbols = []
     for input_file in input_files:
@@ -215,49 +215,48 @@ for times in models.keys():
                         x.upper() for x in ignored_symbols]:
                     symbols.append(name.upper())
     symbols = list(set(symbols))
-    if test_mode:
-        symbols.sort()
-        print(symbols)
+    symbols.sort()
+    print(symbols)
 
     df = pd.DataFrame()
+
+    def data_is_current(sym):
+        if not sym: return False            
+        sym_file = PATH + '{}.csv'.format(sym)
+
+        if TODAY.weekday() < 5:
+            days_until_refresh = 1
+        else:
+            days_until_refresh = timedelta(
+                days= 3 - TODAY.isoweekday() % 5).days
+        
+        next_time_to_refresh = datetime.now().replace(
+            hour=16, minute=5, second=0, microsecond=0) + timedelta(
+            days=days_until_refresh)
+
+        try:
+            mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file)).replace(
+                    hour=16, minute=0, second=0, microsecond=0)    
+            return mod_time <= next_time_to_refresh               
+        except:                
+            return False
 
     for sym in symbols:
         if not sym:
             continue
         sym_file = PATH + '{}.csv'.format(sym)
         
-        if use_cached_data:
-            if TODAY.weekday() < 5:
-                days_until_refresh = 1
-            else:
-                days_until_refresh = timedelta(
-                    days= 3 - TODAY.isoweekday() % 5).days
-            
-            next_time_to_refresh = datetime.now().replace(
-                hour=16, minute=5, second=0, microsecond=0) + timedelta(
-                days=days_until_refresh)
-
-            try:
-                mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file)).replace(
-                        hour=16, minute=0, second=0, microsecond=0)    
-                needs_refresh = mod_time > next_time_to_refresh
-            except:                
-                needs_refresh = True
-        else:
-            needs_refresh = True
-
-        if needs_refresh:
-            print(
-                '{} local data cache out of date. downloading latest price data...'.format(sym))
-            df_sym = get_stock_data(sym)
-        else:
+        if use_cached_data and data_is_current(sym):
             df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
             if df_sym.empty:
                 df_sym = get_stock_data(sym)
+        else:        
+            print(
+                '{} local data cache out of date. downloading latest price data...'.format(sym))
+            df_sym = get_stock_data(sym)
 
         df_sym.rename(columns={'Adj Close': sym}, inplace=True)
-        df_sym.drop(['Open', 'High', 'Low', 'Close',
-                     'Volume'], 1, inplace=True)
+        df_sym.drop(['Open', 'High', 'Low', 'Close', 'Volume'], 1, inplace=True)
 
         if df.empty:
             df = df_sym
@@ -298,7 +297,7 @@ for times in models.keys():
                 reader = csv.reader(data, delimiter=',')
                 result = {row[0]: float(row[1]) for row in reader}
 
-            if holdings_match(result, symbols):
+            if holdings_match(result, symbols) and all(data_is_current(sym) for sym in symbols):
                 continue_run = False
                 weights = pd.DataFrame(
                     result, index=pd.RangeIndex(
@@ -451,35 +450,41 @@ if len(stk) > 0:
            max_size=portfolio_max_size
            )
 
-if plot_returns:
-    daily_returns = df.pct_change()
+if plot_cumulative_returns or plot_daily_returns:
+    daily_returns = df.pct_change()    
     if test_mode:
         print(daily_returns.head())
+
     cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
     if test_mode:
         print(cumulative_returns.head())
-    if sort_by_weights:
-        sorted_cols = cumulative_returns.sort_values(
-            cumulative_returns.index[-1],
-            ascending=False,
-            axis=1
-        ).columns
-        cumulative_returns = cumulative_returns[sorted_cols]
 
-        fig = go.Figure()
+    if plot_cumulative_returns:
+        if sort_by_weights:
+            sorted_cols = cumulative_returns.sort_values(
+                cumulative_returns.index[-1],
+                ascending=False,
+                axis=1
+            ).columns
+            cumulative_returns = cumulative_returns[sorted_cols]
 
-        for col in cumulative_returns.columns:
-            fig.add_trace(go.Scatter(
-                x=cumulative_returns.index,
-                y=cumulative_returns[col],
-                mode="lines",
-                name=col,
-                line=dict(width=3 if col in avg.keys() else 2),
-                opacity=1 if col in avg.keys() else 0.6,
-            ))
+            fig = go.Figure()
 
+            for col in cumulative_returns.columns:
+                fig.add_trace(go.Scatter(
+                    x=cumulative_returns.index,
+                    y=cumulative_returns[col],
+                    mode="lines",
+                    name=col,
+                    line=dict(width=3 if col in avg.keys() else 2),
+                    opacity=1 if col in avg.keys() else 0.6,
+                ))
+            
+        fig.show()
+
+    if plot_daily_returns:
         c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
-                                                                     360, len(daily_returns.columns))]
+            360, len(daily_returns.columns))]
 
         fig2 = go.Figure(data=[go.Box(
             y=daily_returns[col],
@@ -497,7 +502,6 @@ if plot_returns:
                 gridcolor='white'),
             paper_bgcolor='rgb(233,233,233)',
             plot_bgcolor='rgb(233,233,233)',
-        )
+        ) 
 
-        fig.show()
         fig2.show()
