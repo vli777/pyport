@@ -26,18 +26,81 @@ with open(config_filename) as config_file:
     config = yaml.load(config_file, Loader=yaml.FullLoader)
 locals().update(config)
 
+## global vars
 stk = {}
 avg = {}
-df = pd.DataFrame()
-needs_refresh = False
+dfs = []
+
+NOW = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+TODAY = datetime.today()# - timedelta(days=30)
+
+# set data storage folder
+FOLDER = 'data'
+if not os.path.exists(FOLDER):
+    os.makedirs(FOLDER)
+CWD = os.getcwd() + '/'
+PATH = CWD + FOLDER + '/'
+
+def compare_dateStr(a, b, before=True):    
+    first_date = datetime.strptime(a, '%Y-%m-%d')
+    second_date = datetime.strptime(b, '%Y-%m-%d')
+
+    if before: 
+        return first_date < second_date
+    else:
+        return first_date > second_date
 
 
-def get_stock_data(sym):
+def get_stock_data(sym, start_date, end_date, write=False):
+    print ('Downloading {} ...'.format(sym))
     df_sym = yf.download(
         sym,
-        start=START_DATE,
-        end=END_DATE)
-    df_sym.to_csv(sym_file)
+        start=start_date,
+        end=end_date)
+    if write: df_sym.to_csv(sym_file)
+    return df_sym
+
+
+def update_data_store(df_sym, target_start):    
+    # check if we can append today's data after 4pm
+    # if TODAY.weekday() < 5:
+    #     days_until_refresh = 1
+    # else:
+    #     days_until_refresh = timedelta(
+    #         days = 3 - TODAY.isoweekday() % 5).days
+
+    # next_time_to_refresh = datetime.now().replace(
+    #     hour=16, minute=5, second=0, microsecond=0) + timedelta(
+    #     days=days_until_refresh)
+
+    sym_file = PATH + '{}.csv'.format(sym)     
+
+    # mod_time = datetime.fromtimestamp(
+    #         os.path.getmtime(sym_file)).replace(
+    #         hour=16, minute=0, second=0, microsecond=0)
+
+    # check if start and end dates are covered by the symbol data
+    first_date = df_sym.index[0]
+    last_date = df_sym.index[-1]
+    if type(first_date) != str:
+        first_date_str = first_date.strftime('%Y-%m-%d')
+        last_date_str = last_date.strftime('%Y-%m-%d')
+    
+    if compare_dateStr(target_start, first_date_str):        
+        appended_data = get_stock_data(sym, target_start, first_date_str, write=False)           
+        df_sym = appended_data.append(df_sym)        
+        # save df to file        
+        df_sym.to_csv(sym_file)
+    
+    if compare_dateStr(last_date_str, TODAY.strftime('%Y-%m-%d')):   
+        last_date_str = (last_date + timedelta(days=1)).strftime('%Y-%m-%d')
+        appended_data = get_stock_data(sym, last_date_str, TODAY, write=False)   
+        appended_data.reset_index(inplace=True) 
+        appended_data.to_csv(sym_file, mode='a', index=False, header=False)
+        # update df
+        appended_data = appended_data.set_index('Date')
+        df_sym = df_sym.append(appended_data)
+
     return df_sym
 
 
@@ -93,17 +156,17 @@ def holdings_match(cached_dict, symbols):
             return False
     return True
 
-
 def output(
     weights,
     inputs,
+    start_date,
+    end_date,
     max_size=21,
     sort_by_weights=False,
-    optimization_method=None,
+    optimization_method=None,    
     time_period=1.0,
-    min_weight=0.01,
-    needs_refresh=False
-):
+    min_weight=0.01
+    ):
     if isinstance(weights, dict):
         clean_weights = weights
     else:
@@ -113,8 +176,9 @@ def output(
 
     scaled = scale_to_one(clean_weights)
 
-    if len(scaled) == 1 or any(np.isnan(val)
-                               for val in scaled.values()) or max(scaled.values()) < min_weight:
+    if len(scaled) == 1 or any(
+            np.isnan(val) for val in scaled.values()) or max(
+            scaled.values()) < min_weight:
         scaled = {'SPY': 1}
     while (min(scaled.values()) < min_weight or len(scaled) > max_size):
         clipped = clip_by_weight(scaled, min_weight)
@@ -128,7 +192,7 @@ def output(
     output_file = CWD + 'cache/' + \
         '{}-{}-{}.csv'.format(inputs, optimization_method, times)
 
-    if needs_refresh or not os.path.isfile(output_file):
+    if not os.path.isfile(output_file):
         w = csv.writer(open(output_file, "w", newline=''))
         for key, val in scaled.items():
             w.writerow([key, val])
@@ -155,8 +219,8 @@ def output(
 
         print(
             '\ntime period: {} to {} ({} yrs)'.format(
-                START_DATE,
-                END_DATE,
+                start_date,
+                end_date,
                 time_period))
         print('inputs:', inputs)
         print('optimization methods:', optimization_method)
@@ -182,18 +246,69 @@ def output(
         for sym, weight in sorted(scaled.items()):
             print(sym, '\t% 5.3f' % (weight))
 
+def plot_graphs(dfs):
+    if plot_cumulative_returns or plot_daily_returns:
+        daily_returns = dfs[0].pct_change()[1:]
+        if test_mode:
+            print(daily_returns.head())
 
-for times in models.keys():
+        cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
+        if test_mode:
+            print(cumulative_returns.head())
+
+        if plot_cumulative_returns:
+            if sort_by_weights:
+                sorted_cols = cumulative_returns.sort_values(
+                    cumulative_returns.index[-1],
+                    ascending=False,
+                    axis=1
+                ).columns
+                cumulative_returns = cumulative_returns[sorted_cols]
+
+                fig = go.Figure()
+
+                for col in cumulative_returns.columns:
+                    fig.add_trace(go.Scatter(
+                        x=cumulative_returns.index,
+                        y=cumulative_returns[col],
+                        mode="lines",
+                        name=col,
+                        line=dict(width=3 if col in avg.keys() else 2),
+                        opacity=1 if col in avg.keys() else 0.6,
+                    ))
+
+            fig.show()
+
+        if plot_daily_returns:
+            c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
+                                                                        360, len(daily_returns.columns))]
+
+            fig2 = go.Figure(data=[go.Box(
+                y=daily_returns[col],
+                marker_color=c[i],
+                name=col
+            ) for i, col in enumerate(daily_returns.columns)])
+
+            fig2.update_layout(
+                xaxis=dict(
+                    showgrid=False,
+                    zeroline=False,
+                    showticklabels=False),
+                yaxis=dict(
+                    zeroline=False,
+                    gridcolor='white'),
+                paper_bgcolor='rgb(233,233,233)',
+                plot_bgcolor='rgb(233,233,233)',
+            )
+
+            fig2.show()
+
+### MAIN
+sorted_times = sorted(models.keys(), reverse=True)
+for times in sorted_times:
     if not models[times]:
         continue
 
-    FOLDER = '{}yr'.format(times)
-    if not os.path.exists(FOLDER):
-        os.makedirs(FOLDER)
-    CWD = os.getcwd() + '/'
-    PATH = CWD + FOLDER + '/'
-    DATE = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    TODAY = datetime.today()
     START_DATE = (
         TODAY +
         relativedelta(
@@ -202,7 +317,7 @@ for times in models.keys():
                 float(times) *
                 12))).strftime('%Y-%m-%d')
     END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
-    
+
     # get ticker symbols
     symbols = []
     for input_file in input_files:
@@ -214,58 +329,39 @@ for times in models.keys():
                 if not name.startswith("#") and name[:1].isalpha() and name.upper() not in [
                         x.upper() for x in ignored_symbols]:
                     symbols.append(name.upper())
-    symbols = list(set(symbols))
-    symbols.sort()
-    print(symbols)
-
+    symbols = sorted(set(symbols))
+    if test_mode: print(symbols)
+    
+    # import data to df
     df = pd.DataFrame()
-
-    def data_is_current(sym):
-        if not sym: return False            
-        sym_file = PATH + '{}.csv'.format(sym)
-
-        if TODAY.weekday() < 5:
-            days_until_refresh = 1
-        else:
-            days_until_refresh = timedelta(
-                days= 3 - TODAY.isoweekday() % 5).days
-        
-        next_time_to_refresh = datetime.now().replace(
-            hour=16, minute=5, second=0, microsecond=0) + timedelta(
-            days=days_until_refresh)
-
-        try:
-            mod_time = datetime.fromtimestamp(os.path.getmtime(sym_file)).replace(
-                    hour=16, minute=0, second=0, microsecond=0)    
-            return mod_time <= next_time_to_refresh               
-        except:                
-            return False
 
     for sym in symbols:
         if not sym:
             continue
         sym_file = PATH + '{}.csv'.format(sym)
         
-        if use_cached_data and data_is_current(sym):
-            df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
-            if df_sym.empty:
-                df_sym = get_stock_data(sym)
-        else:        
-            print(
-                '{} local data cache out of date. downloading latest price data...'.format(sym))
-            df_sym = get_stock_data(sym)
+        if not os.path.exists(sym_file):    
+            df_sym = get_stock_data(sym, START_DATE, END_DATE, write=True)
+        else:    
+            df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")       
+            df_sym = update_data_store(df_sym, START_DATE)
 
         df_sym.rename(columns={'Adj Close': sym}, inplace=True)
-        df_sym.drop(['Open', 'High', 'Low', 'Close', 'Volume'], 1, inplace=True)
+        df_sym.drop(['Open', 'High', 'Low', 'Close','Volume'], 1, inplace=True)
 
+        # append symbol df to main df
         if df.empty:
             df = df_sym
         else:
             df = df.join(df_sym, how='outer')
 
+    # nan fills in joined df
     df.fillna(method='bfill', inplace=True)
     df.fillna(method='ffill', inplace=True)
     df = df.reindex(sorted(df.columns), axis=1)
+    
+    # store df for graphing
+    dfs.append(df)
 
     if test_mode:
         # see whole df
@@ -278,7 +374,6 @@ for times in models.keys():
             df.isnull().values.any())
 
     # for each included model, run optimization
-
     for optimization in models[times]:
         optimization_method = optimization.lower()
         temp = None
@@ -292,12 +387,14 @@ for times in models.keys():
             'cache/{}-{}-{}.csv'.format(inputs_list,
                                         optimization_method, times)
 
-        if not needs_refresh and os.path.isfile(model_cache_file):
+        if os.path.isfile(model_cache_file):
             with open(model_cache_file, newline='') as data:
                 reader = csv.reader(data, delimiter=',')
                 result = {row[0]: float(row[1]) for row in reader}
 
-            if holdings_match(result, symbols) and all(data_is_current(sym) for sym in symbols):
+            if holdings_match(
+                result,
+                symbols):
                 continue_run = False
                 weights = pd.DataFrame(
                     result, index=pd.RangeIndex(
@@ -306,6 +403,8 @@ for times in models.keys():
                 output(
                     weights=weights,
                     inputs=inputs_list,
+                    start_date=START_DATE,
+                    end_date=END_DATE,
                     sort_by_weights=sort_by_weights,
                     optimization_method=optimization_method,
                     time_period=times,
@@ -314,6 +413,7 @@ for times in models.keys():
 
                 continue
 
+        # model handling
         if (optimization_method == 'hrp'):
             temp = HierarchicalRiskParity()
             temp.allocate(
@@ -427,11 +527,12 @@ for times in models.keys():
         output(
             weights=temp.weights,
             inputs=inputs_list,
+            start_date=START_DATE,
+            end_date=END_DATE,
             sort_by_weights=sort_by_weights,
             optimization_method=optimization_method,
             time_period=times,
-            min_weight=min_weight,
-            needs_refresh=True
+            min_weight=min_weight
         )
 
 if len(stk) > 0:
@@ -443,65 +544,13 @@ if len(stk) > 0:
     output(weights=sorted_avg,
            inputs=', '.join([str(i) for i in sorted(input_files)]),
            sort_by_weights=True,
+           start_date=START_DATE,
+           end_date=END_DATE,
            optimization_method=', '.join(sorted(list(set(sum(models.values(),
                                                              []))))),
            time_period=', '.join(models.keys()),
            min_weight=min_weight,
            max_size=portfolio_max_size
            )
-
-if plot_cumulative_returns or plot_daily_returns:
-    daily_returns = df.pct_change()    
-    if test_mode:
-        print(daily_returns.head())
-
-    cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
-    if test_mode:
-        print(cumulative_returns.head())
-
-    if plot_cumulative_returns:
-        if sort_by_weights:
-            sorted_cols = cumulative_returns.sort_values(
-                cumulative_returns.index[-1],
-                ascending=False,
-                axis=1
-            ).columns
-            cumulative_returns = cumulative_returns[sorted_cols]
-
-            fig = go.Figure()
-
-            for col in cumulative_returns.columns:
-                fig.add_trace(go.Scatter(
-                    x=cumulative_returns.index,
-                    y=cumulative_returns[col],
-                    mode="lines",
-                    name=col,
-                    line=dict(width=3 if col in avg.keys() else 2),
-                    opacity=1 if col in avg.keys() else 0.6,
-                ))
-            
-        fig.show()
-
-    if plot_daily_returns:
-        c = ['hsl(' + str(h) + ',50%' + ',50%)' for h in np.linspace(0,
-            360, len(daily_returns.columns))]
-
-        fig2 = go.Figure(data=[go.Box(
-            y=daily_returns[col],
-            marker_color=c[i],
-            name=col
-        ) for i, col in enumerate(daily_returns.columns)])
-
-        fig2.update_layout(
-            xaxis=dict(
-                showgrid=False,
-                zeroline=False,
-                showticklabels=False),
-            yaxis=dict(
-                zeroline=False,
-                gridcolor='white'),
-            paper_bgcolor='rgb(233,233,233)',
-            plot_bgcolor='rgb(233,233,233)',
-        ) 
-
-        fig2.show()
+    
+    plot_graphs(dfs)
