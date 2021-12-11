@@ -34,21 +34,19 @@ dfs = []
 NOW = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 TODAY = datetime.today()# - timedelta(days=30)
 
-# set data storage folder
-FOLDER = 'data'
-if not os.path.exists(FOLDER):
-    os.makedirs(FOLDER)
+if not os.path.exists(folder):
+    os.makedirs(folder)
 CWD = os.getcwd() + '/'
-PATH = CWD + FOLDER + '/'
+PATH = CWD + folder + '/'
 
-def compare_dateStr(a, b, before=True):    
-    first_date = datetime.strptime(a, '%Y-%m-%d')
-    second_date = datetime.strptime(b, '%Y-%m-%d')
+def earlier_date(a, b, before=True):    
+    # first_date = datetime.strptime(a, '%Y-%m-%d')
+    # second_date = datetime.strptime(b, '%Y-%m-%d')
 
     if before: 
-        return first_date < second_date
+        return a < b
     else:
-        return first_date > second_date
+        return a > b
 
 
 def get_stock_data(sym, start_date, end_date, write=False):
@@ -86,16 +84,16 @@ def update_data_store(df_sym, target_start):
         first_date_str = first_date.strftime('%Y-%m-%d')
         last_date_str = last_date.strftime('%Y-%m-%d')
     
-    if compare_dateStr(target_start, first_date_str):        
+    if earlier_date(target_start, first_date_str):        
         appended_data = get_stock_data(sym, target_start, first_date_str, write=False)           
         df_sym = appended_data.append(df_sym)        
         # save df to file        
         df_sym.to_csv(sym_file)
     
-    if compare_dateStr(last_date_str, TODAY.strftime('%Y-%m-%d')):   
-        last_date_str = (last_date + timedelta(days=1)).strftime('%Y-%m-%d')
-        appended_data = get_stock_data(sym, last_date_str, TODAY, write=False)   
-        appended_data.reset_index(inplace=True) 
+    # if last date is earlier than Fri, dl latest data & append to csv
+    if last_date.weekday() < 4 and earlier_date(last_date_str, TODAY.strftime('%Y-%m-%d')):                       
+        appended_data = get_stock_data(sym, last_date + timedelta(days=1), TODAY, write=False)   
+        appended_data.reset_index(inplace=True)         
         appended_data.to_csv(sym_file, mode='a', index=False, header=False)
         # update df
         appended_data = appended_data.set_index('Date')
@@ -150,9 +148,11 @@ def get_min_by_size(weights, size, min_weight=0.01):
 def holdings_match(cached_dict, symbols):
     for sym in cached_dict.keys():
         if sym not in symbols:
+            print (sym, 'not found in', symbols)
             return False
     for sym in symbols:
         if sym not in cached_dict.keys():
+            print (sym, 'not found in', cached_dict.keys())
             return False
     return True
 
@@ -347,7 +347,12 @@ for times in sorted_times:
             df_sym = update_data_store(df_sym, START_DATE)
 
         df_sym.rename(columns={'Adj Close': sym}, inplace=True)
-        df_sym.drop(['Open', 'High', 'Low', 'Close','Volume'], 1, inplace=True)
+        df_sym.drop(['Open', 'High', 'Low', 'Close','Volume'], axis=1, inplace=True)
+
+        # drop by time period
+        # total_rows = df.shape[0]
+        # pct_of_rows = float(times)        
+        df_sym = df_sym.loc[START_DATE::]
 
         # append symbol df to main df
         if df.empty:
@@ -359,7 +364,7 @@ for times in sorted_times:
     df.fillna(method='bfill', inplace=True)
     df.fillna(method='ffill', inplace=True)
     df = df.reindex(sorted(df.columns), axis=1)
-    
+
     # store df for graphing
     dfs.append(df)
 
