@@ -1,8 +1,9 @@
 *.csv
-tempCodeRunnerFile.py
+tempCodeRunnerFile*
 .mps
 .env
 *.bat
 
 config.yaml
 testconfig.yaml
+split adjuster.py
