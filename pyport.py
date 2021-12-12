@@ -373,8 +373,8 @@ for times in sorted_times:
     # store df for graphing
     if times == sorted_times[0]:
         dfs['data'] = df
-        dfs['start'] = start_date
-        dfs['end'] = end_date
+        dfs['start'] = START_DATE
+        dfs['end'] = END_DATE
 
     if test_mode:
         # see whole df
@@ -557,8 +557,8 @@ if len(stk) > 0:
     output(weights=sorted_avg,
            inputs=', '.join([str(i) for i in sorted(input_files)]),
            sort_by_weights=True,
-           start_date=dfs['start_date'],
-           end_date=dfs['end_date'],
+           start_date=dfs['start'],
+           end_date=dfs['end'],
            optimization_method=', '.join(sorted(list(set(sum(models.values(),
                                                              []))))),
            time_period=', '.join(models.keys()),
