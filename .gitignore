@@ -1,5 +1,5 @@
 *.csv
-tempCodeRunnerFile*
+temp*
 .mps
 .env
 *.bat
@@ -8,3 +8,4 @@ config.yaml
 testconfig.yaml
 split adjuster.py
 pyport.c*
+setup
