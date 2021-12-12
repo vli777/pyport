@@ -29,9 +29,8 @@ locals().update(config)
 ## global vars
 stk = {}
 avg = {}
-dfs = []
+dfs = None
 
-NOW = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 TODAY = datetime.today()# - timedelta(days=30)
 
 if not os.path.exists(folder):
@@ -40,17 +39,19 @@ CWD = os.getcwd() + '/'
 PATH = CWD + folder + '/'
 
 def earlier_date(a, b, before=True):    
-    # first_date = datetime.strptime(a, '%Y-%m-%d')
-    # second_date = datetime.strptime(b, '%Y-%m-%d')
-
     if before: 
         return a < b
     else:
         return a > b
 
+def str_to_date(dateStr, fmt = '%Y-%m-%d'):
+    return datetime.strptime(dateStr, fmt)    
 
-def get_stock_data(sym, start_date, end_date, write=False):
-    print ('Downloading {} ...'.format(sym))
+def date_to_str(date, fmt = '%Y-%m-%d'):
+    return date.strftime(fmt)
+
+def get_stock_data(sym, start_date, end_date, write=False):    
+    print ('Downloading {} {} - {} ...'.format(sym, start_date, end_date))
     df_sym = yf.download(
         sym,
         start=start_date,
@@ -81,17 +82,20 @@ def update_data_store(df_sym, target_start):
     first_date = df_sym.index[0]
     last_date = df_sym.index[-1]
     if type(first_date) != str:
-        first_date_str = first_date.strftime('%Y-%m-%d')
-        last_date_str = last_date.strftime('%Y-%m-%d')
+        first_date_str = date_to_str(first_date)
+        last_date_str = date_to_str(last_date)
     
-    if earlier_date(target_start, first_date_str):        
-        appended_data = get_stock_data(sym, target_start, first_date_str, write=False)           
-        df_sym = appended_data.append(df_sym)        
-        # save df to file        
-        df_sym.to_csv(sym_file)
+    if earlier_date(target_start, first_date_str):    
+        # handle time selections starting on weekends        
+        if str_to_date(target_start).weekday() < 5 and earlier_date(target_start, first_date):        
+            print(target_start, first_date)
+            appended_data = get_stock_data(sym, target_start, first_date_str, write=False)           
+            df_sym = appended_data.append(df_sym)        
+            # save df to file        
+            df_sym.to_csv(sym_file)
     
     # if last date is earlier than Fri, dl latest data & append to csv
-    if last_date.weekday() < 4 and earlier_date(last_date_str, TODAY.strftime('%Y-%m-%d')):                       
+    if last_date.weekday() < 4 and earlier_date(last_date_str, date_to_str(TODAY)):                       
         appended_data = get_stock_data(sym, last_date + timedelta(days=1), TODAY, write=False)   
         appended_data.reset_index(inplace=True)         
         appended_data.to_csv(sym_file, mode='a', index=False, header=False)
@@ -246,9 +250,11 @@ def output(
         for sym, weight in sorted(scaled.items()):
             print(sym, '\t% 5.3f' % (weight))
 
-def plot_graphs(dfs):
+def plot_graphs(df):
+    if test_mode:
+        print(df)
     if plot_cumulative_returns or plot_daily_returns:
-        daily_returns = dfs[0].pct_change()[1:]
+        daily_returns = df.pct_change()[1:]
         if test_mode:
             print(daily_returns.head())
 
@@ -309,14 +315,14 @@ for times in sorted_times:
     if not models[times]:
         continue
 
-    START_DATE = (
+    START_DATE = date_to_str(
         TODAY +
         relativedelta(
             months=-
             round(
                 float(times) *
-                12))).strftime('%Y-%m-%d')
-    END_DATE = (TODAY + relativedelta(days=1)).strftime('%Y-%m-%d')
+                12)))
+    END_DATE = date_to_str(TODAY + relativedelta(days=1))
 
     # get ticker symbols
     symbols = []
@@ -340,7 +346,7 @@ for times in sorted_times:
             continue
         sym_file = PATH + '{}.csv'.format(sym)
         
-        if not os.path.exists(sym_file):    
+        if not os.path.exists(sym_file) or not use_cached_data and times == sorted_times[0]:    
             df_sym = get_stock_data(sym, START_DATE, END_DATE, write=True)
         else:    
             df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")       
@@ -366,7 +372,8 @@ for times in sorted_times:
     df = df.reindex(sorted(df.columns), axis=1)
 
     # store df for graphing
-    dfs.append(df)
+    if times == sorted_times[0]:
+        dfs = df
 
     if test_mode:
         # see whole df
@@ -557,5 +564,5 @@ if len(stk) > 0:
            min_weight=min_weight,
            max_size=portfolio_max_size
            )
-    
+
     plot_graphs(dfs)
