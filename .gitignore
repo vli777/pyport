@@ -8,4 +8,4 @@ config.yaml
 testconfig.yaml
 split adjuster.py
 pyport.c*
-setup
+setup*
