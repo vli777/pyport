@@ -29,7 +29,7 @@ locals().update(config)
 ## global vars
 stk = {}
 avg = {}
-dfs = None
+dfs = {}
 
 TODAY = datetime.today()# - timedelta(days=30)
 
@@ -152,11 +152,11 @@ def get_min_by_size(weights, size, min_weight=0.01):
 def holdings_match(cached_dict, symbols):
     for sym in cached_dict.keys():
         if sym not in symbols:
-            print (sym, 'not found in', symbols)
+            if test_mode: print (sym, 'not found in', symbols)
             return False
     for sym in symbols:
         if sym not in cached_dict.keys():
-            print (sym, 'not found in', cached_dict.keys())
+            if test_mode: print (sym, 'not found in', cached_dict.keys())
             return False
     return True
 
@@ -372,7 +372,9 @@ for times in sorted_times:
 
     # store df for graphing
     if times == sorted_times[0]:
-        dfs = df
+        dfs['data'] = df
+        dfs['start'] = start_date
+        dfs['end'] = end_date
 
     if test_mode:
         # see whole df
@@ -555,8 +557,8 @@ if len(stk) > 0:
     output(weights=sorted_avg,
            inputs=', '.join([str(i) for i in sorted(input_files)]),
            sort_by_weights=True,
-           start_date=START_DATE,
-           end_date=END_DATE,
+           start_date=dfs['start_date'],
+           end_date=dfs['end_date'],
            optimization_method=', '.join(sorted(list(set(sum(models.values(),
                                                              []))))),
            time_period=', '.join(models.keys()),
@@ -564,4 +566,4 @@ if len(stk) > 0:
            max_size=portfolio_max_size
            )
 
-    plot_graphs(dfs)
+    plot_graphs(dfs['data'])
