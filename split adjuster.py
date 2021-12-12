@@ -6,8 +6,8 @@ from datetime import datetime
 
 # params
 SPLIT_DATE = '2021-07-06'
-SPLIT_RATIO = 4
-FOLDER = 'Data'
+SPLIT_RATIO = 1
+FOLDER = 'data'
 SYMBOL = 'NVDA'
 
 ###

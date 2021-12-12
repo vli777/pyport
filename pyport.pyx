@@ -196,13 +196,12 @@ def output(
     output_file = CWD + 'cache/' + \
         '{}-{}-{}.csv'.format(inputs, optimization_method, times)
 
-    if not os.path.isfile(output_file):
-        w = csv.writer(open(output_file, "w", newline=''))
-        for key, val in scaled.items():
-            w.writerow([key, val])
-        filtered_symbols = [sym for sym in symbols if sym not in scaled.keys()]
-        for sym in filtered_symbols:
-            w.writerow([sym, 0])
+    w = csv.writer(open(output_file, "w", newline=''))
+    for key, val in scaled.items():
+        w.writerow([key, val])
+    filtered_symbols = [sym for sym in symbols if sym not in scaled.keys()]
+    for sym in filtered_symbols:
+        w.writerow([sym, 0])
 
     if len(scaled) > 0:
         portfolio = df[scaled.keys()]
@@ -391,8 +390,8 @@ for times in sorted_times:
         temp = None
 
         print(
-            '\nCalculating {} allocation'.format(
-                optimization_method.upper()))
+            '\nCalculating {} {} allocation'.format(
+                times, optimization_method.upper()))
 
         inputs_list = ', '.join([str(i) for i in sorted(input_files)])
         model_cache_file = CWD + \
