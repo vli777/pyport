@@ -38,7 +38,11 @@ if not os.path.exists(folder):
 CWD = os.getcwd() + '/'
 PATH = CWD + folder + '/'
 
-def earlier_date(a, b, before=True):    
+def earlier_date(a, b, before=True):  
+    if type(a) == str:
+        a = str_to_date(a)
+    if type(b) == str:
+        b = str_to_date(b)
     if before: 
         return a < b
     else:
@@ -161,6 +165,7 @@ def holdings_match(cached_dict, symbols):
     return True
 
 def output(
+    df,
     weights,
     inputs,
     start_date,
@@ -179,7 +184,7 @@ def output(
         print('raw weights', clean_weights)
 
     scaled = scale_to_one(clean_weights)
-
+    
     if len(scaled) == 1 or any(
             np.isnan(val) for val in scaled.values()) or max(
             scaled.values()) < min_weight:
@@ -414,6 +419,7 @@ for times in sorted_times:
                         start=0, stop=1, step=1))
                 # send to output
                 output(
+                    df=df,
                     weights=weights,
                     inputs=inputs_list,
                     start_date=START_DATE,
@@ -538,6 +544,7 @@ for times in sorted_times:
 
         # send to output
         output(
+            df=df,
             weights=temp.weights,
             inputs=inputs_list,
             start_date=START_DATE,
@@ -549,12 +556,14 @@ for times in sorted_times:
         )
 
 if len(stk) > 0:
-    avg = stacked_output(stk)
+    avg = stacked_output(stk)    
     sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
     min_weight = get_min_by_size(sorted_avg, portfolio_max_size)
     models = {k: v for k, v in models.items() if v is not None}
 
-    output(weights=sorted_avg,
+    output(
+           df=dfs['data'],
+           weights=sorted_avg,
            inputs=', '.join([str(i) for i in sorted(input_files)]),
            sort_by_weights=True,
            start_date=dfs['start'],
