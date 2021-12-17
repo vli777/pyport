@@ -31,8 +31,8 @@ with open(CONFIG_FILENAME) as config_file:
 
 ## global vars
 stk, avg, dfs = {}, {}, {}
-TODAY = datetime.today().replace(hour=16, minute=0, second=0, microsecond=0)
-
+TODAY = datetime.today()
+print(TODAY.hour)
 if not os.path.exists(config['folder']):
     os.makedirs(config['folder'])
 CWD = os.getcwd() + '/'
@@ -114,8 +114,7 @@ def update_data_store(symbol, df_symbol, target_start):
     if earlier_date(target_start, first_date_str):
         # handle time selections starting on weekends
         if str_to_date(target_start).weekday() < 5 and earlier_date(
-                target_start, first_date):
-            print(target_start, first_date)
+                target_start, first_date):            
             appended_data = get_stock_data(
                 symbol, target_start, first_date_str, write=False)
             df_symbol = appended_data.append(df_symbol)
@@ -124,8 +123,8 @@ def update_data_store(symbol, df_symbol, target_start):
             # update change status
             update_status = True
 
-    # if weekday, dl latest data & append to csv
-    if last_date.weekday() < 5 and earlier_date(last_date_str, date_to_str(TODAY)):
+    # if weekday, dl latest data & append to csv    
+    if last_date.weekday() < 5 and earlier_date(last_date_str, date_to_str(TODAY.replace(hour=16, minute=0, second=0, microsecond=0))) and TODAY.hour >= 16:        
         appended_data = get_stock_data(
             symbol,
             last_date +
@@ -413,6 +412,7 @@ for times in sorted_times:
 
     # import data to df
     df = pd.DataFrame()
+    data_updated = False
 
     for sym in symbols:
         if not sym:
