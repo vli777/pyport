@@ -380,7 +380,9 @@ def plot_graphs(data):
 
 
 # MAIN
-sorted_times = sorted(config['models'].keys(), reverse=True)
+filtered_times = { k for k in config['models'].keys() if config['models'][k] }
+sorted_times = sorted(filtered_times, reverse=True)
+
 for times in sorted_times:
     if not config['models'][times]:
         continue
