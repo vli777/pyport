@@ -19,6 +19,7 @@ optimization models available:
 * nested clustered optimization
 
 Instructions:
-1. Provide a single column csv containing the ticker symbols you want to includ
-2. Specify the input file name (e.g. 'portfolio inputs')
-3. Set the parameters in the `#config` section. Note that some optimization methods require additional parameters.
+1. Provide a single column csv containing the ticker symbols you want to include
+2. Set the parameters in the `#config` section. 
+
+TO-DO: some optimization methods require additional parameters, input type, update config template
