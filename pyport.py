@@ -32,7 +32,7 @@ with open(CONFIG_FILENAME) as config_file:
 ## global vars
 stk, avg, dfs = {}, {}, {}
 TODAY = datetime.today()
-print(TODAY.hour)
+
 if not os.path.exists(config["folder"]):
     os.makedirs(config["folder"])
 CWD = os.getcwd() + "/"
@@ -78,7 +78,7 @@ def get_stock_data(symbol, start_date, end_date, write=False):
     return symbol_df
 
 
-def update_data_store(symbol, df_symbol, target_start):
+def update_store(symbol, df_symbol, target_start, target_end):
     """
     checks if the saved stock data is up to date, appends to symbol df and to saved csv
     returns appended df, bool if an update was made
@@ -123,14 +123,17 @@ def update_data_store(symbol, df_symbol, target_start):
             update_status = True
 
     # if weekday, dl latest data & append to csv
+    while target_end.weekday() >= 5:
+        target_end = target_end - timedelta(days=1)
+
     if (last_date.weekday() < 5 and earlier_date(
             last_date_str,
             date_to_str(
-                TODAY.replace(hour=16, minute=0, second=0, microsecond=0)),
-    ) and TODAY.hour >= 16):
+                target_end.replace(hour=16, minute=0, second=0, microsecond=0)),
+    ) and target_end.hour >= 16):
         appended_data = get_stock_data(symbol,
                                        last_date + timedelta(days=1),
-                                       TODAY,
+                                       target_end,
                                        write=False)
         appended_data.reset_index(inplace=True)
         appended_data.to_csv(sym_filepath, mode="a", index=False, header=False)
@@ -409,7 +412,7 @@ for times in sorted_times:
             df_sym = get_stock_data(sym, START_DATE, END_DATE, write=True)
         else:
             df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
-            df_sym, DATA_UPDATED = update_data_store(sym, df_sym, START_DATE)
+            df_sym, DATA_UPDATED = update_store(sym, df_sym, START_DATE, TODAY)
 
         df_sym.rename(columns={"Adj Close": sym}, inplace=True)
         df_sym.drop(["Open", "High", "Low", "Close", "Volume"],

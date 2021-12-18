@@ -8,4 +8,6 @@ testconfig.yaml
 split adjuster.py
 pyport.c*
 setup*
+
 .pep8
+.style.yapf
