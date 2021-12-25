@@ -17,7 +17,7 @@ from portfoliolab.modern_portfolio_theory.mean_variance import MeanVarianceOptim
 from portfoliolab.modern_portfolio_theory.mean_variance import ReturnsEstimators
 from portfoliolab.modern_portfolio_theory import CriticalLineAlgorithm
 from portfoliolab.clustering.nco import NestedClusteredOptimisation
-from portfoliolab.estimators.risk_estimators import RiskEstimators
+# from portfoliolab.estimators.risk_estimators import RiskEstimators
 from portfoliolab.online_portfolio_selection.rmr import RMR
 from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
@@ -106,7 +106,6 @@ def update_store(symbol, df_symbol, target_start, target_end):
     last_date = df_symbol.index[-1]
     if not isinstance(first_date, str):
         first_date_str = date_to_str(first_date)
-        last_date_str = date_to_str(last_date)
 
     if earlier_date(target_start, first_date_str):
         # handle time selections starting on weekends
@@ -124,24 +123,27 @@ def update_store(symbol, df_symbol, target_start, target_end):
 
     # if weekday, dl latest data & append to csv
     while target_end.weekday() >= 5:
-        target_end = target_end - timedelta(days=1)
-
-    if (last_date.weekday() < 5 and earlier_date(
-            last_date_str,
-            date_to_str(
-                target_end.replace(hour=16, minute=0, second=0, microsecond=0)),
-    ) and target_end.hour >= 16):
+        target_end -= timedelta(days=1)
+    if target_end.hour < 16: 
+        target_end -= timedelta(days=1)
+    
+    adj_last_date = last_date.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    adj_target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    if last_date.weekday() < 5 and earlier_date(adj_last_date, adj_target_end):        
         appended_data = get_stock_data(symbol,
-                                       last_date + timedelta(days=1),
-                                       target_end,
-                                       write=False)
+                                    last_date + timedelta(days=1),
+                                    target_end,
+                                    write=False)
         appended_data.reset_index(inplace=True)
-        appended_data.to_csv(sym_filepath, mode="a", index=False, header=False)
-        # update df
-        appended_data = appended_data.set_index("Date")
-        df_symbol = df_symbol.append(appended_data)
-        # update change status
-        update_status = True
+        
+        if last_date != appended_data['Date'].iloc[0]:
+            appended_data.to_csv(sym_filepath, mode="a", index=False, header=False)
+            # update df
+            appended_data = appended_data.set_index("Date")
+            df_symbol = df_symbol.append(appended_data)
+            # update change status
+            update_status = True
 
     return df_symbol, update_status
 
