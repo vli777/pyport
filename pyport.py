@@ -11,6 +11,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
 import yaml
+from playsound import playsound
 from portfoliolab.clustering.herc import HierarchicalEqualRiskContribution
 from portfoliolab.clustering.hrp import HierarchicalRiskParity
 from portfoliolab.modern_portfolio_theory.mean_variance import MeanVarianceOptimisation
@@ -124,20 +125,20 @@ def update_store(symbol, df_symbol, target_start, target_end):
     # if weekday, dl latest data & append to csv
     while target_end.weekday() >= 5:
         target_end -= timedelta(days=1)
-    if target_end.hour < 16: 
+    if target_end.hour < 16:
         target_end -= timedelta(days=1)
-    
+
     adj_last_date = last_date.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     adj_target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    if last_date.weekday() < 5 and earlier_date(adj_last_date, adj_target_end):        
+
+    if last_date.weekday() < 5 and earlier_date(adj_last_date, adj_target_end):
         appended_data = get_stock_data(symbol,
                                     last_date + timedelta(days=1),
                                     target_end,
                                     write=False)
         appended_data.reset_index(inplace=True)
-        
-        if last_date != appended_data['Date'].iloc[0]:
+
+        if appended_data.shape[0] > 0 and last_date != appended_data['Date'].iloc[0]:
             appended_data.to_csv(sym_filepath, mode="a", index=False, header=False)
             # update df
             appended_data = appended_data.set_index("Date")
@@ -251,7 +252,7 @@ def output(
     if (len(scaled) == 1 or any(np.isnan(val) for val in scaled.values()) or
             max(scaled.values()) < minimum_weight):
         scaled = {"SPY": 1}
-    while min(scaled.values()) < minimum_weight or len(scaled) > max_size:
+    while len(scaled) > 0 and min(scaled.values()) < minimum_weight or len(scaled) > max_size:
         clipped = clip_by_weight(scaled, minimum_weight)
         scaled = scale_to_one(clipped)
         minimum_weight = get_min_by_size(scaled, max_size, minimum_weight)
@@ -652,5 +653,11 @@ if len(stk) > 0:
         minimum_weight=min_weight,
         max_size=config["portfolio_max_size"],
     )
-
+    # plotly graphs
     plot_graphs(dfs["data"])
+    # play sound when done
+    if config["musicPath"]:
+        try:
+            playsound(config["musicPath"])
+        except OSError:
+            print('\ndone')
