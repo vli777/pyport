@@ -276,17 +276,19 @@ def output(
         portfolio = data[scaled.keys()]
         returns = np.log(portfolio) - np.log(portfolio.shift(1))
         returns = returns.iloc[1:, :]
+        weighted_returns = returns.mul(list(scaled.values()))   
+        cumulative_returns = weighted_returns.add(1).cumprod()
 
-        portfolio_returns = returns.apply(
-            lambda row: apply_weights(row, list(scaled.values())),
-            axis=1).sum(axis=1)
+        portfolio_returns = weighted_returns.dot(list(scaled.values()))   
+        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()        
 
-        cumulative_returns = portfolio_returns.add(1).cumprod()
         sharpe = sharpe_ratio(portfolio_returns)
-
         drawdown, time_under_water = drawdown_and_time_under_water(
-            cumulative_returns)
+            portfolio_cumulative_returns)
         mdd, dd_time = drawdown.max(), time_under_water[drawdown.idxmax()] * 252
+
+        portfolio_returns = portfolio_returns.to_frame()
+        portfolio_returns.columns=['SIM_PORT']
 
         print("\ntime period: {} to {} ({} yrs)".format(start_date, end_date,
                                                         time_period))
@@ -294,7 +296,7 @@ def output(
         print("optimization methods:", optimization_model)
         print("sharpe ratio:", round(sharpe, 2))
         print("cumulative return: {}%".format(
-            round(cumulative_returns[-1] * 100, 2)))
+            round(portfolio_cumulative_returns[-1] * 100, 2)))
         print("drawdown: -{}, {} days to recover after {}".format(
             round(mdd, 2), round(dd_time, 2),
             drawdown.idxmax().date()))
@@ -313,19 +315,26 @@ def output(
         for symbol, weight in sorted(scaled.items()):
             print(symbol, "\t% 5.3f" % (weight))
 
+    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)        
+    portfolio_cumulative_returns.columns=['SIM_PORT']
 
-def plot_graphs(data):
+    total_daily_returns = weighted_returns.join(portfolio_returns)
+    total_cumulative_returns = cumulative_returns.join(portfolio_cumulative_returns)
+
+    return total_daily_returns, total_cumulative_returns
+
+def plot_graphs(daily_returns, cumulative_returns):
     """
     creates plotly graphs
     """
     if config["test_mode"]:
-        print(data)
+        print(daily_returns, cumulative_returns)
     if config["plot_cumulative_returns"] or config["plot_daily_returns"]:
-        daily_returns = data.pct_change()[1:]
+        # daily_returns = data.pct_change()[1:]
         if config["test_mode"]:
             print(daily_returns.head())
 
-        cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
+        # cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
         if config["test_mode"]:
             print(cumulative_returns.head())
 
@@ -343,7 +352,7 @@ def plot_graphs(data):
                         go.Scatter(
                             x=cumulative_returns.index,
                             y=cumulative_returns[col],
-                            mode="lines",
+                            mode="lines" if col != "SIM_PORT" else "lines+markers",
                             name=col,
                             line=dict(width=3 if col in avg.keys() else 2),
                             opacity=1 if col in avg.keys() else 0.6,
@@ -640,7 +649,7 @@ if len(stk) > 0:
     min_weight = get_min_by_size(sorted_avg, config["portfolio_max_size"])
     models = {k: v for k, v in config["models"].items() if v is not None}
 
-    output(
+    daily_returns_to_plot, cumulative_returns_to_plot = output(
         data=dfs["data"],
         allocation_weights=sorted_avg,
         inputs=", ".join([str(i) for i in sorted(config["input_files"])]),
@@ -653,8 +662,10 @@ if len(stk) > 0:
         minimum_weight=min_weight,
         max_size=config["portfolio_max_size"],
     )
+
     # plotly graphs
-    plot_graphs(dfs["data"])
+    plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot)
+
     # play sound when done
     if config["musicPath"]:
         try:
