@@ -249,9 +249,9 @@ def output(
 
     scaled = scale_to_one(clean_weights)
 
-    if (len(scaled) == 1 or any(np.isnan(val) for val in scaled.values()) or
-            max(scaled.values()) < minimum_weight):
-        scaled = {"SPY": 1}
+    # if (len(scaled) == 1 or any(np.isnan(val) for val in scaled.values()) or
+    #         max(scaled.values()) < minimum_weight):
+    #     scaled = {"SPY": 1}
     while len(scaled) > 0 and min(scaled.values()) < minimum_weight or len(scaled) > max_size:
         clipped = clip_by_weight(scaled, minimum_weight)
         scaled = scale_to_one(clipped)
@@ -276,11 +276,11 @@ def output(
         portfolio = data[scaled.keys()]
         returns = np.log(portfolio) - np.log(portfolio.shift(1))
         returns = returns.iloc[1:, :]
-        weighted_returns = returns.mul(list(scaled.values()))   
+        weighted_returns = returns.mul(list(scaled.values()))
         cumulative_returns = weighted_returns.add(1).cumprod()
 
-        portfolio_returns = weighted_returns.dot(list(scaled.values()))   
-        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()        
+        portfolio_returns = weighted_returns.dot(list(scaled.values()))
+        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()
 
         sharpe = sharpe_ratio(portfolio_returns)
         drawdown, time_under_water = drawdown_and_time_under_water(
@@ -315,7 +315,7 @@ def output(
         for symbol, weight in sorted(scaled.items()):
             print(symbol, "\t% 5.3f" % (weight))
 
-    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)        
+    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)
     portfolio_cumulative_returns.columns=['SIM_PORT']
 
     total_daily_returns = weighted_returns.join(portfolio_returns)
