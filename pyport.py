@@ -72,7 +72,7 @@ def get_stock_data(symbol, start_date, end_date, write=False):
     """
     download stock price data from yahoo finance with optional write to csv
     """
-    print("Downloading {} {} - {} ...".format(symbol, start_date, end_date))
+    print(f"Downloading {symbol} {start_date} - {end_date} ...")
     symbol_df = yf.download(symbol, start=start_date, end=end_date)
     if write:
         symbol_df.to_csv(sym_file)
@@ -96,7 +96,7 @@ def update_store(symbol, df_symbol, target_start, target_end):
     #     hour=16, minute=5, second=0, microsecond=0) + timedelta(
     #     days=days_until_refresh)
 
-    sym_filepath = PATH + "{}.csv".format(symbol)
+    sym_filepath = PATH + f"{symbol}.csv"
 
     # mod_time = datetime.fromtimestamp(
     #         os.path.getmtime(sym_file)).replace(
@@ -262,8 +262,7 @@ def output(
     if not os.path.exists(CWD + "cache"):
         os.makedirs(CWD + "cache")
     output_file = (
-        CWD + "cache/" +
-        "{}-{}-{}.csv".format(inputs, optimization_model, time_period))
+        CWD + "cache/" + f"{inputs}-{optimization_model}-{time_period}".csv)
 
     writer = csv.writer(open(output_file, "w", newline=""))
     for key, val in scaled.items():
@@ -290,19 +289,18 @@ def output(
         portfolio_returns = portfolio_returns.to_frame()
         portfolio_returns.columns=['SIM_PORT']
 
-        print("\ntime period: {} to {} ({} yrs)".format(start_date, end_date,
-                                                        time_period))
+        print(f"\ntime period: {start_date} to {end_date} ({time_period} yrs)")
         print("inputs:", inputs)
         print("optimization methods:", optimization_model)
         print("sharpe ratio:", round(sharpe, 2))
-        print("cumulative return: {}%".format(
-            round(portfolio_cumulative_returns[-1] * 100, 2)))
-        print("drawdown: -{}, {} days to recover after {}".format(
-            round(mdd, 2), round(dd_time, 2),
-            drawdown.idxmax().date()))
+        print(f"cumulative return: { round(portfolio_cumulative_returns[-1] * 100, 2)}%")
+        max_drawdown = round(mdd, 2)
+        drawdown_time = round(dd_time, 2)
+        drawdown_date = drawdown.idxmax().date()
+        print(f"drawdown: -{max_drawdown}, {drawdown_time} days to recover after {drawdown_date}")
         print("run on:", datetime.now())
         print(
-            "portfolio allocation weights (min {:.2f}):".format(minimum_weight))
+            f"portfolio allocation weights (min {minimum_weight:.2f}):")
     else:
         print("max diversification recommended")
 
@@ -310,10 +308,10 @@ def output(
         for symbol, weight in sorted(scaled.items(),
                                      key=lambda kv: (kv[1], kv[0]),
                                      reverse=True):
-            print(symbol, "\t% 5.3f" % (weight))
+            print(symbol, f"\t{weight:5.3f}%")
     else:
         for symbol, weight in sorted(scaled.items()):
-            print(symbol, "\t% 5.3f" % (weight))
+            print(symbol, f"\t{weight:5.3f}%")
 
     portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)
     portfolio_cumulative_returns.columns=['SIM_PORT']
@@ -417,7 +415,7 @@ for times in sorted_times:
     for sym in symbols:
         if not sym:
             continue
-        sym_file = PATH + "{}.csv".format(sym)
+        sym_file = PATH + f"{sym}".csv
 
         if not os.path.exists(sym_file) or (times == sorted_times[0] and
                                             not config["use_cached_data"]):
@@ -464,12 +462,10 @@ for times in sorted_times:
     for optimization in config["models"][times]:
         optimization_method = optimization.lower()
 
-        print("\nCalculating {} {} allocation".format(
-            times, optimization_method.upper()))
+        print(f"\nCalculating {times} {optimization_method.upper()} allocation")
 
         INPUTS_LIST = ", ".join([str(i) for i in sorted(config["input_files"])])
-        model_cache_file = CWD + "cache/{}-{}-{}.csv".format(
-            INPUTS_LIST, optimization_method, times)
+        model_cache_file = CWD + f"cache/{INPUTS_LIST}-{optimization_method}-{times}.csv"
 
         if os.path.isfile(model_cache_file):
             with open(model_cache_file, newline="") as cached_data:
