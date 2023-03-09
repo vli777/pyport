@@ -262,7 +262,7 @@ def output(
     if not os.path.exists(CWD + "cache"):
         os.makedirs(CWD + "cache")
     output_file = (
-        CWD + "cache/" + f"{inputs}-{optimization_model}-{time_period}".csv)
+        CWD + "cache/" + f"{inputs}-{optimization_model}-{time_period}.csv")
 
     writer = csv.writer(open(output_file, "w", newline=""))
     for key, val in scaled.items():
@@ -415,7 +415,7 @@ for times in sorted_times:
     for sym in symbols:
         if not sym:
             continue
-        sym_file = PATH + f"{sym}".csv
+        sym_file = PATH + f"{sym}.csv"
 
         if not os.path.exists(sym_file) or (times == sorted_times[0] and
                                             not config["use_cached_data"]):
