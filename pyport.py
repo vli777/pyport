@@ -24,6 +24,7 @@ from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
 from portfoliolab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.backtest_statistics import sharpe_ratio, drawdown_and_time_under_water
+from pandas.tseries.holiday import USFederalHolidayCalendar
 
 # setup
 CONFIG_FILENAME = "config.yaml"
@@ -85,60 +86,47 @@ def update_store(symbol, df_symbol, target_start, target_end):
     returns appended df, bool if an update was made
     """
     update_status = False
-    # check if we can append today's data after 4pm
-    # if TODAY.weekday() < 5:
-    #     days_until_refresh = 1
-    # else:
-    #     days_until_refresh = timedelta(
-    #         days = 3 - TODAY.isoweekday() % 5).days
-
-    # next_time_to_refresh = datetime.now().replace(
-    #     hour=16, minute=5, second=0, microsecond=0) + timedelta(
-    #     days=days_until_refresh)
-
     sym_filepath = PATH + f"{symbol}.csv"
-
-    # mod_time = datetime.fromtimestamp(
-    #         os.path.getmtime(sym_file)).replace(
-    #         hour=16, minute=0, second=0, microsecond=0)
 
     # check if start and end dates are covered by the symbol data
     first_date = df_symbol.index[0]
-    last_date = df_symbol.index[-1]
-    if not isinstance(first_date, str):
-        first_date_str = date_to_str(first_date)
+    end_date = df_symbol.index[-1]
 
-    if earlier_date(target_start, first_date_str):
-        # handle time selections starting on weekends
-        if str_to_date(target_start).weekday() < 5 and earlier_date(
-                target_start, first_date):
-            appended_data = get_stock_data(symbol,
-                                           target_start,
-                                           first_date_str,
-                                           write=False)
-            df_symbol = appended_data.append(df_symbol)
-            # save df to file
-            df_symbol.to_csv(sym_filepath)
-            # update change status
-            update_status = True
+    first_date_str = date_to_str(first_date)
+    end_date_str = date_to_str(end_date)
 
-    # if weekday, dl latest data & append to csv
-    while target_end.weekday() >= 5:
-        target_end -= timedelta(days=1)
-    if target_end.hour < 16:
-        target_end -= timedelta(days=1)
+    holidays = USFederalHolidayCalendar().holidays(start=first_date_str, end=end_date_str).to_pydatetime()
 
-    adj_last_date = last_date.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    # if downloading new content, check to make sure it's a weekday and not a holiday
+    if earlier_date(target_start, first_date):
+        while target_start.weekday() > 5 and target_start.strftime('%Y-%m-%d') not in holidays:
+            target_start -= timedelta(days=1)
+        # append data from new start date to the first date prev recorded in store
+        appended_data = get_stock_data(symbol,
+                                        target_start,
+                                        first_date_str,
+                                        write=False)
+        df_symbol = appended_data.append(df_symbol)
+        # save df to file
+        df_symbol.to_csv(sym_filepath)
+        # update change status
+        update_status = True
+
+    adj_last_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
     adj_target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    if last_date.weekday() < 5 and earlier_date(adj_last_date, adj_target_end):
+    # if new target end date is > prev data store, append only dates not present in store
+    if earlier_date(adj_last_date, adj_target_end):
+        while target_end.weekday() > 5 and target_end.strftime('%Y-%m-%d') not in holidays:
+            target_end -= timedelta(days=1)
+    
         appended_data = get_stock_data(symbol,
-                                    last_date + timedelta(days=1),
+                                    end_date + timedelta(days=1),
                                     target_end,
                                     write=False)
         appended_data.reset_index(inplace=True)
 
-        if appended_data.shape[0] > 0 and last_date != appended_data['Date'].iloc[0]:
+        if appended_data.shape[0] > 0 and end_date != appended_data['Date'].iloc[0]:
             appended_data.to_csv(sym_filepath, mode="a", index=False, header=False)
             # update df
             appended_data = appended_data.set_index("Date")
