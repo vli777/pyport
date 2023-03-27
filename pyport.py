@@ -24,6 +24,7 @@ from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
 from portfoliolab.online_portfolio_selection.scorn import SCORN
 from mlfinlab.backtest_statistics import sharpe_ratio, drawdown_and_time_under_water
+from pandas.tseries.holiday import USFederalHolidayCalendar
 
 # setup
 CONFIG_FILENAME = "config.yaml"
@@ -72,7 +73,7 @@ def get_stock_data(symbol, start_date, end_date, write=False):
     """
     download stock price data from yahoo finance with optional write to csv
     """
-    print("Downloading {} {} - {} ...".format(symbol, start_date, end_date))
+    print(f"Downloading {symbol} {start_date} - {end_date} ...")
     symbol_df = yf.download(symbol, start=start_date, end=end_date)
     if write:
         symbol_df.to_csv(sym_file)
@@ -85,60 +86,47 @@ def update_store(symbol, df_symbol, target_start, target_end):
     returns appended df, bool if an update was made
     """
     update_status = False
-    # check if we can append today's data after 4pm
-    # if TODAY.weekday() < 5:
-    #     days_until_refresh = 1
-    # else:
-    #     days_until_refresh = timedelta(
-    #         days = 3 - TODAY.isoweekday() % 5).days
-
-    # next_time_to_refresh = datetime.now().replace(
-    #     hour=16, minute=5, second=0, microsecond=0) + timedelta(
-    #     days=days_until_refresh)
-
-    sym_filepath = PATH + "{}.csv".format(symbol)
-
-    # mod_time = datetime.fromtimestamp(
-    #         os.path.getmtime(sym_file)).replace(
-    #         hour=16, minute=0, second=0, microsecond=0)
+    sym_filepath = PATH + f"{symbol}.csv"
 
     # check if start and end dates are covered by the symbol data
     first_date = df_symbol.index[0]
-    last_date = df_symbol.index[-1]
-    if not isinstance(first_date, str):
-        first_date_str = date_to_str(first_date)
+    end_date = df_symbol.index[-1]
 
-    if earlier_date(target_start, first_date_str):
-        # handle time selections starting on weekends
-        if str_to_date(target_start).weekday() < 5 and earlier_date(
-                target_start, first_date):
-            appended_data = get_stock_data(symbol,
-                                           target_start,
-                                           first_date_str,
-                                           write=False)
-            df_symbol = appended_data.append(df_symbol)
-            # save df to file
-            df_symbol.to_csv(sym_filepath)
-            # update change status
-            update_status = True
+    first_date_str = date_to_str(first_date)
+    end_date_str = date_to_str(end_date)
 
-    # if weekday, dl latest data & append to csv
-    while target_end.weekday() >= 5:
-        target_end -= timedelta(days=1)
-    if target_end.hour < 16:
-        target_end -= timedelta(days=1)
+    holidays = USFederalHolidayCalendar().holidays(start=first_date_str, end=end_date_str).to_pydatetime()
 
-    adj_last_date = last_date.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    # if downloading new content, check to make sure it's a weekday and not a holiday
+    if earlier_date(target_start, first_date):
+        while target_start.weekday() > 5 and target_start.strftime('%Y-%m-%d') not in holidays:
+            target_start -= timedelta(days=1)
+        # append data from new start date to the first date prev recorded in store
+        appended_data = get_stock_data(symbol,
+                                        target_start,
+                                        first_date_str,
+                                        write=False)
+        df_symbol = appended_data.append(df_symbol)
+        # save df to file
+        df_symbol.to_csv(sym_filepath)
+        # update change status
+        update_status = True
+
+    adj_last_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
     adj_target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    if last_date.weekday() < 5 and earlier_date(adj_last_date, adj_target_end):
+    # if new target end date is > prev data store, append only dates not present in store
+    if earlier_date(adj_last_date, adj_target_end):
+        while target_end.weekday() > 5 and target_end.strftime('%Y-%m-%d') not in holidays:
+            target_end -= timedelta(days=1)
+    
         appended_data = get_stock_data(symbol,
-                                    last_date + timedelta(days=1),
+                                    end_date + timedelta(days=1),
                                     target_end,
                                     write=False)
         appended_data.reset_index(inplace=True)
 
-        if appended_data.shape[0] > 0 and last_date != appended_data['Date'].iloc[0]:
+        if appended_data.shape[0] > 0 and end_date != appended_data['Date'].iloc[0]:
             appended_data.to_csv(sym_filepath, mode="a", index=False, header=False)
             # update df
             appended_data = appended_data.set_index("Date")
@@ -249,9 +237,9 @@ def output(
 
     scaled = scale_to_one(clean_weights)
 
-    if (len(scaled) == 1 or any(np.isnan(val) for val in scaled.values()) or
-            max(scaled.values()) < minimum_weight):
-        scaled = {"SPY": 1}
+    # if (len(scaled) == 1 or any(np.isnan(val) for val in scaled.values()) or
+    #         max(scaled.values()) < minimum_weight):
+    #     scaled = {"SPY": 1}
     while len(scaled) > 0 and min(scaled.values()) < minimum_weight or len(scaled) > max_size:
         clipped = clip_by_weight(scaled, minimum_weight)
         scaled = scale_to_one(clipped)
@@ -262,8 +250,7 @@ def output(
     if not os.path.exists(CWD + "cache"):
         os.makedirs(CWD + "cache")
     output_file = (
-        CWD + "cache/" +
-        "{}-{}-{}.csv".format(inputs, optimization_model, time_period))
+        CWD + "cache/" + f"{inputs}-{optimization_model}-{time_period}.csv")
 
     writer = csv.writer(open(output_file, "w", newline=""))
     for key, val in scaled.items():
@@ -276,11 +263,11 @@ def output(
         portfolio = data[scaled.keys()]
         returns = np.log(portfolio) - np.log(portfolio.shift(1))
         returns = returns.iloc[1:, :]
-        weighted_returns = returns.mul(list(scaled.values()))   
+        weighted_returns = returns.mul(list(scaled.values()))
         cumulative_returns = weighted_returns.add(1).cumprod()
 
-        portfolio_returns = weighted_returns.dot(list(scaled.values()))   
-        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()        
+        portfolio_returns = weighted_returns.dot(list(scaled.values()))
+        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()
 
         sharpe = sharpe_ratio(portfolio_returns)
         drawdown, time_under_water = drawdown_and_time_under_water(
@@ -290,19 +277,18 @@ def output(
         portfolio_returns = portfolio_returns.to_frame()
         portfolio_returns.columns=['SIM_PORT']
 
-        print("\ntime period: {} to {} ({} yrs)".format(start_date, end_date,
-                                                        time_period))
+        print(f"\ntime period: {start_date} to {end_date} ({time_period} yrs)")
         print("inputs:", inputs)
         print("optimization methods:", optimization_model)
         print("sharpe ratio:", round(sharpe, 2))
-        print("cumulative return: {}%".format(
-            round(portfolio_cumulative_returns[-1] * 100, 2)))
-        print("drawdown: -{}, {} days to recover after {}".format(
-            round(mdd, 2), round(dd_time, 2),
-            drawdown.idxmax().date()))
+        print(f"cumulative return: { round(portfolio_cumulative_returns[-1] * 100, 2)}%")
+        max_drawdown = round(mdd, 2)
+        drawdown_time = round(dd_time, 2)
+        drawdown_date = drawdown.idxmax().date()
+        print(f"drawdown: -{max_drawdown}, {drawdown_time} days to recover after {drawdown_date}")
         print("run on:", datetime.now())
         print(
-            "portfolio allocation weights (min {:.2f}):".format(minimum_weight))
+            f"portfolio allocation weights (min {minimum_weight:.2f}):")
     else:
         print("max diversification recommended")
 
@@ -310,12 +296,12 @@ def output(
         for symbol, weight in sorted(scaled.items(),
                                      key=lambda kv: (kv[1], kv[0]),
                                      reverse=True):
-            print(symbol, "\t% 5.3f" % (weight))
+            print(symbol, f"\t{weight*100:.2f} %")
     else:
         for symbol, weight in sorted(scaled.items()):
-            print(symbol, "\t% 5.3f" % (weight))
+            print(symbol, f"\t{weight* 100:.2f} %")
 
-    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)        
+    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)
     portfolio_cumulative_returns.columns=['SIM_PORT']
 
     total_daily_returns = weighted_returns.join(portfolio_returns)
@@ -417,7 +403,7 @@ for times in sorted_times:
     for sym in symbols:
         if not sym:
             continue
-        sym_file = PATH + "{}.csv".format(sym)
+        sym_file = PATH + f"{sym}.csv"
 
         if not os.path.exists(sym_file) or (times == sorted_times[0] and
                                             not config["use_cached_data"]):
@@ -464,12 +450,10 @@ for times in sorted_times:
     for optimization in config["models"][times]:
         optimization_method = optimization.lower()
 
-        print("\nCalculating {} {} allocation".format(
-            times, optimization_method.upper()))
+        print(f"\nCalculating {times} {optimization_method.upper()} allocation")
 
         INPUTS_LIST = ", ".join([str(i) for i in sorted(config["input_files"])])
-        model_cache_file = CWD + "cache/{}-{}-{}.csv".format(
-            INPUTS_LIST, optimization_method, times)
+        model_cache_file = CWD + f"cache/{INPUTS_LIST}-{optimization_method}-{times}.csv"
 
         if os.path.isfile(model_cache_file):
             with open(model_cache_file, newline="") as cached_data:
