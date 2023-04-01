@@ -45,14 +45,10 @@ def earlier_date(date_a, date_b, before=True):
     """
     return boolean if date_a < or > date_b
     """
-    if isinstance(date_a, str):
-        date_a = str_to_date(date_a)
-    if isinstance(date_b, str):
-        date_b = str_to_date(date_b)
     if before:
-        return date_a < date_b
+        return date_a.time() < date_b.time()
     else:
-        return date_a > date_b
+        return date_a.time() > date_b.time()
 
 
 def str_to_date(date_str, fmt="%Y-%m-%d"):
@@ -89,19 +85,20 @@ def update_store(symbol, df_symbol, target_start, target_end):
     sym_filepath = PATH + f"{symbol}.csv"
 
     # check if start and end dates are covered by the symbol data
-    first_date = df_symbol.index[0]
-    end_date = df_symbol.index[-1]
+    first_date = df_symbol.index[0].replace(hour=0, minute=0, second=0, microsecond=0)    
+    end_date = df_symbol.index[-1].replace(hour=0, minute=0, second=0, microsecond=0)    
 
     first_date_str = date_to_str(first_date)
     end_date_str = date_to_str(end_date)
 
     target_start = datetime.strptime(target_start, '%Y-%m-%d')
+    target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
 
     holidays = USFederalHolidayCalendar().holidays(start=first_date_str, end=end_date_str).to_pydatetime()
 
     # if downloading new content, check to make sure it's a weekday and not a holiday
     if earlier_date(target_start, first_date):
-        while target_start.weekday() > 5 and target_start.strftime('%Y-%m-%d') not in holidays:
+        while target_start.weekday() > 5 and target_start not in holidays:
             target_start -= timedelta(days=1)
         # append data from new start date to the first date prev recorded in store
         appended_data = get_stock_data(symbol,
@@ -112,14 +109,11 @@ def update_store(symbol, df_symbol, target_start, target_end):
         # save df to file
         df_symbol.to_csv(sym_filepath)
         # update change status
-        update_status = True
-
-    adj_last_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    adj_target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
+        update_status = True    
 
     # if new target end date is > prev data store, append only dates not present in store
-    if earlier_date(adj_last_date, adj_target_end):
-        while target_end.weekday() > 5 and target_end.strftime('%Y-%m-%d') not in holidays:
+    if earlier_date(end_date, target_end):
+        while target_end.weekday() > 5 and target_end not in holidays:
             target_end -= timedelta(days=1)
     
         appended_data = get_stock_data(symbol,
