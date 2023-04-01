@@ -95,6 +95,8 @@ def update_store(symbol, df_symbol, target_start, target_end):
     first_date_str = date_to_str(first_date)
     end_date_str = date_to_str(end_date)
 
+    target_start = datetime.strptime(target_start, '%Y-%m-%d')
+
     holidays = USFederalHolidayCalendar().holidays(start=first_date_str, end=end_date_str).to_pydatetime()
 
     # if downloading new content, check to make sure it's a weekday and not a holiday
