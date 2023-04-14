@@ -292,10 +292,10 @@ def output(
         for symbol, weight in sorted(scaled.items(),
                                      key=lambda kv: (kv[1], kv[0]),
                                      reverse=True):
-            print(symbol, f"\t{weight*100:.2f} %")
+            print(symbol, f"\t{weight:.3f}")
     else:
         for symbol, weight in sorted(scaled.items()):
-            print(symbol, f"\t{weight* 100:.2f} %")
+            print(symbol, f"\t{weight:.3f}")
 
     portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)
     portfolio_cumulative_returns.columns=['SIM_PORT']
