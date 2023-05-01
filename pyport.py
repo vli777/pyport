@@ -259,30 +259,21 @@ def output(
         portfolio = data[scaled.keys()]
         returns = np.log(portfolio) - np.log(portfolio.shift(1))
         returns = returns.iloc[1:, :]
-        weighted_returns = returns.mul(list(scaled.values()))
-        cumulative_returns = weighted_returns.add(1).cumprod()
+        weights_vector = list(scaled.values())
 
-        portfolio_returns = weighted_returns.dot(list(scaled.values()))
-        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()
+        weighted_returns = returns.mul(weights_vector)   
+        cumulative_returns = weighted_returns.add(1).cumprod() 
 
-        sharpe = sharpe_ratio(portfolio_returns)
-        drawdown, time_under_water = drawdown_and_time_under_water(
-            portfolio_cumulative_returns)
-        mdd, dd_time = drawdown.max(), time_under_water[drawdown.idxmax()] * 252
+        portfolio_returns = weighted_returns.apply(np.sum, axis=1)      
+        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()        
 
-        portfolio_returns = portfolio_returns.to_frame()
-        portfolio_returns.columns=['SIM_PORT']
+        sharpe = sharpe_ratio(portfolio_returns)    
 
         print(f"\ntime period: {start_date} to {end_date} ({time_period} yrs)")
         print("inputs:", inputs)
         print("optimization methods:", optimization_model)
         print("sharpe ratio:", round(sharpe, 2))
-        print(f"cumulative return: { round(portfolio_cumulative_returns[-1] * 100, 2)}%")
-        max_drawdown = round(mdd, 2)
-        drawdown_time = round(dd_time, 2)
-        drawdown_date = drawdown.idxmax().date()
-        print(f"drawdown: -{max_drawdown}, {drawdown_time} days to recover after {drawdown_date}")
-        print("run on:", datetime.now())
+        print(f"cumulative return: { round((portfolio_cumulative_returns[-1] - 1) * 100, 2)}%")
         print(
             f"portfolio allocation weights (min {minimum_weight:.2f}):")
     else:
@@ -297,13 +288,15 @@ def output(
         for symbol, weight in sorted(scaled.items()):
             print(symbol, f"\t{weight:.3f}")
 
-    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)
+    portfolio_returns = portfolio_returns.to_frame()
+    portfolio_returns.columns=['SIM_PORT']
+
+    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame()
     portfolio_cumulative_returns.columns=['SIM_PORT']
 
-    total_daily_returns = weighted_returns.join(portfolio_returns)
-    total_cumulative_returns = cumulative_returns.join(portfolio_cumulative_returns)
-
-    return total_daily_returns, total_cumulative_returns
+    all_daily_returns = returns.join(portfolio_returns)
+    all_cumulative_returns = ((portfolio_cumulative_returns) - 1).join(returns.add(1).cumprod() - 1)    
+    return all_daily_returns, all_cumulative_returns
 
 def plot_graphs(daily_returns, cumulative_returns):
     """
