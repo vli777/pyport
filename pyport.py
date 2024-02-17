@@ -40,21 +40,6 @@ if not os.path.exists(config["folder"]):
 CWD = os.getcwd() + "/"
 PATH = CWD + config["folder"] + "/"
 
-
-def earlier_date(date_a, date_b, before=True):
-    """
-    return boolean if date_a < or > date_b
-    """
-    if isinstance(date_a, str):
-        date_a = str_to_date(date_a)
-    if isinstance(date_b, str):
-        date_b = str_to_date(date_b)
-    if before:
-        return date_a < date_b
-    else:
-        return date_a > date_b
-
-
 def str_to_date(date_str, fmt="%Y-%m-%d"):
     """
     convert string to datetime
@@ -89,17 +74,20 @@ def update_store(symbol, df_symbol, target_start, target_end):
     sym_filepath = PATH + f"{symbol}.csv"
 
     # check if start and end dates are covered by the symbol data
-    first_date = df_symbol.index[0]
-    end_date = df_symbol.index[-1]
-
+    first_date = df_symbol.index[0].replace(hour=0, minute=0, second=0, microsecond=0)    
+    end_date = df_symbol.index[-1].replace(hour=0, minute=0, second=0, microsecond=0)    
+    
     first_date_str = date_to_str(first_date)
     end_date_str = date_to_str(end_date)
+
+    target_start = datetime.strptime(target_start, '%Y-%m-%d')
+    target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
 
     holidays = USFederalHolidayCalendar().holidays(start=first_date_str, end=end_date_str).to_pydatetime()
 
     # if downloading new content, check to make sure it's a weekday and not a holiday
-    if earlier_date(target_start, first_date):
-        while target_start.weekday() > 5 and target_start.strftime('%Y-%m-%d') not in holidays:
+    if target_start.time() < first_date.time():
+        while target_start.weekday() > 5 and target_start not in holidays:
             target_start -= timedelta(days=1)
         # append data from new start date to the first date prev recorded in store
         appended_data = get_stock_data(symbol,
@@ -110,16 +98,14 @@ def update_store(symbol, df_symbol, target_start, target_end):
         # save df to file
         df_symbol.to_csv(sym_filepath)
         # update change status
-        update_status = True
-
-    adj_last_date = end_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    adj_target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
+        update_status = True    
 
     # if new target end date is > prev data store, append only dates not present in store
-    if earlier_date(adj_last_date, adj_target_end):
-        while target_end.weekday() > 5 and target_end.strftime('%Y-%m-%d') not in holidays:
+    if end_date.time() < target_end.time():
+        print(end_date, target_end)
+        while target_end.weekday() > 5 and target_end not in holidays:
             target_end -= timedelta(days=1)
-    
+             
         appended_data = get_stock_data(symbol,
                                     end_date + timedelta(days=1),
                                     target_end,
@@ -263,30 +249,24 @@ def output(
         portfolio = data[scaled.keys()]
         returns = np.log(portfolio) - np.log(portfolio.shift(1))
         returns = returns.iloc[1:, :]
-        weighted_returns = returns.mul(list(scaled.values()))
-        cumulative_returns = weighted_returns.add(1).cumprod()
+        weights_vector = list(scaled.values())
 
-        portfolio_returns = weighted_returns.dot(list(scaled.values()))
-        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()
+        weighted_returns = returns.mul(weights_vector)   
+        cumulative_returns = weighted_returns.add(1).cumprod() 
 
-        sharpe = sharpe_ratio(portfolio_returns)
-        drawdown, time_under_water = drawdown_and_time_under_water(
-            portfolio_cumulative_returns)
-        mdd, dd_time = drawdown.max(), time_under_water[drawdown.idxmax()] * 252
+        portfolio_returns = weighted_returns.apply(np.sum, axis=1)      
+        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()        
 
-        portfolio_returns = portfolio_returns.to_frame()
-        portfolio_returns.columns=['SIM_PORT']
+        try:
+            sharpe = sharpe_ratio(portfolio_returns)    
+        except:
+            sharpe = 0
 
         print(f"\ntime period: {start_date} to {end_date} ({time_period} yrs)")
         print("inputs:", inputs)
         print("optimization methods:", optimization_model)
         print("sharpe ratio:", round(sharpe, 2))
-        print(f"cumulative return: { round(portfolio_cumulative_returns[-1] * 100, 2)}%")
-        max_drawdown = round(mdd, 2)
-        drawdown_time = round(dd_time, 2)
-        drawdown_date = drawdown.idxmax().date()
-        print(f"drawdown: -{max_drawdown}, {drawdown_time} days to recover after {drawdown_date}")
-        print("run on:", datetime.now())
+        print(f"cumulative return: { round((portfolio_cumulative_returns[-1] - 1) * 100, 2)}%")
         print(
             f"portfolio allocation weights (min {minimum_weight:.2f}):")
     else:
@@ -296,18 +276,20 @@ def output(
         for symbol, weight in sorted(scaled.items(),
                                      key=lambda kv: (kv[1], kv[0]),
                                      reverse=True):
-            print(symbol, f"\t{weight*100:.2f} %")
+            print(symbol, f"\t{weight:.3f}")
     else:
         for symbol, weight in sorted(scaled.items()):
-            print(symbol, f"\t{weight* 100:.2f} %")
+            print(symbol, f"\t{weight:.3f}")
 
-    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame().fillna(1)
+    portfolio_returns = portfolio_returns.to_frame()
+    portfolio_returns.columns=['SIM_PORT']
+
+    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame()
     portfolio_cumulative_returns.columns=['SIM_PORT']
 
-    total_daily_returns = weighted_returns.join(portfolio_returns)
-    total_cumulative_returns = cumulative_returns.join(portfolio_cumulative_returns)
-
-    return total_daily_returns, total_cumulative_returns
+    all_daily_returns = returns.join(portfolio_returns)
+    all_cumulative_returns = ((portfolio_cumulative_returns) - 1).join(returns.add(1).cumprod() - 1)    
+    return all_daily_returns, all_cumulative_returns
 
 def plot_graphs(daily_returns, cumulative_returns):
     """
@@ -371,17 +353,24 @@ def plot_graphs(daily_returns, cumulative_returns):
 # MAIN
 filtered_times = {k for k in config["models"].keys() if config["models"][k]}
 sorted_times = sorted(filtered_times, reverse=True)
+MIN_START = None 
 
 for times in sorted_times:
     if not config["models"][times]:
         continue
 
     START_DATE = date_to_str(TODAY +
-                             relativedelta(months=-round(float(times) * 12)))
+                             relativedelta(months=-round(float(times) * 12)))    
     END_DATE = date_to_str(TODAY + relativedelta(days=1))
+    if not MIN_START:
+        MIN_START = START_DATE
 
     # get ticker symbols
+    if not config["input_files"]:
+        pass
+
     symbols = []
+    
     for input_file in config["input_files"]:
         input_file += ".csv"
         with open(CWD + input_file) as file:
@@ -436,7 +425,7 @@ for times in sorted_times:
     # store df for graphing
     if times == sorted_times[0]:
         dfs["data"] = df
-        dfs["start"] = START_DATE
+        dfs["start"] = MIN_START
         dfs["end"] = END_DATE
 
     if config["test_mode"]:
