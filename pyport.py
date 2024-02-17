@@ -40,17 +40,6 @@ if not os.path.exists(config["folder"]):
 CWD = os.getcwd() + "/"
 PATH = CWD + config["folder"] + "/"
 
-
-def earlier_date(date_a, date_b, before=True):
-    """
-    return boolean if date_a < or > date_b
-    """
-    if before:
-        return date_a.time() < date_b.time()
-    else:
-        return date_a.time() > date_b.time()
-
-
 def str_to_date(date_str, fmt="%Y-%m-%d"):
     """
     convert string to datetime
@@ -87,7 +76,7 @@ def update_store(symbol, df_symbol, target_start, target_end):
     # check if start and end dates are covered by the symbol data
     first_date = df_symbol.index[0].replace(hour=0, minute=0, second=0, microsecond=0)    
     end_date = df_symbol.index[-1].replace(hour=0, minute=0, second=0, microsecond=0)    
-
+    
     first_date_str = date_to_str(first_date)
     end_date_str = date_to_str(end_date)
 
@@ -97,7 +86,7 @@ def update_store(symbol, df_symbol, target_start, target_end):
     holidays = USFederalHolidayCalendar().holidays(start=first_date_str, end=end_date_str).to_pydatetime()
 
     # if downloading new content, check to make sure it's a weekday and not a holiday
-    if earlier_date(target_start, first_date):
+    if target_start.time() < first_date.time():
         while target_start.weekday() > 5 and target_start not in holidays:
             target_start -= timedelta(days=1)
         # append data from new start date to the first date prev recorded in store
@@ -112,10 +101,11 @@ def update_store(symbol, df_symbol, target_start, target_end):
         update_status = True    
 
     # if new target end date is > prev data store, append only dates not present in store
-    if earlier_date(end_date, target_end):
+    if end_date.time() < target_end.time():
+        print(end_date, target_end)
         while target_end.weekday() > 5 and target_end not in holidays:
             target_end -= timedelta(days=1)
-    
+             
         appended_data = get_stock_data(symbol,
                                     end_date + timedelta(days=1),
                                     target_end,
@@ -267,7 +257,10 @@ def output(
         portfolio_returns = weighted_returns.apply(np.sum, axis=1)      
         portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()        
 
-        sharpe = sharpe_ratio(portfolio_returns)    
+        try:
+            sharpe = sharpe_ratio(portfolio_returns)    
+        except:
+            sharpe = 0
 
         print(f"\ntime period: {start_date} to {end_date} ({time_period} yrs)")
         print("inputs:", inputs)
@@ -360,17 +353,24 @@ def plot_graphs(daily_returns, cumulative_returns):
 # MAIN
 filtered_times = {k for k in config["models"].keys() if config["models"][k]}
 sorted_times = sorted(filtered_times, reverse=True)
+MIN_START = None 
 
 for times in sorted_times:
     if not config["models"][times]:
         continue
 
     START_DATE = date_to_str(TODAY +
-                             relativedelta(months=-round(float(times) * 12)))
+                             relativedelta(months=-round(float(times) * 12)))    
     END_DATE = date_to_str(TODAY + relativedelta(days=1))
+    if not MIN_START:
+        MIN_START = START_DATE
 
     # get ticker symbols
+    if not config["input_files"]:
+        pass
+
     symbols = []
+    
     for input_file in config["input_files"]:
         input_file += ".csv"
         with open(CWD + input_file) as file:
@@ -425,7 +425,7 @@ for times in sorted_times:
     # store df for graphing
     if times == sorted_times[0]:
         dfs["data"] = df
-        dfs["start"] = START_DATE
+        dfs["start"] = MIN_START
         dfs["end"] = END_DATE
 
     if config["test_mode"]:
