@@ -2,13 +2,16 @@
 Pyport - portfolio optimization
 """
 import os
+import re
 import csv
 from datetime import datetime, timedelta
 from collections import Counter
+import sys
 from dateutil.relativedelta import relativedelta
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import pytz
 import yfinance as yf
 import yaml
 from playsound import playsound
@@ -35,10 +38,23 @@ with open(CONFIG_FILENAME) as config_file:
 stk, avg, dfs = {}, {}, {}
 TODAY = datetime.today()
 
+
 if not os.path.exists(config["folder"]):
     os.makedirs(config["folder"])
 CWD = os.getcwd() + "/"
 PATH = CWD + config["folder"] + "/"
+
+def cleanup_cache(cache_dir, max_age_hours):
+    now = datetime.now()
+    max_age = timedelta(hours=max_age_hours)
+
+    for filename in os.listdir(cache_dir):
+        filepath = os.path.join(cache_dir, filename)
+        if os.path.isfile(filepath):
+            creation_time = datetime.fromtimestamp(os.path.getctime(filepath))
+            if now - creation_time > max_age:
+                os.remove(filepath)
+                print(f"Deleted old file: {filename}")
 
 def str_to_date(date_str, fmt="%Y-%m-%d"):
     """
@@ -54,74 +70,30 @@ def date_to_str(date, fmt="%Y-%m-%d"):
     return date.strftime(fmt)
 
 
-def get_stock_data(symbol, start_date, end_date, write=False):
+def get_stock_data(symbol, start_date, end_date):
     """
     download stock price data from yahoo finance with optional write to csv
     """
     print(f"Downloading {symbol} {start_date} - {end_date} ...")
     symbol_df = yf.download(symbol, start=start_date, end=end_date)
-    if write:
-        symbol_df.to_csv(sym_file)
     return symbol_df
 
-
-def update_store(symbol, df_symbol, target_start, target_end):
-    """
-    checks if the saved stock data is up to date, appends to symbol df and to saved csv
-    returns appended df, bool if an update was made
-    """
-    update_status = False
-    sym_filepath = PATH + f"{symbol}.csv"
-
-    # check if start and end dates are covered by the symbol data
-    first_date = df_symbol.index[0].replace(hour=0, minute=0, second=0, microsecond=0)    
-    end_date = df_symbol.index[-1].replace(hour=0, minute=0, second=0, microsecond=0)    
+def update_store(symbol, symbol_df, start_date, end_date):
+    new_data = get_stock_data(symbol, start_date=start_date, end_date=end_date)
     
-    first_date_str = date_to_str(first_date)
-    end_date_str = date_to_str(end_date)
+    # Append new data to the CSV file
+    csv_filename = PATH + f"{symbol}.csv"
+    
+    with open(csv_filename, 'a', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        # Write each row with the index included
+        for index, row in new_data.iterrows():
+            index_date_string = index.strftime('%Y-%m-%d')  # Convert index to date string
+            writer.writerow([index_date_string] + row.tolist())
 
-    target_start = datetime.strptime(target_start, '%Y-%m-%d')
-    target_end = target_end.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    holidays = USFederalHolidayCalendar().holidays(start=first_date_str, end=end_date_str).to_pydatetime()
-
-    # if downloading new content, check to make sure it's a weekday and not a holiday
-    if target_start.time() < first_date.time():
-        while target_start.weekday() > 5 and target_start not in holidays:
-            target_start -= timedelta(days=1)
-        # append data from new start date to the first date prev recorded in store
-        appended_data = get_stock_data(symbol,
-                                        target_start,
-                                        first_date_str,
-                                        write=False)
-        df_symbol = appended_data.append(df_symbol)
-        # save df to file
-        df_symbol.to_csv(sym_filepath)
-        # update change status
-        update_status = True    
-
-    # if new target end date is > prev data store, append only dates not present in store
-    if end_date.time() < target_end.time():
-        print(end_date, target_end)
-        while target_end.weekday() > 5 and target_end not in holidays:
-            target_end -= timedelta(days=1)
-             
-        appended_data = get_stock_data(symbol,
-                                    end_date + timedelta(days=1),
-                                    target_end,
-                                    write=False)
-        appended_data.reset_index(inplace=True)
-
-        if appended_data.shape[0] > 0 and end_date != appended_data['Date'].iloc[0]:
-            appended_data.to_csv(sym_filepath, mode="a", index=False, header=False)
-            # update df
-            appended_data = appended_data.set_index("Date")
-            df_symbol = df_symbol.append(appended_data)
-            # update change status
-            update_status = True
-
-    return df_symbol, update_status
-
+    # Update symbol_df with new data
+    symbol_df = pd.concat([symbol_df, new_data], axis=0)    
+    return symbol_df
 
 def scale_to_one(weights_dict):
     """
@@ -349,67 +321,155 @@ def plot_graphs(daily_returns, cumulative_returns):
 
             fig2.show()
 
+def get_last_date(csv_filename):
+    with open(csv_filename, 'r') as file:
+        lines = file.readlines()
+        # Iterate over lines in reverse order
+        for line in reversed(lines):
+            line = line.strip()
+            if line:  # Check if the line is not empty
+                last_date_str = line.split(',')[0]  # Assuming the date is the first field
+                try:
+                    return datetime.strptime(last_date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    print(f"Invalid date format: {last_date_str}")
+                    # Continue iterating if the date format is invalid
+                    continue
+    return None
+
+def is_weekday(date):
+    return date.weekday() < 5  # Monday to Friday are weekdays (0 to 4)
+
+def is_after_4pm_est():
+    est = pytz.timezone('US/Eastern')
+    now = datetime.now(est)
+    return now.hour >= 16  # Check if it's after 4 PM EST
+
+def is_holiday(date):
+    # Define a holiday calendar
+    cal = USFederalHolidayCalendar()
+
+    # Get the holidays for the year of the given date
+    holidays = cal.holidays(start=date, end=date).to_pydatetime()    
+    # Check if the input date is in the list of holidays    
+    return date in holidays
+    
+def get_non_holiday_weekdays(start_date, end_date):            
+    first_valid_date = start_date
+    last_valid_date = end_date
+    
+    while not is_weekday(last_valid_date) or is_holiday(last_valid_date):
+        last_valid_date -= timedelta(days=1)
+    
+    first_valid_date = start_date
+    while first_valid_date >= end_date and \
+          not is_weekday(first_valid_date) or is_holiday(first_valid_date):
+        first_valid_date -= timedelta(days=1)
+
+    return first_valid_date, last_valid_date
+
+def is_valid_ticker(symbol):
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        return True
+    except:
+        return False
+
+def process_input_files(input_file_paths):
+    symbols = set()
+    for input_file in input_file_paths:
+        with open(input_file + ".csv", 'r') as file:
+            for line in file:
+                line = line.strip().upper()
+                if re.match("^[A-Z]+$", line) and not line.startswith("#"):
+                    if is_valid_ticker(line):
+                        symbols.add(line)
+                    else:
+                        print(f"Ignoring invalid ticker symbol: {line}")
+    return sorted(symbols)
+   
+def calculate_start_end_dates(time):
+    # Get today's date
+    today = datetime.now().date()
+
+    start_date_from_today = today - timedelta(days=time * 365)
+    
+    start_date, end_date = get_non_holiday_weekdays(start_date_from_today, today)
+
+    # Return calculated dates
+    return start_date, end_date
 
 # MAIN
 filtered_times = {k for k in config["models"].keys() if config["models"][k]}
 sorted_times = sorted(filtered_times, reverse=True)
-MIN_START = None 
 
-for times in sorted_times:
-    if not config["models"][times]:
+for years in sorted_times:
+    if not config["models"][years]:
         continue
-
-    START_DATE = date_to_str(TODAY +
-                             relativedelta(months=-round(float(times) * 12)))    
-    END_DATE = date_to_str(TODAY + relativedelta(days=1))
-    if not MIN_START:
-        MIN_START = START_DATE
-
+    
+    start_date, end_date = calculate_start_end_dates(years)    
     # get ticker symbols
     if not config["input_files"]:
-        pass
-
-    symbols = []
+        pass    
+    input_files = config["input_files"] 
+    input_files_folder = config.get("input_files_folder", "watchlists")
+    input_file_paths = [os.path.join(input_files_folder, file) for file in input_files]
+    symbols = process_input_files(input_file_paths)
     
-    for input_file in config["input_files"]:
-        input_file += ".csv"
-        with open(CWD + input_file) as file:
-            for line in file:
-                name = line.rstrip()
-                # name = name.split('.')[0]
-                if (not name.startswith("#") and name[:1].isalpha() and
-                        name.upper()
-                        not in [x.upper() for x in config["ignored_symbols"]]):
-                    symbols.append(name.upper())
-    symbols = sorted(set(symbols))
     if config["test_mode"]:
         print(symbols)
 
     # import data to df
     df = pd.DataFrame()
-    DATA_UPDATED = False
+    needs_update = False
 
     for sym in symbols:
         if not sym:
             continue
         sym_file = PATH + f"{sym}.csv"
+        
+        last_date = get_last_date(sym_file)
+        today = datetime.now().date()
 
-        if not os.path.exists(sym_file) or (times == sorted_times[0] and
-                                            not config["use_cached_data"]):
-            df_sym = get_stock_data(sym, START_DATE, END_DATE, write=True)
+        if not os.path.exists(sym_file):
+            df_sym = get_stock_data(sym, start_date, end_date)
+            df_sym.to_csv(sym_file)
         else:
             df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
-            df_sym, DATA_UPDATED = update_store(sym, df_sym, START_DATE, TODAY)
+            first_date_index = df_sym.index[0]
+
+            # Check if the first date index is greater than start_date
+            if first_date_index > start_date:                
+                df_sym = get_stock_data(sym, start_date, today)                
+                df_sym.to_csv(sym_file)
+            else:                          
+                if last_date and last_date < today:                    
+                    first_valid_date, last_valid_date = get_non_holiday_weekdays(last_date + timedelta(days=1), today)                    
+                    if first_valid_date and last_valid_date:                        
+                        if last_date < last_valid_date :                            
+                            needs_update = True                                        
+                            df_sym = update_store(sym, df_sym, first_valid_date, last_valid_date + timedelta(days=1))
+                  
 
         df_sym.rename(columns={"Adj Close": sym}, inplace=True)
         df_sym.drop(["Open", "High", "Low", "Close", "Volume"],
                     axis=1,
                     inplace=True)
 
-        # drop by time period
-        # total_rows = df.shape[0]
-        # pct_of_rows = float(times)
-        df_sym = df_sym.loc[START_DATE::]
+        # drop by time period        
+        date_string_as_timestamp = pd.Timestamp(start_date)       
+        differences = abs(df_sym.index - date_string_as_timestamp)
+
+        # Find the index of the minimum timedelta
+        closest_index = differences.argmin()
+
+        # Convert the index to a regular column
+        df_sym = df_sym.reset_index()
+
+        # Slice df_sym from the closest_index
+        df_sym_sliced = df_sym.iloc[closest_index:]
+        df_sym = df_sym_sliced.set_index('Date')   
 
         # append symbol df to main df
         if df.empty:
@@ -417,16 +477,24 @@ for times in sorted_times:
         else:
             df = df.join(df_sym, how="outer")
 
-    # nan fills in joined df
-    df.fillna(method="bfill", inplace=True)
-    df.fillna(method="ffill", inplace=True)
-    df = df.reindex(sorted(df.columns), axis=1)
-
+    df = df.fillna(method='bfill') 
+ 
     # store df for graphing
-    if times == sorted_times[0]:
+    if years == sorted_times[0]:
         dfs["data"] = df
-        dfs["start"] = MIN_START
-        dfs["end"] = END_DATE
+        
+        if 'start' in dfs:
+            # If dfs["start"] is later than start_date, set it to start_date
+            if dfs["start"] > start_date:
+                dfs["start"] = start_date    
+        else:
+            dfs["start"] = start_date    
+            
+    if "end" in dfs: 
+        if dfs["end"] < end_date:
+            dfs["end"] = end_date    
+    else :
+        dfs["end"] = end_date
 
     if config["test_mode"]:
         # see whole df
@@ -436,20 +504,20 @@ for times in sorted_times:
               df.isnull().values.any())
 
     # for each included model, run optimization
-    for optimization in config["models"][times]:
+    for optimization in config["models"][years]:
         optimization_method = optimization.lower()
 
-        print(f"\nCalculating {times} {optimization_method.upper()} allocation")
+        print(f"\nCalculating {years} {optimization_method.upper()} allocation")
 
         INPUTS_LIST = ", ".join([str(i) for i in sorted(config["input_files"])])
-        model_cache_file = CWD + f"cache/{INPUTS_LIST}-{optimization_method}-{times}.csv"
+        model_cache_file = CWD + f"cache/{INPUTS_LIST}-{optimization_method}-{years}.csv"
 
         if os.path.isfile(model_cache_file):
             with open(model_cache_file, newline="") as cached_data:
                 reader = csv.reader(cached_data, delimiter=",")
                 result = {row[0]: float(row[1]) for row in reader}
 
-            if holdings_match(result, symbols) and not DATA_UPDATED:
+            if holdings_match(result, symbols) and not needs_update:
                 weights = pd.DataFrame(result,
                                        index=pd.RangeIndex(start=0,
                                                            stop=1,
@@ -458,11 +526,11 @@ for times in sorted_times:
                     data=df,
                     allocation_weights=weights,
                     inputs=INPUTS_LIST,
-                    start_date=START_DATE,
-                    end_date=END_DATE,
+                    start_date=start_date,
+                    end_date=end_date,
                     sort_by_weights=config["sort_by_weights"],
                     optimization_model=optimization_method,
-                    time_period=times,
+                    time_period=years,
                     minimum_weight=config["min_weight"],
                 )
                 continue
@@ -608,11 +676,11 @@ for times in sorted_times:
             data=df,
             allocation_weights=temp.weights,
             inputs=INPUTS_LIST,
-            start_date=START_DATE,
-            end_date=END_DATE,
+            start_date=start_date,
+            end_date=end_date,
             sort_by_weights=config["sort_by_weights"],
             optimization_model=optimization_method,
-            time_period=times,
+            time_period=years,
             minimum_weight=config["min_weight"],
         )
 
@@ -645,3 +713,8 @@ if len(stk) > 0:
             playsound(config["musicPath"])
         except OSError:
             print('\ndone')
+
+if __name__ == "__main__":
+    cache_dir = "cache"
+    max_age_hours = 72  # Adjust this value to your preference
+    cleanup_cache(cache_dir, max_age_hours)
