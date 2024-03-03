@@ -104,40 +104,14 @@ def output(
 def plot_graphs(daily_returns, cumulative_returns, avg, config):
     """
     creates plotly graphs
-    """
+    """   
     if config["test_mode"]:
         print(daily_returns, cumulative_returns)
-    if config["plot_cumulative_returns"] or config["plot_daily_returns"]:
-        # daily_returns = data.pct_change()[1:]
+    if config["plot_cumulative_returns"] or config["plot_daily_returns"]:        
         if config["test_mode"]:
-            print(daily_returns.head())
-
-        # cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
-        if config["test_mode"]:
+            print(daily_returns.head())                
             print(cumulative_returns.head())
-
-        if config["plot_cumulative_returns"]:
-            if config["sort_by_weights"]:
-                sorted_cols = cumulative_returns.sort_values(
-                    cumulative_returns.index[-1], ascending=False,
-                    axis=1).columns
-                cumulative_returns = cumulative_returns[sorted_cols]
-
-                fig = go.Figure()
-
-                for col in cumulative_returns.columns:
-                    fig.add_trace(
-                        go.Scatter(
-                            x=cumulative_returns.index,
-                            y=cumulative_returns[col],
-                            mode="lines" if col != "SIM_PORT" else "lines+markers",
-                            name=col,
-                            line=dict(width=3 if col in avg.keys() else 2),
-                            opacity=1 if col in avg.keys() else 0.6,
-                        ))
-
-            fig.show()
-
+        
         if config["plot_daily_returns"]:
             colors = [
                 "hsl(" + str(h) + ",50%" + ",50%)"
@@ -155,6 +129,32 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config):
                 yaxis=dict(zeroline=False, gridcolor="white"),
                 paper_bgcolor="rgb(233,233,233)",
                 plot_bgcolor="rgb(233,233,233)",
+                hoverlabel=dict(font=dict(size=22)),
             )
-
             fig2.show()
+
+        if config["plot_cumulative_returns"]:
+            hovertemplate = '%{x} <b>%{y:.0%}</b>'
+            
+            if config["sort_by_weights"]:
+                sorted_cols = cumulative_returns.sort_values(
+                    cumulative_returns.index[-1], ascending=False,
+                    axis=1).columns
+                cumulative_returns = cumulative_returns[sorted_cols]
+
+                fig = go.Figure()
+                fig.update_layout(hoverlabel=dict(font=dict(size=22)))
+                
+                for col in cumulative_returns.columns:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=cumulative_returns.index,
+                            y=cumulative_returns[col],
+                            mode="lines" if col != "SIM_PORT" else "lines+markers",
+                            name=col,
+                            line=dict(width=3 if col in avg.keys() else 2),
+                            opacity=1 if col in avg.keys() else 0.6,
+                        ))
+                    fig.update_traces(hovertemplate=hovertemplate) 
+
+            fig.show()

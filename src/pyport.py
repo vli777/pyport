@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import csv
 import yaml
-from playsound import playsound
 from portfoliolab.clustering.herc import HierarchicalEqualRiskContribution
 from portfoliolab.clustering.hrp import HierarchicalRiskParity
 from portfoliolab.modern_portfolio_theory.mean_variance import MeanVarianceOptimisation
@@ -19,27 +18,22 @@ from portfoliolab.online_portfolio_selection.rmr import RMR
 from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
 from portfoliolab.online_portfolio_selection.scorn import SCORN
-
 from date_helpers import *
 from stock_download import *
 from portfolio import *
 from output import *
 
-# setup
 CONFIG_FILENAME = "config.yaml"
 with open(CONFIG_FILENAME) as config_file:
     config = yaml.load(config_file, Loader=yaml.FullLoader)
-
-## global vars
-stack, avg, dfs = {}, {}, {}
-TODAY = datetime.today()
 
 if not os.path.exists(config["folder"]):
     os.makedirs(config["folder"])
 CWD = os.getcwd() + "/"
 PATH = CWD + config["folder"] + "/"
 
-# MAIN
+stack, avg, dfs = {}, {}, {}
+
 filtered_times = {k for k in config["models"].keys() if config["models"][k]}
 sorted_times = sorted(filtered_times, reverse=True)
 
@@ -202,11 +196,13 @@ for years in sorted_times:
         elif optimization_method.find("nco") != -1:
             asset_returns = np.log(df) - np.log(df.shift(1))
             asset_returns = asset_returns.iloc[1:, :]
+            
             temp = NestedClusteredOptimisation()
             if config["optimization_config"][optimization_method]["sharpe"]:
                 mu_vec = np.array(asset_returns.mean())
             else:
                 mu_vec = np.ones(len(df.columns))
+                
             weights = temp.allocate_nco(
                 asset_names=df.columns,
                 cov=np.array(asset_returns.cov()),
@@ -216,6 +212,7 @@ for years in sorted_times:
         elif optimization_method.find("mc") != -1:
             asset_returns = np.log(df) - np.log(df.shift(1))
             asset_returns = asset_returns.iloc[1:, :]
+            
             temp = NestedClusteredOptimisation()
             mu_vec = np.array(asset_returns.mean())
             w_cvo, w_nco = temp.allocate_mcos(
@@ -352,16 +349,8 @@ if len(stack) > 0:
         minimum_weight=min_weight,
         max_size=config["portfolio_max_size"],
     )
-
-    # plotly graphs
+    
     plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot, avg, config)
-
-    # play sound when done
-    if config["musicPath"]:
-        try:
-            playsound(config["musicPath"])
-        except OSError:
-            print('\ndone')
 
 if __name__ == "__main__":
     cache_dir = "cache"
