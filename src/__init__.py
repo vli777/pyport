@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import time
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import csv
 import yaml
 from playsound import playsound
@@ -20,11 +19,11 @@ from portfoliolab.online_portfolio_selection.rmr import RMR
 from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
 from portfoliolab.online_portfolio_selection.scorn import SCORN
-from mlfinlab.backtest_statistics import sharpe_ratio
 
 from date_helpers import *
-from stock_download_helpers import *
-from portfolio_helpers import *
+from stock_download import *
+from portfolio import *
+from output import *
 
 # setup
 CONFIG_FILENAME = "config.yaml"
@@ -32,162 +31,13 @@ with open(CONFIG_FILENAME) as config_file:
     config = yaml.load(config_file, Loader=yaml.FullLoader)
 
 ## global vars
-stk, avg, dfs = {}, {}, {}
+stack, avg, dfs = {}, {}, {}
 TODAY = datetime.today()
 
 if not os.path.exists(config["folder"]):
     os.makedirs(config["folder"])
 CWD = os.getcwd() + "/"
 PATH = CWD + config["folder"] + "/"
-
-def output(
-    data,
-    allocation_weights,
-    inputs,
-    start_date,
-    end_date,
-    max_size=21,
-    sort_by_weights=False,
-    optimization_model=None,
-    time_period=1.0,
-    minimum_weight=0.01,
-):
-    """
-    produces console output with descriptive statistics of the provided portfolio over a date range
-    """
-    if isinstance(allocation_weights, dict):
-        clean_weights = allocation_weights
-    else:
-        clean_weights = allocation_weights.to_dict("records")[0]
-    if config["test_mode"]:
-        print("raw weights", clean_weights)
-
-    scaled = scale_to_one(clean_weights)
-
-    # if (len(scaled) == 1 or any(np.isnan(val) for val in scaled.values()) or
-    #         max(scaled.values()) < minimum_weight):
-    #     scaled = {"SPY": 1}
-    while len(scaled) > 0 and min(scaled.values()) < minimum_weight or len(scaled) > max_size:
-        clipped = clip_by_weight(scaled, minimum_weight)
-        scaled = scale_to_one(clipped)
-        minimum_weight = get_min_by_size(scaled, max_size, minimum_weight)
-
-    # store portfolio
-    stk[optimization_model + str(time_period)] = [scaled, len(scaled)]
-    if not os.path.exists(CWD + "cache"):
-        os.makedirs(CWD + "cache")
-    output_file = (
-        CWD + "cache/" + f"{inputs}-{optimization_model}-{time_period}.csv")
-
-    writer = csv.writer(open(output_file, "w", newline=""))
-    for key, val in scaled.items():
-        writer.writerow([key, val])
-    filtered_symbols = [sym for sym in symbols if sym not in scaled.keys()]
-    for symbol in filtered_symbols:
-        writer.writerow([symbol, 0])
-
-    if len(scaled) > 0:
-        portfolio = data[scaled.keys()]
-        returns = np.log(portfolio) - np.log(portfolio.shift(1))
-        returns = returns.iloc[1:, :]
-        weights_vector = list(scaled.values())
-
-        weighted_returns = returns.mul(weights_vector)   
-
-        portfolio_returns = weighted_returns.apply(np.sum, axis=1)      
-        portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()        
-
-        try:
-            sharpe = sharpe_ratio(portfolio_returns)    
-        except:
-            sharpe = 0
-
-        print(f"\ntime period: {start_date} to {end_date} ({time_period} yrs)")
-        print("inputs:", inputs)
-        print("optimization methods:", optimization_model)
-        print("sharpe ratio:", round(sharpe, 2))
-        print(f"cumulative return: { round((portfolio_cumulative_returns[-1] - 1) * 100, 2)}%")
-        print(
-            f"portfolio allocation weights (min {minimum_weight:.2f}):")
-    else:
-        print("max diversification recommended")
-
-    if sort_by_weights:
-        for symbol, weight in sorted(scaled.items(),
-                                     key=lambda kv: (kv[1], kv[0]),
-                                     reverse=True):
-            print(symbol, f"\t{weight:.3f}")
-    else:
-        for symbol, weight in sorted(scaled.items()):
-            print(symbol, f"\t{weight:.3f}")
-
-    portfolio_returns = portfolio_returns.to_frame()
-    portfolio_returns.columns=['SIM_PORT']
-
-    portfolio_cumulative_returns = portfolio_cumulative_returns.to_frame()
-    portfolio_cumulative_returns.columns=['SIM_PORT']
-
-    all_daily_returns = returns.join(portfolio_returns)
-    all_cumulative_returns = ((portfolio_cumulative_returns) - 1).join(returns.add(1).cumprod() - 1)    
-    return all_daily_returns, all_cumulative_returns
-
-def plot_graphs(daily_returns, cumulative_returns):
-    """
-    creates plotly graphs
-    """
-    if config["test_mode"]:
-        print(daily_returns, cumulative_returns)
-    if config["plot_cumulative_returns"] or config["plot_daily_returns"]:
-        # daily_returns = data.pct_change()[1:]
-        if config["test_mode"]:
-            print(daily_returns.head())
-
-        # cumulative_returns = daily_returns.add(1).cumprod().sub(1).mul(100)
-        if config["test_mode"]:
-            print(cumulative_returns.head())
-
-        if config["plot_cumulative_returns"]:
-            if config["sort_by_weights"]:
-                sorted_cols = cumulative_returns.sort_values(
-                    cumulative_returns.index[-1], ascending=False,
-                    axis=1).columns
-                cumulative_returns = cumulative_returns[sorted_cols]
-
-                fig = go.Figure()
-
-                for col in cumulative_returns.columns:
-                    fig.add_trace(
-                        go.Scatter(
-                            x=cumulative_returns.index,
-                            y=cumulative_returns[col],
-                            mode="lines" if col != "SIM_PORT" else "lines+markers",
-                            name=col,
-                            line=dict(width=3 if col in avg.keys() else 2),
-                            opacity=1 if col in avg.keys() else 0.6,
-                        ))
-
-            fig.show()
-
-        if config["plot_daily_returns"]:
-            colors = [
-                "hsl(" + str(h) + ",50%" + ",50%)"
-                for h in np.linspace(0, 360, len(daily_returns.columns))
-            ]
-
-            fig2 = go.Figure(data=[
-                go.Box(y=daily_returns[col], marker_color=colors[i], name=col)
-                for i, col in enumerate(daily_returns.columns)
-            ])
-
-            fig2.update_layout(
-                xaxis=dict(showgrid=False, zeroline=False,
-                           showticklabels=False),
-                yaxis=dict(zeroline=False, gridcolor="white"),
-                paper_bgcolor="rgb(233,233,233)",
-                plot_bgcolor="rgb(233,233,233)",
-            )
-
-            fig2.show()
 
 # MAIN
 filtered_times = {k for k in config["models"].keys() if config["models"][k]}
@@ -320,10 +170,13 @@ for years in sorted_times:
                     inputs=INPUTS_LIST,
                     start_date=start_date,
                     end_date=end_date,
+                    symbols=symbols,
+                    stack=stack,
                     sort_by_weights=config["sort_by_weights"],
                     optimization_model=optimization_method,
                     time_period=years,
                     minimum_weight=config["min_weight"],
+                    test_mode=config["test_mode"]
                 )
                 continue
 
@@ -470,14 +323,16 @@ for years in sorted_times:
             inputs=INPUTS_LIST,
             start_date=start_date,
             end_date=end_date,
+            symbols=symbols,
+            stack=stack,
             sort_by_weights=config["sort_by_weights"],
             optimization_model=optimization_method,
             time_period=years,
             minimum_weight=config["min_weight"],
         )
 
-if len(stk) > 0:
-    avg = stacked_output(stk)
+if len(stack) > 0:
+    avg = stacked_output(stack)
     sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
     min_weight = get_min_by_size(sorted_avg, config["portfolio_max_size"])
     models = {k: v for k, v in config["models"].items() if v is not None}
@@ -489,6 +344,8 @@ if len(stk) > 0:
         sort_by_weights=True,
         start_date=dfs["start"],
         end_date=dfs["end"],
+        stack=stack,
+        symbols=symbols,
         optimization_model=", ".join(sorted(list(set(sum(models.values(),
                                                          []))))),
         time_period=sorted_times[0],
@@ -497,7 +354,7 @@ if len(stk) > 0:
     )
 
     # plotly graphs
-    plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot)
+    plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot, avg, config)
 
     # play sound when done
     if config["musicPath"]:
