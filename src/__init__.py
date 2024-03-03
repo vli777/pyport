@@ -2,17 +2,12 @@
 Pyport - portfolio optimization
 """
 import os
-import re
-import csv
 from datetime import datetime, timedelta
-from collections import Counter
-import sys
-from dateutil.relativedelta import relativedelta
+import time
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import pytz
-import yfinance as yf
+import csv
 import yaml
 from playsound import playsound
 from portfoliolab.clustering.herc import HierarchicalEqualRiskContribution
@@ -21,13 +16,15 @@ from portfoliolab.modern_portfolio_theory.mean_variance import MeanVarianceOptim
 from portfoliolab.modern_portfolio_theory.mean_variance import ReturnsEstimators
 from portfoliolab.modern_portfolio_theory import CriticalLineAlgorithm
 from portfoliolab.clustering.nco import NestedClusteredOptimisation
-# from portfoliolab.estimators.risk_estimators import RiskEstimators
 from portfoliolab.online_portfolio_selection.rmr import RMR
 from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
 from portfoliolab.online_portfolio_selection.scorn import SCORN
-from mlfinlab.backtest_statistics import sharpe_ratio, drawdown_and_time_under_water
-from pandas.tseries.holiday import USFederalHolidayCalendar
+from mlfinlab.backtest_statistics import sharpe_ratio
+
+from date_helpers import *
+from stock_download_helpers import *
+from portfolio_helpers import *
 
 # setup
 CONFIG_FILENAME = "config.yaml"
@@ -38,138 +35,10 @@ with open(CONFIG_FILENAME) as config_file:
 stk, avg, dfs = {}, {}, {}
 TODAY = datetime.today()
 
-
 if not os.path.exists(config["folder"]):
     os.makedirs(config["folder"])
 CWD = os.getcwd() + "/"
 PATH = CWD + config["folder"] + "/"
-
-def cleanup_cache(cache_dir, max_age_hours):
-    now = datetime.now()
-    max_age = timedelta(hours=max_age_hours)
-
-    for filename in os.listdir(cache_dir):
-        filepath = os.path.join(cache_dir, filename)
-        if os.path.isfile(filepath):
-            creation_time = datetime.fromtimestamp(os.path.getctime(filepath))
-            if now - creation_time > max_age:
-                os.remove(filepath)
-                print(f"Deleted old file: {filename}")
-
-def str_to_date(date_str, fmt="%Y-%m-%d"):
-    """
-    convert string to datetime
-    """
-    return datetime.strptime(date_str, fmt)
-
-
-def date_to_str(date, fmt="%Y-%m-%d"):
-    """
-    convert datetime to string
-    """
-    return date.strftime(fmt)
-
-
-def get_stock_data(symbol, start_date, end_date):
-    """
-    download stock price data from yahoo finance with optional write to csv
-    """
-    print(f"Downloading {symbol} {start_date} - {end_date} ...")
-    symbol_df = yf.download(symbol, start=start_date, end=end_date)
-    return symbol_df
-
-def update_store(symbol, symbol_df, start_date, end_date):
-    new_data = get_stock_data(symbol, start_date=start_date, end_date=end_date)
-    
-    # Append new data to the CSV file
-    csv_filename = PATH + f"{symbol}.csv"
-    
-    with open(csv_filename, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        # Write each row with the index included
-        for index, row in new_data.iterrows():
-            index_date_string = index.strftime('%Y-%m-%d')  # Convert index to date string
-            writer.writerow([index_date_string] + row.tolist())
-
-    # Update symbol_df with new data
-    symbol_df = pd.concat([symbol_df, new_data], axis=0)    
-    return symbol_df
-
-def scale_to_one(weights_dict):
-    """
-    scaling function to have filtered holding allocations sum to one
-    """
-    total_alloc = sum(weights_dict.values())
-    scaled = {k: v / total_alloc for k, v in weights_dict.items()}
-    return scaled
-
-
-def custom_scaling(weights_dict, scaling):
-    """
-    returns a weights dict with custom scaled values to inc/dec the impact of an allocation result
-    """
-    return {k: v * scaling for k, v in weights_dict.items()}
-
-
-def stacked_output(stack_dict):
-    """
-    return a scaled arithmetic avg of input model dicts
-    """
-    maxlen = max([v[1] for v in stack_dict.values()])
-
-    for model in stack_dict:
-        portfolio, scaling_factor = stack_dict[model]
-        stack_dict[model] = custom_scaling(weights_dict=portfolio,
-                                           scaling=scaling_factor / maxlen)
-
-    holding = [v for _, v in stack_dict.items()]
-    total = sum(map(Counter, holding), Counter())
-    average_holdings = {k: v / len(stack_dict) for k, v in total.items()}
-    return average_holdings
-
-
-def apply_weights(row, weights_dict):
-    """
-    apply scaling weights from a custom dict to a row
-    """
-    for i, _ in enumerate(row):
-        row[i] *= weights_dict[i]
-    return row
-
-
-def clip_by_weight(weights_dict, mininum_weight):
-    """
-    filters any holdings below a min threshold
-    """
-    return {k: v for k, v in weights_dict.items() if v > mininum_weight}
-
-
-def get_min_by_size(weights_dict, size, mininum_weight=0.01):
-    """
-    find the minimum allocation of a weight dict
-    """
-    if len(weights_dict) > size:
-        sorted_weights = sorted(weights_dict.values(), reverse=True)
-        mininum_weight = sorted_weights[size]
-    return mininum_weight
-
-
-def holdings_match(cached_dict, symbol_list):
-    """
-    check if all selected symbols match between the input list and cache files
-    """
-    for symbol in cached_dict.keys():
-        if symbol not in symbol_list:
-            if config["test_mode"]:
-                print(symbol, "not found in", symbols)
-            return False
-    for symbol in symbol_list:
-        if symbol not in cached_dict.keys():
-            if config["test_mode"]:
-                print(symbol, "not found in", cached_dict.keys())
-            return False
-    return True
-
 
 def output(
     data,
@@ -224,7 +93,6 @@ def output(
         weights_vector = list(scaled.values())
 
         weighted_returns = returns.mul(weights_vector)   
-        cumulative_returns = weighted_returns.add(1).cumprod() 
 
         portfolio_returns = weighted_returns.apply(np.sum, axis=1)      
         portfolio_cumulative_returns = portfolio_returns.add(1).cumprod()        
@@ -321,85 +189,6 @@ def plot_graphs(daily_returns, cumulative_returns):
 
             fig2.show()
 
-def get_last_date(csv_filename):
-    with open(csv_filename, 'r') as file:
-        lines = file.readlines()
-        # Iterate over lines in reverse order
-        for line in reversed(lines):
-            line = line.strip()
-            if line:  # Check if the line is not empty
-                last_date_str = line.split(',')[0]  # Assuming the date is the first field
-                try:
-                    return datetime.strptime(last_date_str, '%Y-%m-%d').date()
-                except ValueError:
-                    print(f"Invalid date format: {last_date_str}")
-                    # Continue iterating if the date format is invalid
-                    continue
-    return None
-
-def is_weekday(date):
-    return date.weekday() < 5  # Monday to Friday are weekdays (0 to 4)
-
-def is_after_4pm_est():
-    est = pytz.timezone('US/Eastern')
-    now = datetime.now(est)
-    return now.hour >= 16  # Check if it's after 4 PM EST
-
-def is_holiday(date):
-    # Define a holiday calendar
-    cal = USFederalHolidayCalendar()
-
-    # Get the holidays for the year of the given date
-    holidays = cal.holidays(start=date, end=date).to_pydatetime()    
-    # Check if the input date is in the list of holidays    
-    return date in holidays
-    
-def get_non_holiday_weekdays(start_date, end_date):            
-    first_valid_date = start_date
-    last_valid_date = end_date
-    
-    while not is_weekday(last_valid_date) or is_holiday(last_valid_date):
-        last_valid_date -= timedelta(days=1)
-    
-    first_valid_date = start_date
-    while first_valid_date >= end_date and \
-          not is_weekday(first_valid_date) or is_holiday(first_valid_date):
-        first_valid_date -= timedelta(days=1)
-
-    return first_valid_date, last_valid_date
-
-def is_valid_ticker(symbol):
-    try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        return True
-    except:
-        return False
-
-def process_input_files(input_file_paths):
-    symbols = set()
-    for input_file in input_file_paths:
-        with open(input_file + ".csv", 'r') as file:
-            for line in file:
-                line = line.strip().upper()
-                if re.match("^[A-Z]+$", line) and not line.startswith("#"):
-                    if is_valid_ticker(line):
-                        symbols.add(line)
-                    else:
-                        print(f"Ignoring invalid ticker symbol: {line}")
-    return sorted(symbols)
-   
-def calculate_start_end_dates(time):
-    # Get today's date
-    today = datetime.now().date()
-
-    start_date_from_today = today - timedelta(days=time * 365)
-    
-    start_date, end_date = get_non_holiday_weekdays(start_date_from_today, today)
-
-    # Return calculated dates
-    return start_date, end_date
-
 # MAIN
 filtered_times = {k for k in config["models"].keys() if config["models"][k]}
 sorted_times = sorted(filtered_times, reverse=True)
@@ -449,7 +238,7 @@ for years in sorted_times:
                     if first_valid_date and last_valid_date:                        
                         if last_date < last_valid_date :                            
                             needs_update = True                                        
-                            df_sym = update_store(sym, df_sym, first_valid_date, last_valid_date + timedelta(days=1))
+                            df_sym = update_store(PATH, sym, df_sym, first_valid_date, last_valid_date + timedelta(days=1))
                   
 
         df_sym.rename(columns={"Adj Close": sym}, inplace=True)
@@ -517,7 +306,10 @@ for years in sorted_times:
                 reader = csv.reader(cached_data, delimiter=",")
                 result = {row[0]: float(row[1]) for row in reader}
 
-            if holdings_match(result, symbols) and not needs_update:
+            if holdings_match(cached_model_dict=result, input_file_symbols=symbols, test_mode = config["test_mode"]) and not needs_update:
+                modification_time = os.path.getmtime(model_cache_file)
+                modification_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(modification_time))
+                print(f"Model exists in cache/{INPUTS_LIST}-{optimization_method}-{years}.csv. Returning last calculated results from {modification_time_str}")
                 weights = pd.DataFrame(result,
                                        index=pd.RangeIndex(start=0,
                                                            stop=1,
@@ -716,5 +508,4 @@ if len(stk) > 0:
 
 if __name__ == "__main__":
     cache_dir = "cache"
-    max_age_hours = 72  # Adjust this value to your preference
-    cleanup_cache(cache_dir, max_age_hours)
+    cleanup_cache(cache_dir)
