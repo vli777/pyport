@@ -13,7 +13,6 @@ def cleanup_cache(cache_dir, max_age_hours = 24):
             creation_time = datetime.fromtimestamp(os.path.getctime(filepath))
             if now - creation_time > max_age:
                 os.remove(filepath)
-                print(f"Deleted old file: {filename}")
 
 def str_to_date(date_str, fmt="%Y-%m-%d"):
     """

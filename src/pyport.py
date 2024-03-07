@@ -60,18 +60,16 @@ for years in sorted_times:
     for sym in symbols:
         if not sym:
             continue
-        sym_file = PATH + f"{sym}.csv"
-        
-        last_date = get_last_date(sym_file)
-        today = datetime.now().date()
+        sym_file = PATH + f"{sym}.csv"        
 
         if not os.path.exists(sym_file):
             df_sym = get_stock_data(sym, start_date, end_date)
             df_sym.to_csv(sym_file)
         else:
             df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
-            first_date_index = df_sym.index[0]
-
+            first_date_index = df_sym.index[0]            
+            today = datetime.now().date()
+            last_date = get_last_date(sym_file)
             # Check if the first date index is greater than start_date
             if first_date_index > start_date:                
                 df_sym = get_stock_data(sym, start_date, today)                
