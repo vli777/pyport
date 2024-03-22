@@ -66,6 +66,7 @@ for years in sorted_times:
             df_sym = get_stock_data(sym, start_date, end_date)
             df_sym.to_csv(sym_file)
         else:
+            # print("reading stored data from {}".format(sym_file))            
             df_sym = pd.read_csv(sym_file, parse_dates=True, index_col="Date")
             first_date_index = df_sym.index[0]            
             today = datetime.now().date()
@@ -74,13 +75,15 @@ for years in sorted_times:
             if first_date_index > start_date:                
                 df_sym = get_stock_data(sym, start_date, today)                
                 df_sym.to_csv(sym_file)
-            else:                          
+            else:                         
+                # print("checking {} for new data".format(sym)) 
                 if last_date and last_date < today:                    
                     first_valid_date, last_valid_date = get_non_holiday_weekdays(last_date + timedelta(days=1), today)                    
                     if first_valid_date and last_valid_date:                        
                         if last_date < last_valid_date :                            
-                            needs_update = True                                        
-                            df_sym = update_store(PATH, sym, df_sym, first_valid_date, last_valid_date + timedelta(days=1))
+                            needs_update = True     
+                            # print("{} is updating".format(sym))                                    
+                            df_sym = update_store(PATH, sym, df_sym, first_valid_date, last_valid_date+ timedelta(days=1))
                   
 
         df_sym.rename(columns={"Adj Close": sym}, inplace=True)
@@ -128,7 +131,6 @@ for years in sorted_times:
         dfs["end"] = end_date
 
     if config["test_mode"]:
-        # see whole df
         df.to_csv("full_df.csv")
         df = df.head(int(len(df) * config["test_data_visible_pct"]))
         print(df.head(), df.tail(), "Null values present: ",
