@@ -2,7 +2,7 @@
 Pyport - portfolio optimization
 """
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import numpy as np
 import pandas as pd
@@ -62,7 +62,7 @@ for years in sorted_times:
             continue
         sym_file = PATH + f"{sym}.csv"        
 
-        if not os.path.exists(sym_file) or config["download"] == True:
+        if not os.path.exists(sym_file):
             df_sym = get_stock_data(sym, start_date, end_date)
             df_sym.to_csv(sym_file)
         else:
@@ -76,15 +76,16 @@ for years in sorted_times:
                 df_sym = get_stock_data(sym, start_date, today)                
                 df_sym.to_csv(sym_file)
             else:                         
-                print("checking {} for new data since {}".format(sym, last_date)) 
+                # print("checking {} for new data".format(sym)) 
                 if last_date and last_date < today:                    
-                    first_valid_date, last_valid_date = get_non_holiday_weekdays(last_date, today)                                        
+                    first_valid_date, last_valid_date = get_non_holiday_weekdays(last_date + timedelta(days=1), today)                    
                     if first_valid_date and last_valid_date:                        
                         if last_date < last_valid_date :                            
                             needs_update = True     
-                            print("{} is updating from {} up to {}".format(sym, last_date, last_valid_date))                                    
-                            df_sym = update_store(PATH, sym, df_sym, first_valid_date, last_valid_date)
+                            # print("{} is updating".format(sym))                                    
+                            df_sym = update_store(PATH, sym, df_sym, first_valid_date, last_valid_date+ timedelta(days=1))
                   
+
         df_sym.rename(columns={"Adj Close": sym}, inplace=True)
         df_sym.drop(["Open", "High", "Low", "Close", "Volume"],
                     axis=1,
@@ -175,147 +176,143 @@ for years in sorted_times:
 
         if config["test_mode"]:
             print("df received by models", df)
-        try: 
-            # model handling
-            if optimization_method == "hrp":
-                temp = HierarchicalRiskParity()
-                temp.allocate(
-                    asset_prices=df,
-                    linkage=config["optimization_config"][optimization_method]
-                    ["linkage"],
-                )
-            elif optimization_method.find("herc") != -1:
-                temp = HierarchicalEqualRiskContribution()
-                temp.allocate(
-                    asset_prices=df,
-                    risk_measure=config["optimization_config"][optimization_method]
-                    ["risk_measure"],
-                    linkage=config["optimization_config"][optimization_method]
-                    ["linkage"],
-                )
-            elif optimization_method.find("nco") != -1:
-                asset_returns = np.log(df) - np.log(df.shift(1))
-                asset_returns = asset_returns.iloc[1:, :]
-                
-                temp = NestedClusteredOptimisation()
-                if config["optimization_config"][optimization_method]["sharpe"]:
-                    mu_vec = np.array(asset_returns.mean())
-                else:
-                    mu_vec = np.ones(len(df.columns))
-                    
-                weights = temp.allocate_nco(
-                    asset_names=df.columns,
-                    cov=np.array(asset_returns.cov()),
-                    mu_vec=mu_vec.reshape(-1, 1),
-                )
-                temp.weights = weights
-            elif optimization_method.find("mc") != -1:
-                asset_returns = np.log(df) - np.log(df.shift(1))
-                asset_returns = asset_returns.iloc[1:, :]
-                
-                temp = NestedClusteredOptimisation()
+        # model handling
+        if optimization_method == "hrp":
+            temp = HierarchicalRiskParity()
+            temp.allocate(
+                asset_prices=df,
+                linkage=config["optimization_config"][optimization_method]
+                ["linkage"],
+            )
+        elif optimization_method.find("herc") != -1:
+            temp = HierarchicalEqualRiskContribution()
+            temp.allocate(
+                asset_prices=df,
+                risk_measure=config["optimization_config"][optimization_method]
+                ["risk_measure"],
+                linkage=config["optimization_config"][optimization_method]
+                ["linkage"],
+            )
+        elif optimization_method.find("nco") != -1:
+            asset_returns = np.log(df) - np.log(df.shift(1))
+            asset_returns = asset_returns.iloc[1:, :]
+            
+            temp = NestedClusteredOptimisation()
+            if config["optimization_config"][optimization_method]["sharpe"]:
                 mu_vec = np.array(asset_returns.mean())
-                w_cvo, w_nco = temp.allocate_mcos(
-                    mu_vec=mu_vec.reshape(-1, 1),
-                    cov=np.array(asset_returns.cov()),
-                    num_obs=config["optimization_config"][optimization_method]
-                    ["num_obs"],
-                    num_sims=config["optimization_config"][optimization_method]
-                    ["num_sims"],
-                    kde_bwidth=config["optimization_config"][optimization_method]
-                    ["kde_bandwidth"],
-                    min_var_portf=not config["optimization_config"]
-                    [optimization_method]["sharpe"],
-                    lw_shrinkage=config["optimization_config"][optimization_method]
-                    ["lw_shrinkage"],
-                )
-                w_nco = w_nco.mean(axis=0)
-                temp_dict = dict(zip(df.columns, w_nco))
-                temp.weights = temp_dict
-            elif optimization_method.find("cla") != -1:
-                temp = CriticalLineAlgorithm()
-                solution = config["optimization_config"][optimization_method][
-                    "solution"]
-                temp.allocate(asset_prices=df, solution=solution)
-            elif optimization_method == "olmar":
-                temp = OLMAR(
-                    reversion_method=config["optimization_config"]
-                    [optimization_method]["method"],
-                    epsilon=config["optimization_config"][optimization_method]
-                    ["epsilon"],
-                    window=config["optimization_config"][optimization_method]
-                    ["window"],
-                    alpha=config["optimization_config"][optimization_method]
-                    ["alpha"],
-                )
-                temp.allocate(asset_prices=df, verbose=config["verbose"])
-                temp_dict = dict(zip(df.columns, temp.weights))
-                temp.weights = temp_dict
-            elif optimization_method == "rmr":
-                temp = RMR(
-                    epsilon=config["optimization_config"][optimization_method]
-                    ["epsilon"],
-                    n_iteration=config["optimization_config"][optimization_method]
-                    ["n_iteration"],
-                    tau=config["optimization_config"][optimization_method]["tau"],
-                    window=config["optimization_config"][optimization_method]
-                    ["window"],
-                )
-                temp.allocate(asset_prices=df, verbose=config["verbose"])
-                temp_dict = dict(zip(df.columns, temp.weights))
-                temp.weights = temp_dict
-            elif optimization_method == "scorn":
-                temp = SCORN(
-                    window=config["optimization_config"][optimization_method]
-                    ["window"],
-                    rho=config["optimization_config"][optimization_method]["rho"],
-                )
-                temp.allocate(
-                    asset_prices=df,
-                    resample_by=config["optimization_config"][optimization_method]
-                    ["resample"],
-                    verbose=config["verbose"],
-                )
-                temp_dict = dict(zip(df.columns, temp.weights))
-                temp.weights = temp_dict
-            elif optimization_method == "fcornk":
-                temp = FCORNK(
-                    window=config["optimization_config"][optimization_method]
-                    ["window"],
-                    rho=config["optimization_config"][optimization_method]["rho"],
-                    lambd=config["optimization_config"][optimization_method]
-                    ["lambd"],
-                    k=config["optimization_config"][optimization_method]["k"],
-                )
-                temp.allocate(
-                    asset_prices=df,
-                    resample_by=config["optimization_config"][optimization_method]
-                    ["resample"],
-                    verbose=config["verbose"],
-                )
-                temp_dict = dict(zip(df.columns, temp.weights[0]))
-                temp.weights = temp_dict
             else:
-                temp = MeanVarianceOptimisation()
-                expected_returns = ReturnsEstimators(
-                ).calculate_mean_historical_returns(asset_prices=df)
-                covariance = ReturnsEstimators().calculate_returns(
-                    asset_prices=df).cov()
-                temp.allocate(
-                    asset_names=df.columns,
-                    asset_prices=df,
-                    expected_asset_returns=expected_returns,
-                    covariance_matrix=covariance,
-                    solution=optimization_method,
-                    target_return=config["optimization_config"]["efficient_risk"],
-                    target_risk=config["optimization_config"]["efficient_return"],
-                    risk_aversion=config["optimization_config"]["risk_aversion"],
-                )
-                temp.get_portfolio_metrics()
-        except: 
-            print(df.head())
+                mu_vec = np.ones(len(df.columns))
+                
+            weights = temp.allocate_nco(
+                asset_names=df.columns,
+                cov=np.array(asset_returns.cov()),
+                mu_vec=mu_vec.reshape(-1, 1),
+            )
+            temp.weights = weights
+        elif optimization_method.find("mc") != -1:
+            asset_returns = np.log(df) - np.log(df.shift(1))
+            asset_returns = asset_returns.iloc[1:, :]
             
-            
+            temp = NestedClusteredOptimisation()
+            mu_vec = np.array(asset_returns.mean())
+            w_cvo, w_nco = temp.allocate_mcos(
+                mu_vec=mu_vec.reshape(-1, 1),
+                cov=np.array(asset_returns.cov()),
+                num_obs=config["optimization_config"][optimization_method]
+                ["num_obs"],
+                num_sims=config["optimization_config"][optimization_method]
+                ["num_sims"],
+                kde_bwidth=config["optimization_config"][optimization_method]
+                ["kde_bandwidth"],
+                min_var_portf=not config["optimization_config"]
+                [optimization_method]["sharpe"],
+                lw_shrinkage=config["optimization_config"][optimization_method]
+                ["lw_shrinkage"],
+            )
+            w_nco = w_nco.mean(axis=0)
+            temp_dict = dict(zip(df.columns, w_nco))
+            temp.weights = temp_dict
+        elif optimization_method.find("cla") != -1:
+            temp = CriticalLineAlgorithm()
+            solution = config["optimization_config"][optimization_method][
+                "solution"]
+            temp.allocate(asset_prices=df, solution=solution)
+        elif optimization_method == "olmar":
+            temp = OLMAR(
+                reversion_method=config["optimization_config"]
+                [optimization_method]["method"],
+                epsilon=config["optimization_config"][optimization_method]
+                ["epsilon"],
+                window=config["optimization_config"][optimization_method]
+                ["window"],
+                alpha=config["optimization_config"][optimization_method]
+                ["alpha"],
+            )
+            temp.allocate(asset_prices=df, verbose=config["verbose"])
+            temp_dict = dict(zip(df.columns, temp.weights))
+            temp.weights = temp_dict
+        elif optimization_method == "rmr":
+            temp = RMR(
+                epsilon=config["optimization_config"][optimization_method]
+                ["epsilon"],
+                n_iteration=config["optimization_config"][optimization_method]
+                ["n_iteration"],
+                tau=config["optimization_config"][optimization_method]["tau"],
+                window=config["optimization_config"][optimization_method]
+                ["window"],
+            )
+            temp.allocate(asset_prices=df, verbose=config["verbose"])
+            temp_dict = dict(zip(df.columns, temp.weights))
+            temp.weights = temp_dict
+        elif optimization_method == "scorn":
+            temp = SCORN(
+                window=config["optimization_config"][optimization_method]
+                ["window"],
+                rho=config["optimization_config"][optimization_method]["rho"],
+            )
+            temp.allocate(
+                asset_prices=df,
+                resample_by=config["optimization_config"][optimization_method]
+                ["resample"],
+                verbose=config["verbose"],
+            )
+            temp_dict = dict(zip(df.columns, temp.weights))
+            temp.weights = temp_dict
+        elif optimization_method == "fcornk":
+            temp = FCORNK(
+                window=config["optimization_config"][optimization_method]
+                ["window"],
+                rho=config["optimization_config"][optimization_method]["rho"],
+                lambd=config["optimization_config"][optimization_method]
+                ["lambd"],
+                k=config["optimization_config"][optimization_method]["k"],
+            )
+            temp.allocate(
+                asset_prices=df,
+                resample_by=config["optimization_config"][optimization_method]
+                ["resample"],
+                verbose=config["verbose"],
+            )
+            temp_dict = dict(zip(df.columns, temp.weights[0]))
+            temp.weights = temp_dict
+        else:
+            temp = MeanVarianceOptimisation()
+            expected_returns = ReturnsEstimators(
+            ).calculate_mean_historical_returns(asset_prices=df)
+            covariance = ReturnsEstimators().calculate_returns(
+                asset_prices=df).cov()
+            temp.allocate(
+                asset_names=df.columns,
+                asset_prices=df,
+                expected_asset_returns=expected_returns,
+                covariance_matrix=covariance,
+                solution=optimization_method,
+                target_return=config["optimization_config"]["efficient_risk"],
+                target_risk=config["optimization_config"]["efficient_return"],
+                risk_aversion=config["optimization_config"]["risk_aversion"],
+            )
+            temp.get_portfolio_metrics()
+
         # send to output
         output(
             data=df,
