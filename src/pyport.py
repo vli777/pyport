@@ -290,8 +290,7 @@ def main():
             logger.info(f"\nCalculating {years} {optimization_method.upper()} allocation")
             
             try:
-                optimizer = run_optimization(optimization_method, df, config.config["optimization_config"])
-                print(optimization_method, optimizer.weights)
+                optimizer = run_optimization(optimization_method, df, config.config["optimization_config"])                
                 # Store the result in stack
                 stack[years] = optimizer.weights                
                 # Output results
