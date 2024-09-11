@@ -12,3 +12,4 @@ setup*
 *.pyc
 *.pyo
 __pycache__/
+src/__pycache__/
