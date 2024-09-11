@@ -7,9 +7,7 @@ config.yaml
 split adjuster.py
 pyport.c*
 setup*
+*.pyc
 .pep8
 .style.yapf
-*.pyc
-*.pyo
 __pycache__/
-src/__pycache__/
