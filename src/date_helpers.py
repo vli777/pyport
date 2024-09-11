@@ -1,19 +1,27 @@
 from datetime import datetime, timedelta
-import os
+from pathlib import Path
 import pytz
 import trading_calendars as tc
 import pandas as pd
 
-def cleanup_cache(cache_dir, max_age_hours = 24):
+def cleanup_cache(cache_dir, max_age_hours=24):
+    """
+    Removes files in the cache directory that are older than max_age_hours.
+    """
     now = datetime.now()
     max_age = timedelta(hours=max_age_hours)
 
-    for filename in os.listdir(cache_dir):
-        filepath = os.path.join(cache_dir, filename)
-        if os.path.isfile(filepath):
-            creation_time = datetime.fromtimestamp(os.path.getctime(filepath))
+    cache_dir = Path(cache_dir)
+    if not cache_dir.is_dir():
+        print(f"Cache directory {cache_dir} does not exist.")
+        return
+
+    for filepath in cache_dir.iterdir():
+        if filepath.is_file():
+            creation_time = datetime.fromtimestamp(filepath.stat().st_ctime)
             if now - creation_time > max_age:
-                os.remove(filepath)
+                print(f"Removing {filepath} (created at {creation_time})")
+                filepath.unlink()
 
 def str_to_date(date_str, fmt="%Y-%m-%d"):
     """
@@ -55,17 +63,25 @@ def calculate_start_end_dates(time):
     return start_date, end_date
 
 def get_last_date(csv_filename):
-    with open(csv_filename, 'r') as file:
+    """
+    Retrieve the last date from a CSV file where dates are in the first column.
+    """
+    csv_path = Path(csv_filename)
+    if not csv_path.is_file():
+        print(f"File {csv_filename} does not exist.")
+        return None
+
+    with csv_path.open('r') as file:
         lines = file.readlines()
-        # Iterate over lines in reverse order
+
+        # Iterate over lines in reverse order to find the last valid date
         for line in reversed(lines):
             line = line.strip()
             if line:  # Check if the line is not empty
-                last_date_str = line.split(',')[0]  # Assuming the date is the first field
+                last_date_str = line.split(',')[0]  # Assuming date is the first field
                 try:
                     return datetime.strptime(last_date_str, '%Y-%m-%d').date()
                 except ValueError:
                     print(f"Invalid date format: {last_date_str}")
-                    # Continue iterating if the date format is invalid
-                    continue
+                    continue  # Continue if date format is invalid
     return None
