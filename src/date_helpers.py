@@ -3,6 +3,7 @@ from pathlib import Path
 import pytz
 import trading_calendars as tc
 import pandas as pd
+import csv
 
 def cleanup_cache(cache_dir, max_age_hours=24):
     """
@@ -42,7 +43,7 @@ def is_weekday(date):
 def is_after_4pm_est():
     est = pytz.timezone('US/Eastern')
     now = datetime.now(est)
-    return now.hour >= 16  # Check if it's after 4 PM EST
+    return now.hour > 16 or (now.hour == 16 and now.minute >= 1)  # Check if it's after 4:01 PM EST
 
 def get_non_holiday_weekdays(start_date, end_date, tz=pytz.timezone('US/Eastern')):            
     cal = tc.get_calendar("XNYS")    
@@ -62,26 +63,39 @@ def calculate_start_end_dates(time):
     # Return calculated dates
     return start_date, end_date
 
+
 def get_last_date(csv_filename):
     """
     Retrieve the last date from a CSV file where dates are in the first column.
+    This function reads the file from the last line backwards to find the last valid date.
     """
     csv_path = Path(csv_filename)
+    
     if not csv_path.is_file():
         print(f"File {csv_filename} does not exist.")
         return None
 
     with csv_path.open('r') as file:
-        lines = file.readlines()
+        # Use the CSV reader to handle file rows more efficiently
+        reader = csv.reader(file)
 
-        # Iterate over lines in reverse order to find the last valid date
+        # Read all lines, but this could be optimized for very large files
+        lines = list(reader)
+
+        if not lines:
+            print(f"File {csv_filename} is empty.")
+            return None
+
+        # Iterate over the lines in reverse order
         for line in reversed(lines):
-            line = line.strip()
             if line:  # Check if the line is not empty
-                last_date_str = line.split(',')[0]  # Assuming date is the first field
+                last_date_str = line[0].strip()  # Assuming date is the first field
                 try:
+                    # Return the last valid date found
                     return datetime.strptime(last_date_str, '%Y-%m-%d').date()
                 except ValueError:
                     print(f"Invalid date format: {last_date_str}")
                     continue  # Continue if date format is invalid
+
+    print(f"No valid dates found in {csv_filename}.")
     return None
