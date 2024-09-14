@@ -45,12 +45,12 @@ class Config:
         self.test_data_visible_pct = self.config["test_data_visible_pct"]
         self.optimization_config = self.config["optimization_config"]
         
-
 def load_or_download_symbol_data(symbol, start_date, end_date, data_path, download):
     """
     Load the symbol data from a CSV file, or download it if the file doesn't exist
-    or needs an update. Append missing data to the CSV. Skip download if already 
-    updated for the day and it's after 4:00 PM EST.
+    or needs an update. Append missing data to the CSV from the selected start_date 
+    if the file starts later than the start_date. Skip downloading on weekends, holidays,
+    and after market close if data for today has already been downloaded.
     """
     symbol_file = Path(data_path) / f"{symbol}.csv"
     
@@ -61,19 +61,44 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     est = pytz.timezone('US/Eastern')
     now_est = datetime.now(est)
     
-    # Determine if it's after 4:00 PM EST
-    after_market_close = now_est.hour > 16
+    # Determine if today is a weekend
+    today = now_est.date()
+    if not is_weekday(today):    
+        return pd.read_csv(symbol_file, parse_dates=True, index_col="Date") if symbol_file.exists() else df_sym
+    
+    # Check if today is a valid trading day (not a holiday)
+    first_valid_date, _ = get_non_holiday_weekdays(today, today, tz=est)
+    if today != first_valid_date:       
+        return pd.read_csv(symbol_file, parse_dates=True, index_col="Date") if symbol_file.exists() else df_sym
 
-    if symbol_file.exists() and not download:
-        # Read existing data
+    # Determine if it's after 4:01 PM EST
+    after_market_close = is_after_4pm_est()
+
+    # If it's after market close and data for today exists, skip the download
+    if after_market_close and symbol_file.exists():
         df_sym = pd.read_csv(symbol_file, parse_dates=True, index_col="Date")
-        last_date = get_last_date(symbol_file)
+        last_date = get_last_date(symbol_file)  # Get the last date from the file
 
-        # If the last available data is today's data and it's after 4:00 PM EST, skip the download
-        if last_date is not None and last_date >= pd.Timestamp(now_est.date()) and after_market_close:
-            print(f"Data for {symbol} is already updated for {last_date}. Skipping download.")
+        # Check if the data for today has already been downloaded
+        if last_date is not None and last_date >= pd.Timestamp(today):         
             return df_sym
-        
+
+    # If the file exists and downloading is not forced, update the file if necessary
+    if symbol_file.exists() and not download:
+        df_sym = pd.read_csv(symbol_file, parse_dates=True, index_col="Date")
+        first_date = df_sym.index[0]  # First row date
+        last_date = get_last_date(symbol_file)  # Last row date
+
+        # If the first row's date is later than start_date, download missing data and append it
+        if first_date > pd.Timestamp(start_date):
+            print(f"Appending missing data from {start_date} to {first_date} for {symbol}")
+            missing_data = get_stock_data(symbol, start_date=start_date, end_date=first_date - pd.Timedelta(days=1))
+            # Append the missing data at the top
+            df_sym = pd.concat([missing_data, df_sym])
+
+            # Save the updated dataframe to the file
+            df_sym.to_csv(symbol_file)
+
         # Update the file with data from last_date to end_date if the data is outdated
         if last_date is not None and last_date < end_date:
             print(f"Updating {symbol} data from {last_date} to {end_date}")
@@ -142,39 +167,29 @@ def run_optimization(method, df, config):
     if optimizer_class:
         if method == 'olmar':
             optimizer = optimizer_class(
-                reversion_method=config["optimization_config"]
-                    [method]["method"],
-                    epsilon=config["optimization_config"][method]
-                    ["epsilon"],
-                    window=config["optimization_config"][method]
-                    ["window"],
-                    alpha=config["optimization_config"][method]
-                    ["alpha"],
+                reversion_method=config[method]["method"], 
+                epsilon=config[method]["epsilon"],
+                window=config[method]["window"],
+                alpha=config[method]["alpha"],
             )
         elif method == 'rmr':
             optimizer = optimizer_class(
-                 epsilon=config["optimization_config"][method]
-                    ["epsilon"],
-                    n_iteration=config["optimization_config"][method]
-                    ["n_iteration"],
-                    tau=config["optimization_config"][method]["tau"],
-                    window=config["optimization_config"][method]
-                    ["window"],
+                epsilon=config[method]["epsilon"],
+                n_iteration=config[method]["n_iteration"],
+                tau=config[method]["tau"],
+                window=config[method]["window"],
             )
         elif method == 'scorn':
             optimizer = optimizer_class(
-                  window=config["optimization_config"][method]
-                    ["window"],
-                    rho=config["optimization_config"][method]["rho"],
+                window=config[method]["window"],
+                rho=config[method]["rho"],
             )
         elif method == 'fcornk':
             optimizer = optimizer_class(
-                 window=config["optimization_config"][method]
-                    ["window"],
-                    rho=config["optimization_config"][method]["rho"],
-                    lambd=config["optimization_config"][method]
-                    ["lambd"],
-                    k=config["optimization_config"][method]["k"],
+                window=config[method]["window"],
+                rho=config[method]["rho"],
+                lambd=config[method]["lambd"],
+                k=config[method]["k"],
             )
         else :
             optimizer = optimizer_class()
@@ -236,6 +251,15 @@ def run_optimization(method, df, config):
             )
             optimizer.get_portfolio_metrics()
 
+        elif method in ["fcornk", "scorn", "rmr", "olmar"]:
+            # Safely get the 'resample' parameter, defaulting to None if not present
+            resample_by = config[method].get("resample", None)
+            
+            # Call allocate with or without resample based on the configuration
+            if resample_by:
+                optimizer.allocate(asset_prices=df, resample_by=resample_by)
+            else:
+                optimizer.allocate(asset_prices=df)
         # For all other optimizations
         else:
             optimizer.allocate(asset_prices=df, **config[method])
