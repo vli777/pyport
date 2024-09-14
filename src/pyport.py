@@ -49,29 +49,43 @@ class Config:
 def load_or_download_symbol_data(symbol, start_date, end_date, data_path, download):
     """
     Load the symbol data from a CSV file, or download it if the file doesn't exist
-    or needs an update. Append missing data to the CSV.
+    or needs an update. Append missing data to the CSV. Skip download if already 
+    updated for the day and it's after 4:00 PM EST.
     """
     symbol_file = Path(data_path) / f"{symbol}.csv"
     
     # Initialize an empty dataframe for the symbol
     df_sym = pd.DataFrame()
 
+    # Get the current time in EST
+    est = pytz.timezone('US/Eastern')
+    now_est = datetime.now(est)
+    
+    # Determine if it's after 4:00 PM EST
+    after_market_close = now_est.hour > 16
+
     if symbol_file.exists() and not download:
         # Read existing data
         df_sym = pd.read_csv(symbol_file, parse_dates=True, index_col="Date")
         last_date = get_last_date(symbol_file)
+
+        # If the last available data is today's data and it's after 4:00 PM EST, skip the download
+        if last_date is not None and last_date >= pd.Timestamp(now_est.date()) and after_market_close:
+            print(f"Data for {symbol} is already updated for {last_date}. Skipping download.")
+            return df_sym
         
+        # Update the file with data from last_date to end_date if the data is outdated
         if last_date is not None and last_date < end_date:
-            # Update the file with data from last_date to end_date
             print(f"Updating {symbol} data from {last_date} to {end_date}")
             df_sym = update_store(data_path, symbol, df_sym, last_date, end_date)
     else:
-        # Download and save the data if file doesn't exist or download is forced
+        # Download and save the data if the file doesn't exist or download is forced
         print(f"Downloading {symbol} data from {start_date} to {end_date}")
         df_sym = get_stock_data(symbol, start_date=start_date, end_date=end_date)
         df_sym.to_csv(symbol_file)
 
     return df_sym
+
 
 def process_symbols(symbols, start_date, end_date, path, download):
     df = pd.DataFrame()
