@@ -21,6 +21,7 @@ from stock_download import *
 from portfolio import *
 from output import *
 from helpers import *
+from caching import *
 
 # Setup logger
 logging.basicConfig(level=logging.INFO)
@@ -269,6 +270,48 @@ def run_optimization(method, df, config):
     else:
         raise ValueError(f"Unknown optimization method: {method}")
 
+
+def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, years):
+    """Runs the optimization process, checks cache, saves results in cache, and skips recalculation if valid cache exists."""
+    for optimization in config.models[years]:
+        optimization_method = optimization.lower()
+        model_name = optimization_method + str(years)
+        input_filename = ", ".join([str(i) for i in sorted(config.input_files)])  # Combined input file names
+        
+        logger.info(f"\nCalculating {years} {optimization_method.upper()} allocation")
+        
+        # Check if results already exist in cache
+        cached_results = load_model_results_from_cache(model_name, years, input_filename)
+        
+        # If cached results exist, use them
+        if cached_results:
+            print(f"Using cached results for {years} {optimization_method.upper()} allocation")
+            normalized_weights = normalize_weights(cached_results, config.config["min_weight"])
+            stack[model_name] = normalized_weights
+        else:
+            # Cache does not exist, proceed with optimization
+            try:
+                # Run optimization
+                optimizer = run_optimization(optimization_method, df, config.config["optimization_config"])
+                
+                # Convert optimizer.weights to dict (assuming asset_names are in symbols)
+                converted_weights = convert_to_dict(optimizer.weights, asset_names=symbols)
+                
+                # Normalize weights before adding to stack
+                normalized_weights = normalize_weights(converted_weights, config.config["min_weight"])
+                
+                # Add to stack (done here instead of in `output`)
+                stack[model_name] = normalized_weights
+                
+                # Save the results to the cache
+                save_model_results(model_name, years, input_filename, symbols, normalized_weights)
+            except Exception as e:
+                logger.error(f"Optimization error: {e}")
+                continue  # Skip to the next iteration on error
+        
+        # Output results (whether from cache or recalculated)
+        output_results(df, normalized_weights, config, start_date, end_date, symbols, years)
+
     
 def main():
     CONFIG_FILENAME = "config.yaml"
@@ -309,30 +352,9 @@ def main():
             df.to_csv("full_df.csv")
             df = df.head(int(len(df) * config.config["test_data_visible_pct"]))
 
-        for optimization in config.models[years]:
-            optimization_method = optimization.lower()
-            logger.info(f"\nCalculating {years} {optimization_method.upper()} allocation")
-            
-            try:
-                # Run optimization
-                optimizer = run_optimization(optimization_method, df, config.config["optimization_config"])
-                
-                # Convert optimizer.weights to dict (assuming asset_names are in symbols)
-                converted_weights = convert_to_dict(optimizer.weights, asset_names=symbols)
-                
-                # Normalize weights before adding to stack
-                normalized_weights = normalize_weights(converted_weights, config.config["min_weight"])
-                
-                # Add to stack (done here instead of in `output`)
-                stack[optimization_method + str(years)] = normalized_weights
-                
-                # Output results
-                output_results(df, normalized_weights, config, start_date, end_date, symbols, years)
+        run_optimization_and_save(df, config, start_date, end_date, symbols, stack, years)
 
-            except Exception as e:
-                logger.error(f"Optimization error: {e}")
-
-    # Post-processing: Handle stack and averaging results
+    # Post-processing: Handle stack and averaging results    
     if len(stack) > 0:        
         avg = stacked_output(stack)
         sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
