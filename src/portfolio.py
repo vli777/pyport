@@ -1,90 +1,76 @@
-from collections import Counter
-
-def scale_to_one(weights_dict):
-    """
-    scaling function to have filtered holding allocations sum to one
-    """
-    total_alloc = max(.001, sum(weights_dict.values()))
-    scaled = {k: v / total_alloc for k, v in weights_dict.items()}
-    return scaled
+from collections import Counter, defaultdict
 
 
-def custom_scaling(weights_dict, scaling):
+def normalize_weights(weights, min_weight):
     """
-    returns a weights dict with custom scaled values to inc/dec the impact of an allocation result
+    Normalize the weights depending on the min_weight configuration. 
+    If min_weight is positive, only positive weights are normalized.
+    If min_weight includes negative values, both positive and negative weights are scaled.
+    Weights below min_weight are filtered out.
     """
-    return {k: v * scaling for k, v in weights_dict.items()}
+    # Separate positive and negative weights
+    positive_weights = {k: v for k, v in weights.items() if v > min_weight}
+    negative_weights = {k: v for k, v in weights.items() if v < -abs(min_weight)}  # Filter negatives based on absolute min_weight
+    
+    total_positive = sum(positive_weights.values())
+    total_negative = abs(sum(negative_weights.values()))  # We want the absolute sum of negatives
+
+    # Case 1: Only normalize positive weights if min_weight is strictly positive
+    if min_weight >= 0:
+        if total_positive > 0:
+            # Scale positive weights to sum to 1
+            normalized_positive = {k: v / total_positive for k, v in positive_weights.items()}
+        else:
+            normalized_positive = positive_weights  # If no positive weights, leave it as is
+        
+        # Return only positive weights above min_weight
+        return {k: v for k, v in normalized_positive.items() if v > min_weight}
+
+    # Case 2: Normalize both positive and negative weights if min_weight includes negatives
+    elif min_weight < 0:
+        # Normalize positive weights
+        normalized_positive = {k: v / total_positive for k, v in positive_weights.items()} if total_positive > 0 else positive_weights
+        # Normalize negative weights
+        normalized_negative = {k: v / total_negative for k, v in negative_weights.items()} if total_negative > 0 else negative_weights
+
+        # Combine the two, filter out weights below min_weight for both positive and negative
+        normalized_combined = {**normalized_positive, **normalized_negative}
+        return {k: v for k, v in normalized_combined.items() if abs(v) > abs(min_weight)}
 
 
 def stacked_output(stack_dict):
     """
-    Return a scaled arithmetic average of input model dicts.
-    Each value in `stack_dict` should be a tuple or list where:
-    - The first element is a dictionary of weights (portfolio).
-    - The second element is a scaling factor (e.g., the length of the portfolio).
+    Return the arithmetic average of input model dicts.
+    Each value in `stack_dict` should be a dictionary of weights (portfolio).
     """
-    
-    valid_values = []
-    
+
+    # Collect all unique symbols across all portfolios
+    all_symbols = set()
     for value in stack_dict.values():
-        if isinstance(value, (list, tuple)) and len(value) == 2:
-            portfolio, scaling_factor = value            
-            if isinstance(portfolio, dict) and isinstance(scaling_factor, (int, float)):
-                valid_values.append((portfolio, scaling_factor))
-            else:
-                print(f"Warning: Invalid types in stack_dict entry: {value}")
+        if isinstance(value, dict):
+            all_symbols.update(value.keys())
         else:
             print(f"Warning: Invalid entry format in stack_dict: {value}")
-    
-    if not valid_values:
-        raise ValueError("No valid entries found in stack_dict.")
-    
-    # Find the maximum scaling factor
-    maxlen = max([v[1] for v in valid_values])
 
-    # Apply scaling to each portfolio
-    for model in stack_dict:
-        value = stack_dict[model]
-        if isinstance(value, (list, tuple)) and len(value) == 2:
-            portfolio, scaling_factor = value
-            if isinstance(portfolio, dict) and isinstance(scaling_factor, (int, float)):
-                stack_dict[model] = custom_scaling(weights_dict=portfolio,
-                                                   scaling=scaling_factor / maxlen)
-        else:
-            print(f"Warning: Skipping invalid entry in stack_dict for model {model}")
+    if not all_symbols:
+        raise ValueError("No valid portfolios found in stack_dict.")
 
-    # Combine holdings from all models and calculate average holdings
-    holding = [v for _, v in stack_dict.items()]
-    total = sum(map(Counter, holding), Counter())
-    average_holdings = {k: v / len(stack_dict) for k, v in total.items()}
+    # Initialize a defaultdict to store the summed weights (starting from 0 for each symbol)
+    total_weights = defaultdict(float)
+
+    # Track the number of portfolios processed
+    num_portfolios = len(stack_dict)
+
+    # Sum all portfolios, ensuring missing symbols default to 0
+    for portfolio in stack_dict.values():
+        if isinstance(portfolio, dict):
+            for symbol in all_symbols:
+                total_weights[symbol] += portfolio.get(symbol, 0)  # Default to 0 if the symbol is missing
+
+    # Calculate the arithmetic mean by dividing each symbol's total weight by the number of portfolios
+    average_holdings = {symbol: total_weight / num_portfolios for symbol, total_weight in total_weights.items()}
 
     return average_holdings
-
-
-def apply_weights(row, weights_dict):
-    """
-    apply scaling weights from a custom dict to a row
-    """
-    for i, _ in enumerate(row):
-        row[i] *= weights_dict[i]
-    return row
-
-
-def clip_by_weight(weights_dict, mininum_weight):
-    """
-    filters any holdings below a min threshold
-    """
-    return {k: v for k, v in weights_dict.items() if v > mininum_weight}
-
-
-def get_min_by_size(weights_dict, size, mininum_weight=0.01):
-    """
-    find the minimum allocation of a weight dict
-    """
-    if len(weights_dict) > size:
-        sorted_weights = sorted(weights_dict.values(), reverse=True)
-        mininum_weight = sorted_weights[size]
-    return mininum_weight
 
 
 def holdings_match(cached_model_dict, input_file_symbols, test_mode = False):
