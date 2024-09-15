@@ -1,3 +1,4 @@
+import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 
@@ -62,19 +63,30 @@ def plot_graphs(daily_returns, cumulative_returns, config, symbols, bgcolor="#f4
     color_map, sorted_symbols = generate_color_map(symbols, cumulative_returns)
     
     # Helper to update the layout for both plots
-    def update_plot_layout(fig, title=None, hovermode='x unified'):
+    def update_plot_layout(fig, title=None, hovermode='x unified', cumulative_returns=None):
         fig.update_layout(
             hoverlabel=dict(font=dict(size=16), namelength=-1),  # Hide the trace name in hover
             paper_bgcolor=bgcolor,
             plot_bgcolor=bgcolor,
             title=title if title else "",
             hovermode=hovermode,  # Set hover mode
-            xaxis=dict(showgrid=False, zeroline=False, type='category', showticklabels=True),
-            yaxis=dict(showgrid=True, zeroline=False),
+            xaxis=dict(
+                showgrid=False,  # Disable gridlines for x-axis
+                zeroline=False,  # Don't show the x-axis zero line
+                showticklabels=True,  # Ensure x-axis tick labels (dates) are shown
+                tickmode='auto',  # Automatically space the ticks
+                tickformat='%b %Y',  # Set the tick format to Month/Day/Year
+                ticks='outside',  # Optional: draw ticks outside of the plot
+                type='date',  # Ensure the x-axis is treated as date type
+            ),
+            yaxis=dict(
+                showgrid=True,  # Enable gridlines for y-axis
+                zeroline=False  # Don't show the y-axis zero line
+            ),
             margin=dict(l=40, r=40, t=40, b=40),
             hoverdistance=10,
         )
-
+    
     # Function to generate hovertemplate with symbol name and difference for cumulative returns
     def get_hovertemplate_with_diff():
         hovertemplate = (
@@ -98,6 +110,7 @@ def plot_graphs(daily_returns, cumulative_returns, config, symbols, bgcolor="#f4
                 yaxis=dict(zeroline=False, gridcolor="white"),
                 paper_bgcolor=bgcolor,
                 plot_bgcolor=bgcolor,
+                title="Daily Returns",
             )
             fig2.show()
             
@@ -132,6 +145,7 @@ def plot_graphs(daily_returns, cumulative_returns, config, symbols, bgcolor="#f4
                     customdata = np.array([diff.values, color], dtype=object).T
 
                     fig.add_trace(go.Scatter(
+                        x=cumulative_returns_sorted.index,
                         y=col_data,
                         mode="lines",
                         meta=col,  
@@ -144,6 +158,7 @@ def plot_graphs(daily_returns, cumulative_returns, config, symbols, bgcolor="#f4
                 else:
                     # SIM_PORT trace
                     fig.add_trace(go.Scatter(
+                        x=cumulative_returns_sorted.index,
                         y=col_data,
                         mode="lines+markers",
                         meta=col,  # Use column name for SIM_PORT
