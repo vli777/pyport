@@ -386,7 +386,7 @@ def main():
         )
 
         # Plot graphs
-        plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot, avg, config, symbols)
+        plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot, config, symbols=daily_returns_to_plot.columns.tolist())
 
     if __name__ == "__main__":
         cache_dir = "cache"

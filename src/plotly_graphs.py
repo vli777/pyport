@@ -1,39 +1,70 @@
 import plotly.graph_objects as go
 import numpy as np
 
-def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor="#f4f4f4"):
+def plot_graphs(daily_returns, cumulative_returns, config, symbols, bgcolor="#f4f4f4"):
     """
     Creates Plotly graphs for daily and cumulative returns with specified customizations.
 
     Parameters:
     - daily_returns (pd.DataFrame): DataFrame containing daily returns for each symbol.
-    - cumulative_returns (pd.DataFrame): DataFrame containing cumulative returns for each symbol.
-    - avg (set): Set of symbols that should have higher opacity.
+    - cumulative_returns (pd.DataFrame): DataFrame containing cumulative returns for each symbol.    
     - config (object): Configuration object with boolean attributes:
         - plot_daily_returns (bool)
         - plot_cumulative_returns (bool)
         - sort_by_weights (bool)
-    - symbols (list): List of symbols corresponding to columns in `cumulative_returns` excluding 'SIM_PORT'.
+    - symbols (list): List of symbols corresponding to columns in `cumulative_returns`
     - bgcolor (str): Background color for the plots.
     """
 
-    # Helper to generate colors for plotting
-    def generate_colors(num_items):
-        return ["hsl(" + str(h) + ",50%,50%)" for h in np.linspace(0, 360, num_items, endpoint=False)]
+    # Helper to generate a unified color mapping
+    def generate_color_map(symbols, cumulative_returns):
+        """
+        Generates a color map from red to violet based on sorted cumulative returns.
 
-   # Identify all unique symbols (including 'SIM_PORT' if present)
-    unique_symbols = symbols.copy()
-    if "SIM_PORT" in cumulative_returns.columns:
-        unique_symbols.append("SIM_PORT")
+        Parameters:
+        - symbols (list): List of symbols 
+        - cumulative_returns (pd.DataFrame): DataFrame containing cumulative returns.
+        
+        Returns:
+        - dict: Mapping from symbol to color.
+        """
+        # Verify that all symbols are present in cumulative_returns
+        missing_symbols = [symbol for symbol in symbols if symbol not in cumulative_returns.columns]
+        if missing_symbols:
+            print(f"Warning: The following symbols are missing in cumulative_returns and will be skipped: {missing_symbols}")
+            # Exclude missing symbols
+            symbols = [symbol for symbol in symbols if symbol in cumulative_returns.columns]
+        
+        if not symbols:
+            raise ValueError("No valid symbols provided for plotting.")
+        
+        # Sort symbols based on their final cumulative return value (ascending)
+        sorted_symbols = sorted(symbols, key=lambda x: cumulative_returns[x].iloc[-1])
 
-    # Generate a single color list based on the number of unique symbols
-    colors = generate_colors(len(unique_symbols))
-    symbol_color_map = {symbol: color for symbol, color in zip(unique_symbols, colors)}
+        num_symbols = len(sorted_symbols)
+        if num_symbols > 1:
+            # Generate hues from 0 (red) to 270 (violet)
+            hues = np.linspace(0, 270, num_symbols, endpoint=False)
+        elif num_symbols == 1:
+            hues = [0]  # Assign red if only one symbol
+
+        colors = ["hsl({}, 70%, 50%)".format(int(h)) for h in hues]
+        
+        # Create color map
+        color_map = {symbol: color for symbol, color in zip(sorted_symbols, colors)}
+
+        # Assign gold color to SIM_PORT
+        color_map["SIM_PORT"] = "hsl(50, 100%, 50%)"  # Gold
+
+        return color_map, sorted_symbols
+
+    # Generate color map and get sorted symbols
+    color_map, sorted_symbols = generate_color_map(symbols, cumulative_returns)
     
     # Helper to update the layout for both plots
     def update_plot_layout(fig, title=None, hovermode='x unified'):
         fig.update_layout(
-            hoverlabel=dict(font=dict(size=14), namelength=-1),  # Hide the trace name in hover
+            hoverlabel=dict(font=dict(size=16), namelength=-1),  # Hide the trace name in hover
             paper_bgcolor=bgcolor,
             plot_bgcolor=bgcolor,
             title=title if title else "",
@@ -60,8 +91,7 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
     # Plot daily returns with custom hover template
     def plot_daily_returns():
         if config.plot_daily_returns:
-            colors = generate_colors(len(daily_returns.columns))
-            fig2 = go.Figure([go.Box(y=daily_returns[col], marker_color=colors[i], name=col)
+            fig2 = go.Figure([go.Box(y=daily_returns[col], marker_color=color_map[col], name=col)
                           for i, col in enumerate(daily_returns.columns)])
             fig2.update_layout(
                 xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
@@ -106,7 +136,7 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
                         mode="lines",
                         meta=col,  
                         name=col,
-                        line=dict(width=2, color=symbol_color_map[col]),
+                        line=dict(width=2, color=color_map[col]),
                         opacity=1.0, #if is_sim_port else 0.5,
                         hovertemplate=get_hovertemplate_with_diff(),
                         customdata=customdata  # Store the difference and color
@@ -118,7 +148,7 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
                         mode="lines+markers",
                         meta=col,  # Use column name for SIM_PORT
                         name=col,
-                        line=dict(width=3, color=symbol_color_map[col]),
+                        line=dict(width=3, color=color_map[col]),
                         opacity=1.0,
                         hovertemplate=get_hovertemplate(),  # Use regular hovertemplate
                         showlegend=True  # Show in legend
