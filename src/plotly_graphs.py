@@ -46,7 +46,6 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
                 yaxis=dict(zeroline=False, gridcolor="white"),
                 paper_bgcolor=bgcolor,
                 plot_bgcolor=bgcolor,
-                # hoverlabel=dict(font=dict(size=22)),
             )
             fig2.show()
             
@@ -87,9 +86,10 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
                         x=cumulative_returns_sorted.index,
                         y=col_data,
                         mode="lines",
-                        meta=symbols[i],  # Explicitly pass symbol name here
+                        meta=col,  
+                        name=col,
                         line=dict(width=2, color=colors[i]),
-                        opacity=1.0 if col in avg else 0.5,
+                        opacity=1.0 if is_sim_port else 0.5,
                         hovertemplate=get_hovertemplate_with_diff(),
                         customdata=customdata  # Store the difference and color
                     ))
@@ -100,6 +100,7 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
                         y=col_data,
                         mode="lines+markers",
                         meta=col,  # Use column name for SIM_PORT
+                        name=col,
                         line=dict(width=3, color=colors[i]),
                         opacity=1.0,
                         hovertemplate=get_hovertemplate(),  # Use regular hovertemplate
