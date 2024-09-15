@@ -17,6 +17,7 @@ from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
 from portfoliolab.online_portfolio_selection.scorn import SCORN
 from date_helpers import *
+from plotly_graphs import plot_graphs
 from stock_download import *
 from portfolio import *
 from output import *
@@ -24,7 +25,10 @@ from helpers import *
 from caching import *
 
 # Setup logger
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO, 
+    format='\n%(levelname)s: %(name)s: %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Load configuration
@@ -310,7 +314,7 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
                 continue  # Skip to the next iteration on error
         
         # Output results (whether from cache or recalculated)
-        output_results(df, normalized_weights, config, start_date, end_date, symbols, years)
+        output_results(df, normalized_weights, config, start_date, end_date, years)
 
     
 def main():
@@ -374,7 +378,6 @@ def main():
             inputs=combined_input_files_names,
             start_date=dfs["start"],
             end_date=dfs["end"],
-            symbols=symbols,
             optimization_model=combined_model_names,
             time_period=sorted_times[0],
             minimum_weight=config.config["min_weight"],
@@ -383,7 +386,7 @@ def main():
         )
 
         # Plot graphs
-        plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot, avg, config)
+        plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot, avg, config, symbols)
 
     if __name__ == "__main__":
         cache_dir = "cache"
