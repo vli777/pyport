@@ -23,40 +23,57 @@ def save_model_results(model_name, time_period, input_filename, symbols, scaled)
             writer.writerow([symbol, 0])
 
 
-def scale_and_clip_weights(weights, min_weight, max_size):
-    """Scales and clips the weights to fit the minimum weight and max size constraints."""
-    scaled = scale_to_one(weights)
-    while len(scaled) > 0 and (min(scaled.values()) < min_weight or len(scaled) > max_size):
-        clipped = clip_by_weight(scaled, min_weight)
-        scaled = scale_to_one(clipped)
-        min_weight = get_min_by_size(scaled, max_size, min_weight)
-    return scaled
+def output_results(df, weights, config, start_date, end_date, symbols, years):
+    output(
+        data=df,
+        allocation_weights=weights,
+        inputs=", ".join([str(i) for i in sorted(config.input_files)]),
+        start_date=start_date,
+        end_date=end_date,
+        symbols=symbols,
+        optimization_model=", ".join(sorted(list(set(sum(config.models.values(), []))))),
+        time_period=years,
+        minimum_weight=config.config["min_weight"],
+        max_size=config.config.get("portfolio_max_size", 10),
+        config=config
+    )
+    
 
-
-def output(data, allocation_weights, inputs, start_date, end_date, symbols, stack, 
+def output(data, allocation_weights, inputs, start_date, end_date, symbols, 
            max_size=21, optimization_model=None, time_period=1.0, 
            minimum_weight=0.01, config=None):
     """Produces console output with descriptive statistics of the provided portfolio."""
     
+    # Ensure allocation_weights is a dictionary
     clean_weights = allocation_weights if isinstance(allocation_weights, dict) else dict(allocation_weights)
     
     if config and config.test_mode:
         print("Raw weights:", clean_weights)
 
-    scaled = scale_and_clip_weights(clean_weights, minimum_weight, max_size)
-    stack[optimization_model + str(time_period)] = [scaled, len(scaled)]
-    
-    save_model_results(model_name=optimization_model, time_period=time_period,
-                       input_filename=inputs, symbols=symbols, scaled=scaled)
+    # If the number of items exceeds max_size, remove the smallest ones
+    if len(clean_weights) > max_size:
+        # Sort by weight (ascending) and keep the largest `max_size` items
+        sorted_weights = sorted(clean_weights.items(), key=lambda kv: kv[1], reverse=False)
+        
+        # Select the largest max_size weights
+        limited_weights = dict(sorted_weights[-max_size:])
+        
+        # Reassign to clean_weights, no need to renormalize since it's already done
+        clean_weights = limited_weights
 
-    if len(scaled) == 0:
+    # Save the results to the model cache
+    save_model_results(model_name=optimization_model, time_period=time_period,
+                       input_filename=inputs, symbols=symbols, scaled=clean_weights)
+
+    # Proceed with portfolio and calculations
+    if len(clean_weights) == 0:
         print("Max diversification recommended")
         sys.exit()
 
-    portfolio = data[scaled.keys()]
+    portfolio = data[clean_weights.keys()]
     returns = np.log(portfolio) - np.log(portfolio.shift(1))
     returns = returns.iloc[1:, :]  # Remove NaN row after log
-    weights_vector = list(scaled.values())
+    weights_vector = list(clean_weights.values())
 
     weighted_returns = returns.mul(weights_vector)
     portfolio_returns = weighted_returns.sum(axis=1)
@@ -74,7 +91,7 @@ def output(data, allocation_weights, inputs, start_date, end_date, symbols, stac
     print(f"Cumulative return: {round((portfolio_cumulative_returns[-1] - 1) * 100, 2)}%")
     print(f"Portfolio allocation weights (min {minimum_weight:.2f}):")
 
-    sorted_weights = sorted(scaled.items(), key=lambda kv: kv[1], reverse=config.sort_by_weights)
+    sorted_weights = sorted(clean_weights.items(), key=lambda kv: kv[1], reverse=config.sort_by_weights)
 
     for symbol, weight in sorted_weights:
         print(f"{symbol} \t{weight:.3f}")
