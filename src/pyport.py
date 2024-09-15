@@ -20,6 +20,7 @@ from date_helpers import *
 from stock_download import *
 from portfolio import *
 from output import *
+from helpers import *
 
 # Setup logger
 logging.basicConfig(level=logging.INFO)
@@ -268,21 +269,6 @@ def run_optimization(method, df, config):
     else:
         raise ValueError(f"Unknown optimization method: {method}")
 
-def output_results(df, weights, config, start_date, end_date, symbols, stack, years):
-    output(
-        data=df,
-        allocation_weights=weights,
-        inputs=", ".join([str(i) for i in sorted(config.input_files)]),
-        start_date=start_date,
-        end_date=end_date,
-        symbols=symbols,
-        stack=stack,
-        optimization_model=", ".join(sorted(list(set(sum(config.models.values(), []))))),
-        time_period=years,
-        minimum_weight=config.config["min_weight"],
-        max_size=config.config.get("portfolio_max_size", 0),
-        config=config
-    )
     
 def main():
     CONFIG_FILENAME = "config.yaml"
@@ -328,33 +314,48 @@ def main():
             logger.info(f"\nCalculating {years} {optimization_method.upper()} allocation")
             
             try:
-                optimizer = run_optimization(optimization_method, df, config.config["optimization_config"])                
-                # Store the result in stack
-                stack[years] = optimizer.weights                
+                # Run optimization
+                optimizer = run_optimization(optimization_method, df, config.config["optimization_config"])
+                
+                # Convert optimizer.weights to dict (assuming asset_names are in symbols)
+                converted_weights = convert_to_dict(optimizer.weights, asset_names=symbols)
+                
+                # Normalize weights before adding to stack
+                normalized_weights = normalize_weights(converted_weights, config.config["min_weight"])
+                
+                # Add to stack (done here instead of in `output`)
+                stack[optimization_method + str(years)] = normalized_weights
+                
                 # Output results
-                output_results(df, optimizer.weights, config, start_date, end_date, symbols, stack, years)
+                output_results(df, normalized_weights, config, start_date, end_date, symbols, years)
 
             except Exception as e:
                 logger.error(f"Optimization error: {e}")
 
     # Post-processing: Handle stack and averaging results
-    if len(stack) > 0:
+    if len(stack) > 0:        
         avg = stacked_output(stack)
         sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
-        min_weight = get_min_by_size(sorted_avg, config.config["portfolio_max_size"])
+        normalized_avg = normalize_weights(sorted_avg, config.config["min_weight"])
+    
+        # Filter out None values from config.models
+        valid_models = [v for v in config.models.values() if v is not None]    
+        # Combine model names for the final output    
+        combined_model_names = ", ".join(sorted(list(set(sum(valid_models, [])))))
+
+        combined_input_files_names = ", ".join([str(i) for i in sorted(config.input_files)])
 
         # Plot final graphs using the averaged results
         daily_returns_to_plot, cumulative_returns_to_plot = output(
             data=dfs["data"],
-            allocation_weights=sorted_avg,
-            inputs=", ".join([str(i) for i in sorted(config.input_files)]),
+            allocation_weights=normalized_avg,
+            inputs=combined_input_files_names,
             start_date=dfs["start"],
             end_date=dfs["end"],
-            stack=stack,
             symbols=symbols,
-            optimization_model=", ".join(sorted(list(set(sum(config.models.values(), []))))),
+            optimization_model=combined_model_names,
             time_period=sorted_times[0],
-            minimum_weight=min_weight,
+            minimum_weight=config.config["min_weight"],
             max_size=config.config["portfolio_max_size"],
             config=config
         )
