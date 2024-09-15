@@ -2,12 +2,34 @@ import plotly.graph_objects as go
 import numpy as np
 
 def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor="#f4f4f4"):
-    """Creates Plotly graphs for daily and cumulative returns with specified customizations."""
+    """
+    Creates Plotly graphs for daily and cumulative returns with specified customizations.
+
+    Parameters:
+    - daily_returns (pd.DataFrame): DataFrame containing daily returns for each symbol.
+    - cumulative_returns (pd.DataFrame): DataFrame containing cumulative returns for each symbol.
+    - avg (set): Set of symbols that should have higher opacity.
+    - config (object): Configuration object with boolean attributes:
+        - plot_daily_returns (bool)
+        - plot_cumulative_returns (bool)
+        - sort_by_weights (bool)
+    - symbols (list): List of symbols corresponding to columns in `cumulative_returns` excluding 'SIM_PORT'.
+    - bgcolor (str): Background color for the plots.
+    """
 
     # Helper to generate colors for plotting
     def generate_colors(num_items):
-        return ["hsl(" + str(h) + ",50%,50%)" for h in np.linspace(0, 360, num_items)]
+        return ["hsl(" + str(h) + ",50%,50%)" for h in np.linspace(0, 360, num_items, endpoint=False)]
 
+   # Identify all unique symbols (including 'SIM_PORT' if present)
+    unique_symbols = symbols.copy()
+    if "SIM_PORT" in cumulative_returns.columns:
+        unique_symbols.append("SIM_PORT")
+
+    # Generate a single color list based on the number of unique symbols
+    colors = generate_colors(len(unique_symbols))
+    symbol_color_map = {symbol: color for symbol, color in zip(unique_symbols, colors)}
+    
     # Helper to update the layout for both plots
     def update_plot_layout(fig, title=None, hovermode='x unified'):
         fig.update_layout(
@@ -16,7 +38,7 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
             plot_bgcolor=bgcolor,
             title=title if title else "",
             hovermode=hovermode,  # Set hover mode
-            xaxis=dict(showgrid=False, zeroline=False),
+            xaxis=dict(showgrid=False, zeroline=False, type='category', showticklabels=True),
             yaxis=dict(showgrid=True, zeroline=False),
             margin=dict(l=40, r=40, t=40, b=40),
             hoverdistance=10,
@@ -66,9 +88,6 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
             else:
                 cumulative_returns_sorted = cumulative_returns
 
-            # Generate colors for cumulative returns
-            colors = generate_colors(len(cumulative_returns_sorted.columns))
-
             # Add traces for each column
             for i, col in enumerate(cumulative_returns_sorted.columns):
                 is_sim_port = col == "SIM_PORT"
@@ -83,25 +102,23 @@ def plot_graphs(daily_returns, cumulative_returns, avg, config, symbols, bgcolor
                     customdata = np.array([diff.values, color], dtype=object).T
 
                     fig.add_trace(go.Scatter(
-                        x=cumulative_returns_sorted.index,
                         y=col_data,
                         mode="lines",
                         meta=col,  
                         name=col,
-                        line=dict(width=2, color=colors[i]),
-                        opacity=1.0 if is_sim_port else 0.5,
+                        line=dict(width=2, color=symbol_color_map[col]),
+                        opacity=1.0, #if is_sim_port else 0.5,
                         hovertemplate=get_hovertemplate_with_diff(),
                         customdata=customdata  # Store the difference and color
                     ))
                 else:
                     # SIM_PORT trace
                     fig.add_trace(go.Scatter(
-                        x=cumulative_returns_sorted.index,
                         y=col_data,
                         mode="lines+markers",
                         meta=col,  # Use column name for SIM_PORT
                         name=col,
-                        line=dict(width=3, color=colors[i]),
+                        line=dict(width=3, color=symbol_color_map[col]),
                         opacity=1.0,
                         hovertemplate=get_hovertemplate(),  # Use regular hovertemplate
                         showlegend=True  # Show in legend
