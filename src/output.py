@@ -5,14 +5,14 @@ import sys
 from portfolio import *
 
 
-def output_results(df, weights, config, start_date, end_date, years):
+def output_results(df, weights, model_name, config, start_date, end_date, years):
     output(
         data=df,
         allocation_weights=weights,
         inputs=", ".join([str(i) for i in sorted(config.input_files)]),
         start_date=start_date,
         end_date=end_date,        
-        optimization_model=", ".join(sorted(list(set(sum(config.models.values(), []))))),
+        optimization_model=model_name,
         time_period=years,
         minimum_weight=config.config["min_weight"],
         max_size=config.config.get("portfolio_max_size", 10),
@@ -62,7 +62,6 @@ def output(data, allocation_weights, inputs, start_date, end_date,
         sharpe = 0
 
     print(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
-    print("Inputs:", inputs)
     print("Optimization method:", optimization_model)
     print("Sharpe ratio:", round(sharpe, 2))
     print(f"Cumulative return: {round((portfolio_cumulative_returns[-1] - 1) * 100, 2)}%")

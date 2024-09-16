@@ -279,7 +279,7 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
     """Runs the optimization process, checks cache, saves results in cache, and skips recalculation if valid cache exists."""
     for optimization in config.models[years]:
         optimization_method = optimization.lower()
-        model_name = optimization_method + str(years)
+        model_name = optimization_method
         input_filename = ", ".join([str(i) for i in sorted(config.input_files)])  # Combined input file names
         
         logger.info(f"\nCalculating {years} {optimization_method.upper()} allocation")
@@ -314,7 +314,7 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
                 continue  # Skip to the next iteration on error
         
         # Output results (whether from cache or recalculated)
-        output_results(df, normalized_weights, config, start_date, end_date, years)
+        output_results(df, normalized_weights, model_name, config, start_date, end_date, years)
 
     
 def main():

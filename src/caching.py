@@ -32,10 +32,9 @@ def load_model_results_from_cache(model_name, time_period, input_filename, symbo
         provided_symbols = set(symbols)
         
         if cached_symbols == provided_symbols:
-            print("Cache is valid and contains matching symbols.")
             return results
         else:
-            print("Cache symbols do not match. Recalculating.")
+            print("New symbols found. Recalculating.")
             return None
     else:
         return None
