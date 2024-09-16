@@ -151,26 +151,53 @@ def plot_graphs(daily_returns, cumulative_returns, config, symbols, bgcolor="#f4
                         meta=col,  
                         name=col,
                         line=dict(width=2, color=color_map[col]),
-                        opacity=1.0, #if is_sim_port else 0.5,
+                        opacity=0.7,
                         hovertemplate=get_hovertemplate_with_diff(),
                         customdata=customdata  # Store the difference and color
                     ))
                 else:
                     # SIM_PORT trace
+                    # Convert datetime index to numerical values (days since the first date)
+                    time_values = (cumulative_returns_sorted.index - cumulative_returns_sorted.index[0]).days
+
+                    # Normalize the time values between 0 and 1 for the gradient
+                    normalized_time_values = (time_values - np.min(time_values)) / (np.max(time_values) - np.min(time_values))
+
+                    # Create line segments to approximate the gradient effect
+                    x_values = cumulative_returns_sorted.index
+                    y_values = cumulative_returns_sorted['SIM_PORT']
+
+                    # Add markers and hover info for the full line (with a single color)
                     fig.add_trace(go.Scatter(
-                        x=cumulative_returns_sorted.index,
-                        y=col_data,
-                        mode="lines+markers",
-                        meta=col,  # Use column name for SIM_PORT
-                        name=col,
-                        line=dict(width=3, color=color_map[col]),
-                        opacity=1.0,
-                        hovertemplate=get_hovertemplate(),  # Use regular hovertemplate
-                        showlegend=True  # Show in legend
+                        x=x_values,
+                        y=y_values,
+                        mode='markers+lines',
+                        name='SIM_PORT',
+                        line=dict(width=3, color='gold'),  # SIM_PORT line in gold
+                        hovertemplate='%{x}: %{y:.2%}<extra></extra>',
+                        showlegend=True  # Enable legend for SIM_PORT
                     ))
 
-            # Apply layout settings with unified hover mode
-            update_plot_layout(fig, "Cumulative Returns", hovermode='x unified')
+                    # Plot each segment with a corresponding color
+                    for i in range(1, len(x_values)):
+                        fig.add_trace(go.Scatter(
+                            x=[x_values[i-1], x_values[i]],  # Each segment has two x points
+                            y=[y_values[i-1], y_values[i]],  # Each segment has two y points
+                            mode='lines',
+                            line=dict(color=f'rgb({255 - int(255 * normalized_time_values[i])}, {int(165 * normalized_time_values[i])}, 0)', width=3),
+                            showlegend=False,  # Disable legend for individual segments
+                            hoverinfo='skip'  # Disable hover info for individual segments
+                        ))
+
+                    # Update layout
+                    fig.update_layout(
+                        title="Cumulative Returns",
+                        # xaxis_title="Date",
+                        # yaxis_title="Cumulative Returns",
+                        paper_bgcolor="#f4f4f4",
+                        plot_bgcolor="#f4f4f4"
+                    )
+
             # Display the figure
             fig.show()
 
