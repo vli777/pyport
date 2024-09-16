@@ -17,7 +17,7 @@ def save_model_results(model_name, time_period, input_filename, symbols, scaled)
         for symbol in filtered_symbols:
             writer.writerow([symbol, 0])
 
-def load_model_results_from_cache(model_name, time_period, input_filename):
+def load_model_results_from_cache(model_name, time_period, input_filename, symbols):
     """Loads the model results from cache if available and valid."""
     cache_dir = Path.cwd() / "cache"
     cache_file = cache_dir / f"{input_filename}-{model_name}-{time_period}.csv"
@@ -27,6 +27,15 @@ def load_model_results_from_cache(model_name, time_period, input_filename):
         with cache_file.open("r") as csvfile:
             reader = csv.reader(csvfile)
             results = {row[0]: float(row[1]) for row in reader}
-        return results
+        # Check if all symbols in the cached results match the provided symbols list
+        cached_symbols = set(results.keys())
+        provided_symbols = set(symbols)
+        
+        if cached_symbols == provided_symbols:
+            print("Cache is valid and contains matching symbols.")
+            return results
+        else:
+            print("Cache symbols do not match. Recalculating.")
+            return None
     else:
         return None

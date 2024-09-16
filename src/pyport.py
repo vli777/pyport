@@ -285,7 +285,7 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
         logger.info(f"\nCalculating {years} {optimization_method.upper()} allocation")
         
         # Check if results already exist in cache
-        cached_results = load_model_results_from_cache(model_name, years, input_filename)
+        cached_results = load_model_results_from_cache(model_name, years, input_filename, symbols)
         
         # If cached results exist, use them
         if cached_results:
