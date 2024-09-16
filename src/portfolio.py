@@ -60,7 +60,7 @@ def stacked_output(stack_dict):
 
     # Track the number of portfolios processed
     num_portfolios = len(stack_dict)
-
+   
     # Sum all portfolios, ensuring missing symbols default to 0
     for portfolio in stack_dict.values():
         if isinstance(portfolio, dict):

@@ -280,6 +280,7 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
     for optimization in config.models[years]:
         optimization_method = optimization.lower()
         model_name = optimization_method
+        key = model_name + str(years)
         input_filename = ", ".join([str(i) for i in sorted(config.input_files)])  # Combined input file names
         
         logger.info(f"\nCalculating {years} {optimization_method.upper()} allocation")
@@ -291,7 +292,7 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
         if cached_results:
             print(f"Using cached results for {years} {optimization_method.upper()} allocation")
             normalized_weights = normalize_weights(cached_results, config.config["min_weight"])
-            stack[model_name] = normalized_weights
+            stack[key] = normalized_weights
         else:
             # Cache does not exist, proceed with optimization
             try:
@@ -305,7 +306,7 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
                 normalized_weights = normalize_weights(converted_weights, config.config["min_weight"])
                 
                 # Add to stack (done here instead of in `output`)
-                stack[model_name] = normalized_weights
+                stack[key] = normalized_weights
                 
                 # Save the results to the cache
                 save_model_results(model_name, years, input_filename, symbols, normalized_weights)
