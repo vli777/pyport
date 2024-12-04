@@ -127,14 +127,17 @@ def process_symbols(symbols, start_date, end_date, path, download):
     for sym in symbols:
         if not sym:
             continue
-
+        
         df_sym = load_or_download_symbol_data(sym, start_date, end_date, path, download)
 
         # Ensure the index is unique by dropping duplicate dates
         df_sym = df_sym[~df_sym.index.duplicated(keep='first')]
-
-        df_sym.rename(columns={"Adj Close": sym}, inplace=True)
-        df_sym.drop(["Open", "High", "Low", "Close", "Volume"], axis=1, inplace=True)
+        columns_to_drop = ["Open", "High", "Low", "Close", "Volume"]
+        try:
+            df_sym.rename(columns={"Adj Close": sym}, inplace=True)        
+            df_sym.drop(columns_to_drop, axis=1, inplace=True)
+        except KeyError:
+            print(f"{sym} encountered a key error where {columns_to_drop} not found in axis")
 
         try:
             # Get the positional index of the closest date
