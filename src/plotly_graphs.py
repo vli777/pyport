@@ -179,23 +179,23 @@ def plot_graphs(daily_returns, cumulative_returns, config, symbols, bgcolor="#f4
                     ))
 
                     # Plot each segment with a corresponding color
-                    for i in range(1, len(x_values)):
-                        fig.add_trace(go.Scatter(
-                            x=[x_values[i-1], x_values[i]],  # Each segment has two x points
-                            y=[y_values[i-1], y_values[i]],  # Each segment has two y points
-                            mode='lines',
-                            line=dict(color=f'rgb({255 - int(255 * normalized_time_values[i])}, {int(165 * normalized_time_values[i])}, 0)', width=3),
-                            showlegend=False,  # Disable legend for individual segments
-                            hoverinfo='skip'  # Disable hover info for individual segments
-                        ))
+                    # for i in range(1, len(x_values)):
+                    #     fig.add_trace(go.Scatter(
+                    #         x=[x_values[i-1], x_values[i]],  # Each segment has two x points
+                    #         y=[y_values[i-1], y_values[i]],  # Each segment has two y points
+                    #         mode='lines',
+                    #         line=dict(color=f'rgb({255 - int(255 * normalized_time_values[i])}, {int(165 * normalized_time_values[i])}, 0)', width=3),
+                    #         showlegend=False,  # Disable legend for individual segments
+                    #         hoverinfo='skip'  # Disable hover info for individual segments
+                    #     ))
 
                     # Update layout
                     fig.update_layout(
                         title="Cumulative Returns",
                         # xaxis_title="Date",
                         # yaxis_title="Cumulative Returns",
-                        paper_bgcolor="#f4f4f4",
-                        plot_bgcolor="#f4f4f4"
+                        paper_bgcolor=bgcolor,
+                        plot_bgcolor=bgcolor
                     )
 
             # Display the figure
