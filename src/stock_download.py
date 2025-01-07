@@ -4,6 +4,7 @@ import yfinance as yf
 import csv
 import pandas as pd
 
+
 def is_valid_ticker(symbol):
     try:
         ticker = yf.Ticker(symbol)
@@ -12,6 +13,7 @@ def is_valid_ticker(symbol):
     except:
         return False
 
+
 def process_input_files(input_file_paths):
     """
     Process input CSV files, read valid ticker symbols, and return a sorted list of unique symbols.
@@ -19,10 +21,12 @@ def process_input_files(input_file_paths):
     """
     symbols = set()
     for input_file in input_file_paths:
-        input_file = Path(input_file).with_suffix(".csv")  # Ensure the file has a .csv extension
+        input_file = Path(input_file).with_suffix(
+            ".csv"
+        )  # Ensure the file has a .csv extension
 
         try:
-            with input_file.open('r') as file:
+            with input_file.open("r") as file:
                 for line in file:
                     line = line.strip().upper()
                     # Validate ticker: must be alphabetic and not start with a comment ('#')
@@ -35,8 +39,9 @@ def process_input_files(input_file_paths):
             print(f"File not found: {input_file}")
         except Exception as e:
             print(f"Error processing file {input_file}: {e}")
-    
+
     return sorted(symbols)
+
 
 def get_stock_data(symbol, start_date, end_date):
     """
@@ -45,6 +50,7 @@ def get_stock_data(symbol, start_date, end_date):
     print(f"Downloading {symbol} {start_date} - {end_date} ...")
     symbol_df = yf.download(symbol, start=start_date, end=end_date)
     return symbol_df
+
 
 def update_store(data_path, symbol, symbol_df, start_date, end_date):
     """
@@ -61,10 +67,10 @@ def update_store(data_path, symbol, symbol_df, start_date, end_date):
     # If new data is available (i.e., no overlap with existing data)
     if not new_data.empty:
         # Append new data to the CSV file
-        with csv_filename.open('a', newline='') as csvfile:
+        with csv_filename.open("a", newline="") as csvfile:
             writer = csv.writer(csvfile)
             for index, row in new_data.iterrows():
-                index_date_string = index.strftime('%Y-%m-%d')
+                index_date_string = index.strftime("%Y-%m-%d")
                 writer.writerow([index_date_string] + row.tolist())
 
         # Update symbol_df with new data, removing duplicates (if any)

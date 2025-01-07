@@ -9,6 +9,7 @@ from typing import Tuple, Optional
 from dateutil.relativedelta import relativedelta
 from .logger import logger
 
+
 def str_to_date(date_str: str, fmt: str = "%Y-%m-%d") -> datetime:
     """
     Convert a string to a datetime object.
@@ -63,12 +64,14 @@ def is_after_4pm_est(current_time: Optional[datetime] = None) -> bool:
     Returns:
         bool: True if after 4:01 PM EST, False otherwise.
     """
-    est = pytz.timezone('US/Eastern')
+    est = pytz.timezone("US/Eastern")
     now = current_time.astimezone(est) if current_time else datetime.now(est)
     return now.hour > 16 or (now.hour == 16 and now.minute >= 1)
 
 
-def get_non_holiday_weekdays(start_date: date, end_date: date, tz: pytz.timezone = pytz.timezone('US/Eastern')) -> Tuple[date, date]:
+def get_non_holiday_weekdays(
+    start_date: date, end_date: date, tz: pytz.timezone = pytz.timezone("US/Eastern")
+) -> Tuple[date, date]:
     """
     Retrieve the first and last non-holiday weekdays within a date range based on the NYSE calendar.
 
@@ -80,7 +83,7 @@ def get_non_holiday_weekdays(start_date: date, end_date: date, tz: pytz.timezone
     Returns:
         Tuple[date, date]: A tuple containing the first and last valid dates.
     """
-    nyse = mcal.get_calendar('NYSE')
+    nyse = mcal.get_calendar("NYSE")
     schedule = nyse.schedule(start_date=start_date, end_date=end_date)
 
     if schedule.empty:
@@ -91,7 +94,9 @@ def get_non_holiday_weekdays(start_date: date, end_date: date, tz: pytz.timezone
     return first_date, last_date
 
 
-def calculate_start_end_dates(years: int, reference_date: Optional[date] = None) -> Tuple[date, date]:
+def calculate_start_end_dates(
+    years: int, reference_date: Optional[date] = None
+) -> Tuple[date, date]:
     """
     Calculate the start and end dates based on the number of years from a reference date.
 
@@ -105,6 +110,7 @@ def calculate_start_end_dates(years: int, reference_date: Optional[date] = None)
     reference_date = reference_date or datetime.now().date()
     start_date_from_ref = reference_date - relativedelta(years=years)
     return get_non_holiday_weekdays(start_date_from_ref, reference_date)
+
 
 def get_last_date(csv_filename: str) -> Optional[date]:
     """
@@ -125,15 +131,17 @@ def get_last_date(csv_filename: str) -> Optional[date]:
         raise FileNotFoundError(f"File '{csv_filename}' does not exist.")
 
     try:
-        with csv_path.open('r', newline='') as file:
+        with csv_path.open("r", newline="") as file:
             reader = csv.reader(file)
             for row in reversed(list(reader)):
                 if row:
                     last_date_str = row[0].strip()
                     try:
-                        return datetime.strptime(last_date_str, '%Y-%m-%d').date()
+                        return datetime.strptime(last_date_str, "%Y-%m-%d").date()
                     except ValueError:
-                        logger.warning(f"Invalid date format: '{last_date_str}' in file '{csv_filename}'. Skipping.")
+                        logger.warning(
+                            f"Invalid date format: '{last_date_str}' in file '{csv_filename}'. Skipping."
+                        )
         logger.info(f"No valid dates found in '{csv_filename}'.")
         return None
     except Exception as e:

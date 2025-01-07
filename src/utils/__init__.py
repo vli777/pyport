@@ -7,13 +7,18 @@ from .date_utils import (
     is_after_4pm_est,
     get_non_holiday_weekdays,
     calculate_start_end_dates,
-    get_last_date
+    get_last_date,
 )
 from .portfolio_utils import (
     convert_to_dict,
     normalize_weights,
     stacked_output,
-    holdings_match
+    holdings_match,
+)
+from .caching_utils import (
+    save_model_results,
+    load_model_results_from_cache,
+    cleanup_cache,
 )
 from .logger import logger
 
@@ -29,5 +34,8 @@ __all__ = [
     "normalize_weights",
     "stacked_output",
     "holdings_match",
-    "logger"
+    "save_model_results",
+    "load_model_results_from_cache",
+    "cleanup_cache",
+    "logger",
 ]

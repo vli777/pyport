@@ -1,6 +1,7 @@
 """
 Pyport - portfolio optimization
 """
+
 import numpy as np
 import pandas as pd
 import yaml
@@ -25,11 +26,9 @@ from helpers import *
 from caching import *
 
 # Setup logger
-logging.basicConfig(
-    level=logging.INFO, 
-    format='\n%(levelname)s: %(name)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="\n%(levelname)s: %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
 
 # Load configuration
 class Config:
@@ -44,38 +43,47 @@ class Config:
         self.plot_daily_returns = self.config.get("plot_daily_returns", False)
         self.plot_cumulative_returns = self.config.get("plot_cumulative_returns", False)
         self.min_weight = self.config["min_weight"]
-        self.portfolio_max_size = self.config["portfolio_max_size"]        
+        self.portfolio_max_size = self.config["portfolio_max_size"]
         self.sort_by_weights = self.config.get("sort_by_weights", False)
         self.verbose = self.config.get("verbose", False)
         self.test_mode = self.config.get("test_mode", False)
         self.test_data_visible_pct = self.config["test_data_visible_pct"]
         self.optimization_config = self.config["optimization_config"]
-        
+
+
 def load_or_download_symbol_data(symbol, start_date, end_date, data_path, download):
     """
     Load the symbol data from a CSV file, or download it if the file doesn't exist
-    or needs an update. Append missing data to the CSV from the selected start_date 
+    or needs an update. Append missing data to the CSV from the selected start_date
     if the file starts later than the start_date. Skip downloading on weekends, holidays,
     and after market close if data for today has already been downloaded.
     """
     symbol_file = Path(data_path) / f"{symbol}.csv"
-    
+
     # Initialize an empty dataframe for the symbol
     df_sym = pd.DataFrame()
 
     # Get the current time in EST
-    est = pytz.timezone('US/Eastern')
+    est = pytz.timezone("US/Eastern")
     now_est = datetime.now(est)
-    
+
     # Determine if today is a weekend
     today = now_est.date()
-    if not is_weekday(today):    
-        return pd.read_csv(symbol_file, parse_dates=True, index_col="Date") if symbol_file.exists() else df_sym
-    
+    if not is_weekday(today):
+        return (
+            pd.read_csv(symbol_file, parse_dates=True, index_col="Date")
+            if symbol_file.exists()
+            else df_sym
+        )
+
     # Check if today is a valid trading day (not a holiday)
     first_valid_date, _ = get_non_holiday_weekdays(today, today, tz=est)
-    if today != first_valid_date:       
-        return pd.read_csv(symbol_file, parse_dates=True, index_col="Date") if symbol_file.exists() else df_sym
+    if today != first_valid_date:
+        return (
+            pd.read_csv(symbol_file, parse_dates=True, index_col="Date")
+            if symbol_file.exists()
+            else df_sym
+        )
 
     # Determine if it's after 4:01 PM EST
     after_market_close = is_after_4pm_est()
@@ -86,7 +94,7 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         last_date = get_last_date(symbol_file)  # Get the last date from the file
 
         # Check if the data for today has already been downloaded
-        if last_date is not None and last_date >= pd.Timestamp(today):         
+        if last_date is not None and last_date >= pd.Timestamp(today):
             return df_sym
 
     # If the file exists and downloading is not forced, update the file if necessary
@@ -97,8 +105,14 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
 
         # If the first row's date is later than start_date, download missing data and append it
         if first_date > pd.Timestamp(start_date):
-            print(f"Appending missing data from {start_date} to {first_date} for {symbol}")
-            missing_data = get_stock_data(symbol, start_date=start_date, end_date=first_date - pd.Timedelta(days=1))
+            print(
+                f"Appending missing data from {start_date} to {first_date} for {symbol}"
+            )
+            missing_data = get_stock_data(
+                symbol,
+                start_date=start_date,
+                end_date=first_date - pd.Timedelta(days=1),
+            )
             # Append the missing data at the top
             df_sym = pd.concat([missing_data, df_sym])
 
@@ -127,21 +141,23 @@ def process_symbols(symbols, start_date, end_date, path, download):
     for sym in symbols:
         if not sym:
             continue
-        
+
         df_sym = load_or_download_symbol_data(sym, start_date, end_date, path, download)
 
         # Ensure the index is unique by dropping duplicate dates
-        df_sym = df_sym[~df_sym.index.duplicated(keep='first')]
+        df_sym = df_sym[~df_sym.index.duplicated(keep="first")]
         columns_to_drop = ["Open", "High", "Low", "Close", "Volume"]
         try:
-            df_sym.rename(columns={"Adj Close": sym}, inplace=True)        
+            df_sym.rename(columns={"Adj Close": sym}, inplace=True)
             df_sym.drop(columns_to_drop, axis=1, inplace=True)
         except KeyError:
-            print(f"{sym} encountered a key error where {columns_to_drop} not found in axis")
+            print(
+                f"{sym} encountered a key error where {columns_to_drop} not found in axis"
+            )
 
         try:
             # Get the positional index of the closest date
-            pos = df_sym.index.get_loc(start_date_ts, method='nearest')
+            pos = df_sym.index.get_loc(start_date_ts, method="nearest")
 
             # Use .iloc to slice by position
             df_sym = df_sym.iloc[pos:]
@@ -154,7 +170,8 @@ def process_symbols(symbols, start_date, end_date, path, download):
         else:
             df = df.join(df_sym, how="outer")
 
-    return df.fillna(method='bfill')
+    return df.fillna(method="bfill")
+
 
 def run_optimization(method, df, config):
     OPTIMIZATION_METHODS = {
@@ -171,43 +188,43 @@ def run_optimization(method, df, config):
         "fcornk": FCORNK,
         "mean_variance": MeanVarianceOptimisation,
     }
-    
+
     optimizer_class = OPTIMIZATION_METHODS.get(method)
     if optimizer_class:
-        if method == 'olmar':
+        if method == "olmar":
             optimizer = optimizer_class(
-                reversion_method=config[method]["method"], 
+                reversion_method=config[method]["method"],
                 epsilon=config[method]["epsilon"],
                 window=config[method]["window"],
                 alpha=config[method]["alpha"],
             )
-        elif method == 'rmr':
+        elif method == "rmr":
             optimizer = optimizer_class(
                 epsilon=config[method]["epsilon"],
                 n_iteration=config[method]["n_iteration"],
                 tau=config[method]["tau"],
                 window=config[method]["window"],
             )
-        elif method == 'scorn':
+        elif method == "scorn":
             optimizer = optimizer_class(
                 window=config[method]["window"],
                 rho=config[method]["rho"],
             )
-        elif method == 'fcornk':
+        elif method == "fcornk":
             optimizer = optimizer_class(
                 window=config[method]["window"],
                 rho=config[method]["rho"],
                 lambd=config[method]["lambd"],
                 k=config[method]["k"],
             )
-        else :
+        else:
             optimizer = optimizer_class()
 
         # Handle NCO with Sharpe check
         if method == "nco":
             asset_returns = np.log(df) - np.log(df.shift(1))
             asset_returns = asset_returns.iloc[1:, :]
-            
+
             if config[method]["sharpe"]:
                 mu_vec = np.array(asset_returns.mean())
             else:
@@ -219,7 +236,7 @@ def run_optimization(method, df, config):
                 mu_vec=mu_vec.reshape(-1, 1),
             )
             optimizer.weights = weights
-        
+
         # Handle MC optimization
         elif method in ["mc", "mc2"]:
             asset_returns = np.log(df) - np.log(df.shift(1))
@@ -242,10 +259,12 @@ def run_optimization(method, df, config):
         elif method in ["cla", "cla2"]:
             solution = config[method]["solution"]
             optimizer.allocate(asset_prices=df, solution=solution)
-        
+
         # Handle Mean-Variance Optimization
         elif method == "mean_variance":
-            expected_returns = ReturnsEstimators().calculate_mean_historical_returns(asset_prices=df)
+            expected_returns = ReturnsEstimators().calculate_mean_historical_returns(
+                asset_prices=df
+            )
             covariance = ReturnsEstimators().calculate_returns(asset_prices=df).cov()
 
             optimizer.allocate(
@@ -263,7 +282,7 @@ def run_optimization(method, df, config):
         elif method in ["fcornk", "scorn", "rmr", "olmar"]:
             # Safely get the 'resample' parameter, defaulting to None if not present
             resample_by = config[method].get("resample", None)
-            
+
             # Call allocate with or without resample based on the configuration
             if resample_by:
                 optimizer.allocate(asset_prices=df, resample_by=resample_by)
@@ -284,43 +303,61 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
         optimization_method = optimization.lower()
         model_name = optimization_method
         key = model_name + str(years)
-        input_filename = ", ".join([str(i) for i in sorted(config.input_files)])  # Combined input file names
-        
+        input_filename = ", ".join(
+            [str(i) for i in sorted(config.input_files)]
+        )  # Combined input file names
+
         logger.info(f"\nCalculating {years} {optimization_method.upper()} allocation")
-        
+
         # Check if results already exist in cache
-        cached_results = load_model_results_from_cache(model_name, years, input_filename, symbols)
-        
+        cached_results = load_model_results_from_cache(
+            model_name, years, input_filename, symbols
+        )
+
         # If cached results exist, use them
         if cached_results:
-            print(f"Using cached results for {years} {optimization_method.upper()} allocation")
-            normalized_weights = normalize_weights(cached_results, config.config["min_weight"])
+            print(
+                f"Using cached results for {years} {optimization_method.upper()} allocation"
+            )
+            normalized_weights = normalize_weights(
+                cached_results, config.config["min_weight"]
+            )
             stack[key] = normalized_weights
         else:
             # Cache does not exist, proceed with optimization
             try:
                 # Run optimization
-                optimizer = run_optimization(optimization_method, df, config.config["optimization_config"])
-                
+                optimizer = run_optimization(
+                    optimization_method, df, config.config["optimization_config"]
+                )
+
                 # Convert optimizer.weights to dict (assuming asset_names are in symbols)
-                converted_weights = convert_to_dict(optimizer.weights, asset_names=symbols)
-                
+                converted_weights = convert_to_dict(
+                    optimizer.weights, asset_names=symbols
+                )
+
                 # Normalize weights before adding to stack
-                normalized_weights = normalize_weights(converted_weights, config.config["min_weight"])
-                
+                normalized_weights = normalize_weights(
+                    converted_weights, config.config["min_weight"]
+                )
+
                 # Add to stack (done here instead of in `output`)
                 stack[key] = normalized_weights
-                
+
                 # Save the results to the cache
-                save_model_results(model_name, years, input_filename, symbols, normalized_weights)
+                save_model_results(
+                    model_name, years, input_filename, symbols, normalized_weights
+                )
             except Exception as e:
                 logger.error(f"Optimization error: {e}")
                 continue  # Skip to the next iteration on error
-        
-        # Output results (whether from cache or recalculated)
-        output_results(df, normalized_weights, model_name, config, start_date, end_date, years)
 
-    
+        # Output results (whether from cache or recalculated)
+        output_results(
+            df, normalized_weights, model_name, config, start_date, end_date, years
+        )
+
+
 def main():
     CONFIG_FILENAME = "config.yaml"
     config = Config(CONFIG_FILENAME)
@@ -336,11 +373,13 @@ def main():
     filtered_times = [k for k in config.models.keys() if config.models[k]]
     sorted_times = sorted(filtered_times, reverse=True)
 
-     # Process symbols and load data
+    # Process symbols and load data
     for years in sorted_times:
         start_date, end_date = calculate_start_end_dates(years)
-        symbols = process_input_files([Path(config.input_files_folder) / file for file in config.input_files])
-        
+        symbols = process_input_files(
+            [Path(config.input_files_folder) / file for file in config.input_files]
+        )
+
         if config.test_mode:
             logger.info(f"Test mode: symbols - {symbols}")
 
@@ -360,20 +399,24 @@ def main():
             df.to_csv("full_df.csv")
             df = df.head(int(len(df) * config.config["test_data_visible_pct"]))
 
-        run_optimization_and_save(df, config, start_date, end_date, symbols, stack, years)
+        run_optimization_and_save(
+            df, config, start_date, end_date, symbols, stack, years
+        )
 
-    # Post-processing: Handle stack and averaging results    
-    if len(stack) > 0:        
+    # Post-processing: Handle stack and averaging results
+    if len(stack) > 0:
         avg = stacked_output(stack)
         sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
         normalized_avg = normalize_weights(sorted_avg, config.config["min_weight"])
-    
+
         # Filter out None values from config.models
-        valid_models = [v for v in config.models.values() if v is not None]    
-        # Combine model names for the final output    
+        valid_models = [v for v in config.models.values() if v is not None]
+        # Combine model names for the final output
         combined_model_names = ", ".join(sorted(list(set(sum(valid_models, [])))))
 
-        combined_input_files_names = ", ".join([str(i) for i in sorted(config.input_files)])
+        combined_input_files_names = ", ".join(
+            [str(i) for i in sorted(config.input_files)]
+        )
 
         # Plot final graphs using the averaged results
         daily_returns_to_plot, cumulative_returns_to_plot = output(
@@ -386,16 +429,23 @@ def main():
             time_period=sorted_times[0],
             minimum_weight=config.config["min_weight"],
             max_size=config.config["portfolio_max_size"],
-            config=config
+            config=config,
         )
 
         # Plot graphs
-        plot_graphs(daily_returns_to_plot, cumulative_returns_to_plot, config, symbols=daily_returns_to_plot.columns.tolist())
+        plot_graphs(
+            daily_returns_to_plot,
+            cumulative_returns_to_plot,
+            config,
+            symbols=daily_returns_to_plot.columns.tolist(),
+        )
 
     if __name__ == "__main__":
         cache_dir = "cache"
         cleanup_cache(cache_dir)
-    
+
     # Run the script
+
+
 if __name__ == "__main__":
     main()

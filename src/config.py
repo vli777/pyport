@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any
 import os
 
+
 @dataclass
 class OptimizationConfig:
     hrp: Dict[str, Any]
@@ -22,6 +23,7 @@ class OptimizationConfig:
     efficient_risk: float
     efficient_return: float
     risk_aversion: float
+
 
 @dataclass
 class Config:
@@ -42,15 +44,17 @@ class Config:
     optimization_config: OptimizationConfig
 
     @classmethod
-    def from_yaml(cls, config_file: str) -> 'Config':
+    def from_yaml(cls, config_file: str) -> "Config":
         if not os.path.exists(config_file):
             raise FileNotFoundError(f"Configuration file {config_file} does not exist.")
 
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             config_dict = yaml.safe_load(f)
 
         # Parse nested optimization_config
-        optimization_config = OptimizationConfig(**config_dict.get("optimization_config", {}))
+        optimization_config = OptimizationConfig(
+            **config_dict.get("optimization_config", {})
+        )
 
         return cls(
             folder=config_dict["folder"],
@@ -67,5 +71,5 @@ class Config:
             use_short=config_dict.get("use_short", False),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
-            optimization_config=optimization_config
+            optimization_config=optimization_config,
         )

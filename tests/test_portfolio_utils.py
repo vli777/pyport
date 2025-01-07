@@ -7,14 +7,15 @@ import numpy as np
 import pandas as pd
 
 # Add the src directory to sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from utils.portfolio_utils import (
     convert_to_dict,
     normalize_weights,
     stacked_output,
-    holdings_match
+    holdings_match,
 )
+
 
 class TestPortfolioUtils(unittest.TestCase):
 
@@ -68,12 +69,12 @@ class TestPortfolioUtils(unittest.TestCase):
         stack_dict = {
             "model_a": {"Asset_A": 0.5, "Asset_B": 0.3},
             "model_b": {"Asset_A": 0.2, "Asset_B": 0.4, "Asset_C": 0.4},
-            "model_c": {"Asset_A": 0.6}
+            "model_c": {"Asset_A": 0.6},
         }
         expected = {
             "Asset_A": round((0.5 + 0.2 + 0.6) / 3, 3),  # 1.3 / 3 ≈ 0.433
             "Asset_B": round((0.3 + 0.4 + 0.0) / 3, 3),  # 0.7 / 3 ≈ 0.233
-            "Asset_C": round((0.0 + 0.4 + 0.0) / 3, 3)   # 0.4 / 3 ≈ 0.133
+            "Asset_C": round((0.0 + 0.4 + 0.0) / 3, 3),  # 0.4 / 3 ≈ 0.133
         }
         result = stacked_output(stack_dict)
         self.assertEqual(result, expected)
@@ -101,5 +102,6 @@ class TestPortfolioUtils(unittest.TestCase):
         result = holdings_match(cached_model_dict, input_file_symbols, test_mode=True)
         self.assertFalse(result)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

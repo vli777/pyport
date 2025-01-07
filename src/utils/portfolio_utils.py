@@ -30,8 +30,12 @@ def convert_to_dict(weights: Any, asset_names: list) -> Dict[str, float]:
             logger.debug(f"Flattened weights: {weights}")
 
         if len(weights) != len(asset_names):
-            logger.error("The number of weights does not match the number of asset names.")
-            raise ValueError("The number of weights does not match the number of asset names.")
+            logger.error(
+                "The number of weights does not match the number of asset names."
+            )
+            raise ValueError(
+                "The number of weights does not match the number of asset names."
+            )
 
         converted = {asset: weight for asset, weight in zip(asset_names, weights)}
         logger.debug(f"Converted weights: {converted}")
@@ -45,8 +49,12 @@ def convert_to_dict(weights: Any, asset_names: list) -> Dict[str, float]:
 
         weights_series = weights.squeeze()
         if not weights_series.index.equals(pd.Index(asset_names)):
-            logger.error("Asset names in DataFrame index do not match the provided asset_names list.")
-            raise ValueError("Asset names in DataFrame index do not match the provided asset_names list.")
+            logger.error(
+                "Asset names in DataFrame index do not match the provided asset_names list."
+            )
+            raise ValueError(
+                "Asset names in DataFrame index do not match the provided asset_names list."
+            )
 
         converted = weights_series.to_dict()
         logger.debug(f"Converted weights: {converted}")
@@ -55,11 +63,15 @@ def convert_to_dict(weights: Any, asset_names: list) -> Dict[str, float]:
     elif isinstance(weights, dict):
         logger.debug("Weights are already in dictionary format.")
         if set(weights.keys()) != set(asset_names):
-            logger.warning("The asset names in weights do not match the provided asset_names list.")
+            logger.warning(
+                "The asset names in weights do not match the provided asset_names list."
+            )
         return weights
 
     else:
-        logger.error(f"Unsupported weight type: {type(weights)}. Must be ndarray, DataFrame, or dict.")
+        logger.error(
+            f"Unsupported weight type: {type(weights)}. Must be ndarray, DataFrame, or dict."
+        )
         raise TypeError("Unsupported weight type: must be ndarray, DataFrame, or dict.")
 
 
@@ -90,7 +102,9 @@ def normalize_weights(weights: Dict[str, float], min_weight: float) -> Dict[str,
 
     if total_weight == 0:
         logger.error("No weights remain after filtering with the specified min_weight.")
-        raise ValueError("No weights remain after filtering with the specified min_weight.")
+        raise ValueError(
+            "No weights remain after filtering with the specified min_weight."
+        )
 
     # Normalize the remaining weights to sum to 1
     normalized_weights = {k: v / total_weight for k, v in filtered_weights.items()}
@@ -151,13 +165,18 @@ def stacked_output(stack_dict: Dict[str, Dict[str, float]]) -> Dict[str, float]:
                 total_weights[asset] += portfolio.get(asset, 0.0)
 
     # Calculate the average weights
-    average_weights = {asset: round(total_weight / num_portfolios, 3) for asset, total_weight in total_weights.items()}
+    average_weights = {
+        asset: round(total_weight / num_portfolios, 3)
+        for asset, total_weight in total_weights.items()
+    }
     logger.debug(f"Average weights: {average_weights}")
 
     return average_weights
 
 
-def holdings_match(cached_model_dict: Dict[str, Any], input_file_symbols: list, test_mode: bool = False) -> bool:
+def holdings_match(
+    cached_model_dict: Dict[str, Any], input_file_symbols: list, test_mode: bool = False
+) -> bool:
     """
     Check if all selected symbols match between the cached model dictionary and the input file symbols.
 
@@ -177,16 +196,24 @@ def holdings_match(cached_model_dict: Dict[str, Any], input_file_symbols: list, 
 
     if missing_in_input:
         if test_mode:
-            logger.warning(f"Symbols {missing_in_input} are in cached_model_dict but not in input_file_symbols.")
+            logger.warning(
+                f"Symbols {missing_in_input} are in cached_model_dict but not in input_file_symbols."
+            )
         else:
-            logger.warning(f"Symbols {missing_in_input} are missing in input_file_symbols.")
+            logger.warning(
+                f"Symbols {missing_in_input} are missing in input_file_symbols."
+            )
         return False
 
     if missing_in_cache:
         if test_mode:
-            logger.warning(f"Symbols {missing_in_cache} are in input_file_symbols but not in cached_model_dict.")
+            logger.warning(
+                f"Symbols {missing_in_cache} are in input_file_symbols but not in cached_model_dict."
+            )
         else:
-            logger.warning(f"Symbols {missing_in_cache} are missing in cached_model_dict.")
+            logger.warning(
+                f"Symbols {missing_in_cache} are missing in cached_model_dict."
+            )
         return False
 
     logger.debug("All symbols match between cached_model_dict and input_file_symbols.")
