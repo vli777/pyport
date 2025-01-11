@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional
 from mlfinlab.backtest_statistics import sharpe_ratio
 import pandas as pd
 
+from config import Config
 from utils import logger
 from utils.portfolio_utils import calculate_portfolio_performance, trim_weights
 
@@ -15,7 +16,7 @@ def output(
     optimization_model: Optional[str] = None,
     time_period: float = 1.0,
     minimum_weight: float = 0.01,
-    config=None
+    config: Config=None
 ):
     """
     Produces console output (stats) and returns daily/cumulative returns of 
@@ -77,7 +78,7 @@ def output_results(df, weights, model_name, config, start_date, end_date, years)
         end_date=end_date,
         optimization_model=model_name,
         time_period=years,
-        minimum_weight=config.config["min_weight"],
-        max_size=config.config.get("portfolio_max_size", 10),
+        minimum_weight=config.min_weight,
+        max_size=getattr(config, "portfolio_max_size", 10),
         config=config,
     )
