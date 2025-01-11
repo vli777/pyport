@@ -3,8 +3,8 @@ from typing import Any, Dict, Optional
 from mlfinlab.backtest_statistics import sharpe_ratio
 import pandas as pd
 
-from src.utils import logger
-from src.utils.portfolio_utils import calculate_portfolio_performance, trim_weights
+from utils import logger
+from utils.portfolio_utils import calculate_portfolio_performance, trim_weights
 
 def output(
     data: pd.DataFrame,

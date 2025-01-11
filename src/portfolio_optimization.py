@@ -12,8 +12,8 @@ from portfoliolab.online_portfolio_selection.olmar import OLMAR
 from portfoliolab.online_portfolio_selection.fcornk import FCORNK
 from portfoliolab.online_portfolio_selection.scorn import SCORN
 
-from src.result_output import output_results
-from src.utils.portfolio_utils import convert_to_dict, normalize_weights
+from result_output import output_results
+from utils.portfolio_utils import convert_to_dict, normalize_weights
 
 
 def run_optimization(method, df, config):

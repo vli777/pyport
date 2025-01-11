@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
-from logger import logger
+from .logger import logger
 
 def is_valid_ticker(symbol):
     try:

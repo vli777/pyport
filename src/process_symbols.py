@@ -5,9 +5,9 @@ from pathlib import Path
 import pandas as pd
 import pytz
 
-from src.utils import logger
-from src.utils.data_utils import get_stock_data, get_last_date, update_store
-from src.utils.date_utils import get_non_holiday_weekdays, is_after_4pm_est, is_weekday
+from utils import logger
+from utils.data_utils import get_stock_data, get_last_date, update_store
+from utils.date_utils import get_non_holiday_weekdays, is_after_4pm_est, is_weekday
 
 
 def load_or_download_symbol_data(symbol, start_date, end_date, data_path, download):
