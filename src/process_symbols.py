@@ -84,17 +84,16 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
     start_date_ts = pd.Timestamp(start_date)
 
     for sym in symbols:
-        if not sym:
-            continue
-
-        # Load or download the data
+        # Load or download the data just once
         df_sym = load_or_download_symbol_data(sym, start_date, end_date, data_path, download)
+        if df_sym.empty:
+            logger.warning(f"No data for {sym}, skipping.")
+            continue
 
         # Drop duplicates in the index (if any)
         df_sym = df_sym.loc[~df_sym.index.duplicated(keep="first")]
 
-        # Rename 'Adj Close' to the ticker symbol
-        # and drop the other columns (Open, High, Low, Close, Volume, etc.)
+        # Rename 'Adj Close' to the ticker symbol, drop the other columns
         try:
             df_sym.rename(columns={"Adj Close": sym}, inplace=True)
             columns_to_drop = ["Open", "High", "Low", "Close", "Volume", "Adj Close"]
@@ -103,16 +102,18 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
                     df_sym.drop(col, axis=1, inplace=True)
         except KeyError as e:
             logger.warning(f"{sym} encountered a key error: {e}")
-
-        # Slice from the start_date onward
-        try:
-            pos = df_sym.index.get_loc(start_date_ts, method="nearest")
-            df_sym = df_sym.iloc[pos:]
-        except KeyError:
-            logger.warning(f"KeyError: {start_date_ts} not found in {sym}'s data index.")
             continue
 
-        # Join into the main DataFrame
+        # Slice from the start_date onward
+        if not df_sym.empty:
+            earliest = df_sym.index.min()
+            if start_date_ts < earliest:
+                logger.info(f"{sym} data starts at {earliest}. Not slicing older than that.")
+            else:
+                pos = df_sym.index.get_loc(start_date_ts, method="nearest")
+                df_sym = df_sym.iloc[pos:]
+
+        # Join the symbol's DataFrame into the main df_all
         if df_all.empty:
             df_all = df_sym
         else:
