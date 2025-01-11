@@ -120,6 +120,10 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
             df_all = df_all.join(df_sym, how="outer")
 
     # Fill leading NaNs with the next valid data
-    df_all.fillna(method="bfill", inplace=True)
+    df_all.fillna(method="bfill", inplace=True)  # Fill from the back
+    df_all.fillna(method="ffill", inplace=True)  # Fill from the front
+    if df_all.isna().any().any():        
+        logger.warning("Data still has missing values after fill. Dropping remaining nulls.")
+        df_all.dropna(inplace=True)
 
     return df_all
