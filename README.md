@@ -1,22 +1,100 @@
-# pyport
-portfolio optimization
+# PyPort
+Portfolio Optimization
 
-optimization models available:
-* min_volatility (CLA)
-* max_sharpe (CLA2)
-* efficient_risk (MVO)
-* efficient_return  (MVO)
-* hierarchical risk parity (HRP)
-* hierarchical equal risk contribution (HERC)
-* online moving average reversion (OLMAR)
-* robust median reversion (RMR)
-* symmetric correlation driven nonparametric learning (SCORN)
-* functional correlation driven nonparametric learning (FCORNK)
-* nested clustered optimization (NCO)
+## Optimization Models Available
+- **min_volatility** (CLA)
+- **max_sharpe** (CLA2)
+- **efficient_risk** (MVO)
+- **efficient_return** (MVO)
+- **hierarchical risk parity** (HRP)
+- **hierarchical equal risk contribution** (HERC)
+- **online moving average reversion** (OLMAR)
+- **robust median reversion** (RMR)
+- **symmetric correlation driven nonparametric learning** (SCORN)
+- **functional correlation driven nonparametric learning** (FCORNK)
+- **nested clustered optimization** (NCO)
 
-Instructions:
-1. Create a config.yaml based on the testconfig.yaml template
+## Instructions
 
-2. In input file csv's, provide a single column containing the ticker symbols you want to include. # Commented lines will be skipped when downloading ticket data.
+### Setting Up Configuration
+- Create a `config.yaml` file based on the provided `testconfig.yaml` template.
+- In the `config.yaml` file, you can specify:
+  - Input files containing ticker symbols.
+  - Models and time periods to optimize against.
 
-3. In the config file under input_files, you can list multiple files to include. Multiple entries can be used under models as well. The output will contain a simple average of all selections.
+### Preparing Input Files
+- Each input file (CSV format) should have a single column containing the ticker symbols to include in the optimization.
+- Any commented lines (starting with `#`) will be ignored during processing.
+
+### Configuring Input Files in `config.yaml`
+- Under the `input_files` section of the config, list multiple files if needed. For example:
+  ```yaml
+  input_files:
+    - file1.csv
+    - file2.csv
+
+You can specify multiple models under models. The output will contain a simple average of all selected models.
+
+# Running the API
+
+The API allows you to execute the pipeline dynamically by providing configurations and symbol overrides.
+
+## Starting the API
+
+Run the following command to start the API server:
+
+```
+python api_main.py
+```
+
+The server will start on `http://0.0.0.0:8000`.
+
+## API Endpoint
+
+**POST** `/inference`
+
+- **Description**: Runs the portfolio optimization pipeline.
+- **Payload**: json { "symbols": ["AAPL", "MSFT", "TSLA"], // Optional: Override ticker symbols "config_file": "path/to/config.yaml" // Optional: Use a custom config file }
+
+  - If `symbols` is provided, it will override the ticker symbols in the config file.
+  - If `config_file` is not provided, the default `config.yaml` will be used.
+
+- **Example Request**:
+
+```
+curl -X POST "http://0.0.0.0:8000/inference" \
+-H "Content-Type: application/json" \
+-d '{
+  "symbols": ["AAPL", "MSFT", "TSLA"],
+  "config_file": "config.yaml"
+}'
+```
+
+- **Response**: A JSON object containing the results of the pipeline:
+
+json
+{ "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "models": "model_name_1, model_name_2", "symbols": ["symbol1", "symbol2"], "normalized_avg": { "symbol1": 0.25, "symbol2": 0.75 } }
+
+
+---
+
+# Running Locally (CLI Alternative)
+
+To run the pipeline locally instead of via the API, use the CLI functionality:
+
+```
+python src/cli_main.py
+```
+
+# Dependencies
+
+Install the required Python libraries:
+
+```
+pip install -r requirements.txt
+```
+
+# Notes
+
+- Ensure your `config.yaml` file is correctly configured for your use case.
+- The API allows dynamic overrides for symbols and configurations without modifying the local `config.yaml`.

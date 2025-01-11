@@ -1,69 +1,67 @@
-folder: data # store price data csv
-input_files: # csv containing symbols to load
-  - test
-musicPath: '' # completion notification sound
-ignored_symbols: # enter a list of symbols to ignore
-  - None
-models: # time period: - model name e.g. mc, mc2, herc
-  3.00:
-    - mc
-  1.00:
-    - mc
-use_cached_data: true 
-min_weight: 0.00 # clip symbols with weights below this threshold in output
-portfolio_max_size: 20 # limit portfolio size based on sorted weights
-sort_by_weights: true # sort weights in desc order in output
-plot_daily_returns: false
-plot_cumulative_returns: true
-verbose: false
-test_mode: true
-test_data_visible_pct: 1.0 # percentage of df data to view when in test mode
-optimization_config: # model specific params
+folder: str  # Path to the data folder
+input_files_folder: str  # Folder for input files
+input_files:
+  - str  # Name of the input file
+  # - str  # Additional file names for switching
+
+models:
+  float:  # Time period in years
+    - str  # Model name
+    # - str  # Other model names
+
+download: bool  # Whether to download data
+plot_daily_returns: bool  # Whether to plot daily returns
+plot_cumulative_returns: bool  # Whether to plot cumulative returns
+min_weight: float  # Minimum weight for portfolio optimization
+portfolio_max_size: int  # Maximum number of assets in the portfolio
+sort_by_weights: bool  # Whether to sort weights in the output
+test_mode: bool  # Whether to enable test mode
+test_data_visible_pct: float  # Percentage of test data to show
+
+optimization_config:
   hrp:
-    linkage: single
+    linkage: str  # Linkage type
   herc:
-    risk_measure: conditional_drawdown_risk
-    linkage: ward
+    risk_measure: str  # Risk measure type
+    linkage: str
   nco:
-    sharpe: false
+    sharpe: bool
   nco2:
-    sharpe: true
+    sharpe: bool
   mc:
-    sharpe: false
-    num_obs: 200
-    num_sims: 32
-    kde_bandwidth: 0.05
-    lw_shrinkage: false
+    sharpe: bool
+    num_obs: int  # Number of observations
+    num_sims: int  # Number of simulations
+    kde_bandwidth: float  # Bandwidth for KDE
+    lw_shrinkage: bool  # Whether to use Ledoit-Wolf shrinkage
   mc2:
-    sharpe: true
-    num_obs: 200
-    num_sims: 32
-    kde_bandwidth: 0.05
-    lw_shrinkage: false
+    sharpe: bool
+    num_obs: int
+    num_sims: int
+    kde_bandwidth: float
+    lw_shrinkage: bool
   olmar:
-    method: 1
-    epsilon: 11
-    window: 3
-    alpha: 0.11
+    method: int
+    epsilon: int
+    window: int
+    alpha: float
   rmr:
-    epsilon: 17
-    n_iteration: 60
-    window: 72
-    tau: 0.07
+    epsilon: int
+    n_iteration: int
+    window: int
+    tau: float
   scorn:
-    rho: 0.21
-    window: 21
-    resample: D
+    rho: float
+    window: int
   fcornk:
-    rho: 5
-    window: 3
-    lambd: 3
-    k: 5
-    resample: W
+    rho: int
+    window: int
+    lambd: int
+    k: int
   cla:
-    solution: min_volatility
+    solution: str
   cla2:
-    solution: max_sharpe
-  efficient_risk: 0.5
-  efficient_return: 0.5
-  risk_aversion: 3
+    solution: str
+  efficient_risk: float
+  efficient_return: float
+  risk_aversion: float
