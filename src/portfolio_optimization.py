@@ -15,7 +15,6 @@ from portfoliolab.online_portfolio_selection.scorn import SCORN
 from result_output import output_results
 from utils.portfolio_utils import convert_to_dict, normalize_weights
 
-
 def run_optimization(method, df, config):
     """
     Dispatch to the appropriate optimization class or function
@@ -173,14 +172,14 @@ def run_optimization_and_save(df, config, start_date, end_date, symbols, stack, 
         cached = load_model_results_from_cache(cache_key)
         if cached is not None:
             print(f"Using cached results for {method.upper()} with {years} years.")
-            normalized_weights = normalize_weights(cached, config.config["min_weight"])
+            normalized_weights = normalize_weights(cached, config["min_weight"])
             stack[method + str(years)] = normalized_weights
         else:
             # 2) Not in cache => run optimization
-            optimizer = run_optimization(method, df, config.config["optimization_config"])
+            optimizer = run_optimization(method, df, config["optimization_config"])
             # Convert optimizer.weights to a dictionary and normalize
             converted_weights = convert_to_dict(optimizer.weights, asset_names=df.columns)
-            normalized_weights = normalize_weights(converted_weights, config.config["min_weight"])
+            normalized_weights = normalize_weights(converted_weights, config["min_weight"])
 
             # 3) Save new result to cache
             save_model_results_to_cache(cache_key, normalized_weights)
