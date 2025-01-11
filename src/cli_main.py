@@ -5,9 +5,7 @@ from utils import logger
 
 def main():    
     config_file = "config.yaml"
-
-    results = run_pipeline(config_file, run_local=True)
-
+    results = run_pipeline(config_file, symbols_override=None, run_local=True)
     logger.info("Pipeline complete. Final results summary:")
     print(results)
 
