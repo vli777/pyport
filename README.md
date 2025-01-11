@@ -72,9 +72,9 @@ curl -X POST "http://0.0.0.0:8000/inference" \
 
 - **Response**: A JSON object containing the results of the pipeline:
 
-json
+```json
 { "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "models": "model_name_1, model_name_2", "symbols": ["symbol1", "symbol2"], "normalized_avg": { "symbol1": 0.25, "symbol2": 0.75 } }
-
+```
 
 ---
 
