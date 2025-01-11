@@ -10,12 +10,12 @@ from datetime import datetime, timedelta
 # Add the src directory to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from utils.caching_utils import (
+from src.utils.caching_utils import (
     save_model_results,
     load_model_results_from_cache,
     cleanup_cache,
 )
-from utils.logger import logger
+from src.utils.logger import logger
 
 
 class TestCachingUtils(unittest.TestCase):

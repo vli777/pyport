@@ -236,8 +236,7 @@ def trim_weights(weights: Dict[str, float], max_size: int) -> Dict[str, float]:
 
 
 def calculate_portfolio_performance(
-    data: pd.DataFrame, 
-    weights: Dict[str, float]
+    data: pd.DataFrame, weights: Dict[str, float]
 ) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.DataFrame]:
     """
     Given price data (rows = dates, columns = tickers) and a dict of weights,

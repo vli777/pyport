@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from .logger import logger
 
+
 def is_valid_ticker(symbol):
     try:
         ticker = yf.Ticker(symbol)
@@ -66,7 +67,7 @@ def update_store(data_path, symbol, start_date, end_date):
     """
     # 1) Locate the Parquet file
     pq_filename = Path(data_path) / f"{symbol}.parquet"
-    
+
     # 2) Load existing data if file exists
     if pq_filename.is_file():
         old_df = pd.read_parquet(pq_filename)
@@ -99,10 +100,10 @@ def download_all_tickers(watchlist_files, data_path, years=5):
     """
     symbols = process_input_files(watchlist_files)  # Same as your CSV-based code
     today = datetime.now().date()
-    
+
     for symbol in symbols:
         pq_filename = Path(data_path) / f"{symbol}.parquet"
-        
+
         # Check if parquet file exists
         if pq_filename.is_file():
             # Attempt to read last date from the existing Parquet
@@ -115,13 +116,13 @@ def download_all_tickers(watchlist_files, data_path, years=5):
         else:
             # No existing file => fetch from X years ago
             start_date = today - relativedelta(years=years)
-        
+
         # Only download if we actually need data
         if start_date <= today:
             update_store(data_path, symbol, start_date, today)
         else:
             logger.info(f"No update needed for {symbol} — up to date.")
-            
+
 
 def get_last_date(parquet_file: Path):
     """
@@ -180,20 +181,22 @@ def get_last_date_parquet(parquet_file: Path) -> Optional[date]:
         return None
 
 
-
 import os
+
 
 def remove_all_csv_in_folder(data_folder: str):
     data_path = Path(data_folder)
     for csv_file in data_path.glob("*.csv"):
         os.remove(csv_file)
         logger.info(f"Removed {csv_file}")
-        
+
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Convert CSV files in a folder to Parquet.")
+    parser = argparse.ArgumentParser(
+        description="Convert CSV files in a folder to Parquet."
+    )
     parser.add_argument("data_folder", help="Path to the folder containing CSV files.")
 
     args = parser.parse_args()

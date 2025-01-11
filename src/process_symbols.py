@@ -1,5 +1,3 @@
-
-
 from datetime import datetime, timedelta
 from pathlib import Path
 import pandas as pd
@@ -19,7 +17,7 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     if data for today is already present.
     """
     pq_file = Path(data_path) / f"{symbol}.parquet"
-    df_sym = pd.DataFrame()  
+    df_sym = pd.DataFrame()
 
     est = pytz.timezone("US/Eastern")
     now_est = datetime.now(est)
@@ -38,7 +36,7 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     after_market_close = is_after_4pm_est()
     if after_market_close and pq_file.is_file():
         df_sym = pd.read_parquet(pq_file)
-        last_date = get_last_date(pq_file)  
+        last_date = get_last_date(pq_file)
 
         # If we already have today's data, no need to re-download
         if last_date is not None and last_date >= pd.Timestamp(today):
@@ -53,15 +51,23 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
 
         # If the first date is more recent than start_date, append missing older data
         if first_date and first_date > pd.Timestamp(start_date):
-            logger.info(f"Appending missing data from {start_date} to {first_date - pd.Timedelta(days=1)} for {symbol}")
-            missing_data = get_stock_data(symbol, start_date, first_date - pd.Timedelta(days=1))
+            logger.info(
+                f"Appending missing data from {start_date} to {first_date - pd.Timedelta(days=1)} for {symbol}"
+            )
+            missing_data = get_stock_data(
+                symbol, start_date, first_date - pd.Timedelta(days=1)
+            )
             df_sym = pd.concat([missing_data, df_sym]).sort_index().drop_duplicates()
             df_sym.to_parquet(pq_file)
 
         # If last_date is stale, update from last_date+1 day to end_date
         if last_date and last_date < end_date:
-            logger.info(f"Updating {symbol} data from {last_date+pd.Timedelta(days=1)} to {end_date}")
-            df_sym = update_store(data_path, symbol, last_date + timedelta(days=1), end_date)
+            logger.info(
+                f"Updating {symbol} data from {last_date+pd.Timedelta(days=1)} to {end_date}"
+            )
+            df_sym = update_store(
+                data_path, symbol, last_date + timedelta(days=1), end_date
+            )
     else:
         # 5) Otherwise, either the file doesn't exist or we forced a re-download
         logger.info(f"Downloading {symbol} data from {start_date} to {end_date}")
@@ -85,7 +91,9 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
 
     for sym in symbols:
         # Load or download the data just once
-        df_sym = load_or_download_symbol_data(sym, start_date, end_date, data_path, download)
+        df_sym = load_or_download_symbol_data(
+            sym, start_date, end_date, data_path, download
+        )
         if df_sym.empty:
             logger.warning(f"No data for {sym}, skipping.")
             continue
@@ -108,7 +116,9 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
         if not df_sym.empty:
             earliest = df_sym.index.min()
             if start_date_ts < earliest:
-                logger.info(f"{sym} data starts at {earliest}. Not slicing older than that.")
+                logger.info(
+                    f"{sym} data starts at {earliest}. Not slicing older than that."
+                )
             else:
                 pos = df_sym.index.get_loc(start_date_ts, method="nearest")
                 df_sym = df_sym.iloc[pos:]
@@ -122,8 +132,10 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
     # Fill leading NaNs with the next valid data
     df_all.fillna(method="bfill", inplace=True)  # Fill from the back
     df_all.fillna(method="ffill", inplace=True)  # Fill from the front
-    if df_all.isna().any().any():        
-        logger.warning("Data still has missing values after fill. Dropping remaining nulls.")
+    if df_all.isna().any().any():
+        logger.warning(
+            "Data still has missing values after fill. Dropping remaining nulls."
+        )
         df_all.dropna(inplace=True)
 
     return df_all

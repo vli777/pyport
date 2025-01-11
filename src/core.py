@@ -17,10 +17,9 @@ from utils.portfolio_utils import normalize_weights, stacked_output
 
 logger = logging.getLogger(__name__)
 
+
 def run_pipeline(
-    config: Config, 
-    symbols_override: Optional[List[str]] = None,
-    run_local: bool = True
+    config: Config, symbols_override: Optional[List[str]] = None, run_local: bool = True
 ) -> Dict[str, Any]:
     """
     Orchestrates the data loading, optimization, and more.
@@ -40,13 +39,17 @@ def run_pipeline(
 
     # Get ticker symbols
     if symbols_override:
-        if not isinstance(symbols_override, list) or not all(isinstance(s, str) for s in symbols_override):
+        if not isinstance(symbols_override, list) or not all(
+            isinstance(s, str) for s in symbols_override
+        ):
             raise ValueError("symbols_override must be a list of strings.")
         logger.info(f"Received override of symbols: {symbols_override}")
         all_symbols = symbols_override
     else:
         # Use the watchlists from config
-        watchlist_files = [Path(config.input_files_folder) / file for file in config.input_files]
+        watchlist_files = [
+            Path(config.input_files_folder) / file for file in config.input_files
+        ]
         all_symbols = process_input_files(watchlist_files)
 
     if not all_symbols:
@@ -64,7 +67,7 @@ def run_pipeline(
         if config.test_mode:
             logger.info(f"Time period: {years}, symbols: {all_symbols}")
 
-        # Load data 
+        # Load data
         df = process_symbols(all_symbols, start_date, end_date, PATH, config.download)
 
         # If this is the first loop, store the big DataFrame; else update min/max dates
@@ -80,12 +83,14 @@ def run_pipeline(
             df = df.head(int(len(df) * config.test_data_visible_pct))
 
         # Run optimization
-        run_optimization_and_save(df, config, start_date, end_date, all_symbols, stack, years)
+        run_optimization_and_save(
+            df, config, start_date, end_date, all_symbols, stack, years
+        )
 
     if not stack:
         logger.warning("No optimization results found.")
         return {}
-    
+
     # Post-processing
     avg = stacked_output(stack)
     sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
@@ -109,7 +114,9 @@ def run_pipeline(
     )
 
     if run_local:
-        plot_graphs(daily_returns, cum_returns, config, symbols=daily_returns.columns.tolist())
+        plot_graphs(
+            daily_returns, cum_returns, config, symbols=daily_returns.columns.tolist()
+        )
 
     cleanup_cache("cache")
 

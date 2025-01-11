@@ -9,7 +9,7 @@ import pandas as pd
 # Add the src directory to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from utils.portfolio_utils import (
+from src.utils.portfolio_utils import (
     convert_to_dict,
     normalize_weights,
     stacked_output,

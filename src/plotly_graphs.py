@@ -5,7 +5,9 @@ import numpy as np
 from config import Config
 
 
-def plot_graphs(daily_returns, cumulative_returns, config: Config, symbols, bgcolor="#f4f4f4"):
+def plot_graphs(
+    daily_returns, cumulative_returns, config: Config, symbols, bgcolor="#f4f4f4"
+):
     """
     Creates Plotly graphs for daily and cumulative returns with specified customizations.
 

@@ -16,6 +16,7 @@ from result_output import output_results
 from config import Config
 from utils.portfolio_utils import convert_to_dict, normalize_weights
 
+
 def run_optimization(method, df, config: Config):
     """
     Dispatch to the appropriate optimization class or function
@@ -158,6 +159,7 @@ def make_cache_key(method, years, symbols, config_hash):
     sorted_symbols = "_".join(sorted(symbols))
     return f"{method}_{years}_{sorted_symbols}_{config_hash}.json"
 
+
 def load_model_results_from_cache(cache_key):
     cache_file = Path("cache") / cache_key
     if cache_file.exists():
@@ -165,13 +167,16 @@ def load_model_results_from_cache(cache_key):
             return json.load(f)  # or pickle.load
     return None
 
+
 def save_model_results_to_cache(cache_key, weights_dict):
     cache_file = Path("cache") / cache_key
     with open(cache_file, "w") as f:
         json.dump(weights_dict, f, indent=4)
 
 
-def run_optimization_and_save(df, config: Config, start_date, end_date, symbols, stack, years):
+def run_optimization_and_save(
+    df, config: Config, start_date, end_date, symbols, stack, years
+):
     for optimization in config.models[years]:
         method = optimization.lower()
         cache_key = make_cache_key(method, years, symbols, config_hash="123456")  # etc.
@@ -186,7 +191,9 @@ def run_optimization_and_save(df, config: Config, start_date, end_date, symbols,
             # 2) Not in cache => run optimization
             optimizer = run_optimization(method, df, config)
             # Convert optimizer.weights to a dictionary and normalize
-            converted_weights = convert_to_dict(optimizer.weights, asset_names=df.columns)
+            converted_weights = convert_to_dict(
+                optimizer.weights, asset_names=df.columns
+            )
             normalized_weights = normalize_weights(converted_weights, config.min_weight)
 
             # 3) Save new result to cache
@@ -196,4 +203,6 @@ def run_optimization_and_save(df, config: Config, start_date, end_date, symbols,
             stack[method + str(years)] = normalized_weights
 
         # Output / Print / Plot
-        output_results(df, normalized_weights, method, config, start_date, end_date, years)
+        output_results(
+            df, normalized_weights, method, config, start_date, end_date, years
+        )

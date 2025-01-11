@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from utils.logger import logger
+from src.utils.logger import logger
 
 
 class TestLogger(unittest.TestCase):
