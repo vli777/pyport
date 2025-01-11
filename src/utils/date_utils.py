@@ -1,12 +1,11 @@
 # src/utils/date_utils.py
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 import pandas_market_calendars as mcal
 import pytz
 import csv
 from typing import Tuple, Optional
-from dateutil.relativedelta import relativedelta
 from .logger import logger
 
 
@@ -95,21 +94,28 @@ def get_non_holiday_weekdays(
 
 
 def calculate_start_end_dates(
-    years: int, reference_date: Optional[date] = None
+    years: float = 1.0,
+    reference_date: Optional[date] = None,
 ) -> Tuple[date, date]:
     """
     Calculate the start and end dates based on the number of years from a reference date.
 
     Args:
-        years (int): Number of years to subtract from the reference date.
+        years (float): Number of years to subtract from the reference date.
         reference_date (Optional[date], optional): The reference date. Defaults to today's date.
 
     Returns:
         Tuple[date, date]: A tuple containing the start and end dates.
     """
-    reference_date = reference_date or datetime.now().date()
-    start_date_from_ref = reference_date - relativedelta(years=years)
-    return get_non_holiday_weekdays(start_date_from_ref, reference_date)
+    if reference_date is None:
+        reference_date = date.today()
+
+    # Convert fractional years to days
+    days = int(round(years * 365))
+    start_date = reference_date - timedelta(days=days)
+
+    # Adjust dates for non-holiday weekdays
+    return get_non_holiday_weekdays(start_date, reference_date)
 
 
 def get_last_date(csv_filename: str) -> Optional[date]:
