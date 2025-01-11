@@ -16,3 +16,4 @@ src/__pycache__/
 logs/
 cache/
 data/
+venv/
