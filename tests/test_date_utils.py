@@ -40,14 +40,14 @@ class TestDateUtils(unittest.TestCase):
     def test_is_weekday_false(self):
         self.assertFalse(is_weekday(date(2023, 10, 7)))  # Saturday
 
-    @patch("utils.date_utils.datetime")
+    @patch("src.utils.date_utils.datetime")
     def test_is_after_4pm_est_true(self, mock_datetime):
         est = pytz.timezone("US/Eastern")
-        mock_now = est.localize(datetime(2023, 10, 5, 16, 1)) 
+        mock_now = est.localize(datetime(2023, 10, 5, 16, 1))
         mock_datetime.now.return_value = mock_now
         self.assertTrue(is_after_4pm_est())
 
-    @patch("utils.date_utils.datetime")
+    @patch("src.utils.date_utils.datetime")
     def test_is_after_4pm_est_false(self, mock_datetime):
         est = pytz.timezone("US/Eastern")
         mock_now = datetime(2023, 10, 5, 15, 59, tzinfo=est)
