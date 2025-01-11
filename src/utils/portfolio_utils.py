@@ -1,6 +1,6 @@
 # src/utils/portfolio_utils.py
 
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 from collections import defaultdict
 import numpy as np
 import pandas as pd
@@ -218,3 +218,68 @@ def holdings_match(
 
     logger.debug("All symbols match between cached_model_dict and input_file_symbols.")
     return True
+
+
+def trim_weights(weights: Dict[str, float], max_size: int) -> Dict[str, float]:
+    """
+    Returns a new dict with only the largest `max_size` weights.
+    No renormalization is done, assuming you already normalized.
+    """
+    if len(weights) <= max_size:
+        return weights
+
+    # Sort ascending by weight
+    sorted_weights = sorted(weights.items(), key=lambda kv: kv[1])
+    # Keep the largest `max_size` items
+    trimmed = dict(sorted_weights[-max_size:])
+    return trimmed
+
+
+def calculate_portfolio_performance(
+    data: pd.DataFrame, 
+    weights: Dict[str, float]
+) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.DataFrame]:
+    """
+    Given price data (rows = dates, columns = tickers) and a dict of weights,
+    compute:
+      1) daily log returns of each ticker
+      2) weighted sum (i.e. portfolio daily returns)
+      3) portfolio cumulative returns
+      4) combined daily/cumulative returns for each ticker and the portfolio
+
+    Returns:
+      (returns, portfolio_returns, portfolio_cumulative_returns, combined_df)
+    """
+    # 1) Compute log returns
+    returns = np.log(data) - np.log(data.shift(1))
+    # Drop the first NaN row
+    returns = returns.iloc[1:, :]
+
+    # 2) Weighted returns and sum
+    weights_vector = list(weights.values())
+    weighted_returns = returns.mul(weights_vector, axis="columns")
+    portfolio_returns = weighted_returns.sum(axis=1)
+
+    # 3) Portfolio cumulative returns
+    portfolio_cumulative_returns = (portfolio_returns + 1).cumprod()
+
+    # 4) Combine daily & cumulative returns for optional plotting
+    #    - daily returns of each ticker -> returns
+    #    - daily returns of portfolio -> portfolio_returns
+    #    - cumulative returns of each ticker -> returns.add(1).cumprod()
+    #    - cumulative returns of portfolio -> portfolio_cumulative_returns
+
+    portfolio_returns_df = portfolio_returns.to_frame(name="SIM_PORT")
+    portfolio_cumulative_df = portfolio_cumulative_returns.to_frame(name="SIM_PORT")
+
+    all_daily_returns = returns.join(portfolio_returns_df)
+    all_cumulative_returns = (portfolio_cumulative_df - 1).join(
+        returns.add(1).cumprod() - 1
+    )
+
+    return (
+        returns,
+        portfolio_returns,
+        portfolio_cumulative_returns,
+        (all_daily_returns, all_cumulative_returns),
+    )
