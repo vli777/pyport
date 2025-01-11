@@ -12,6 +12,7 @@ def output(
     allocation_weights: Dict[str, float],
     start_date: Any,
     end_date: Any,
+    inputs: Optional[str] = None,
     max_size: int = 10,
     optimization_model: Optional[str] = None,
     time_period: float = 1.0,
@@ -53,10 +54,13 @@ def output(
         sharpe = 0
 
     # logger.info stats
+    if inputs is not None:
+        logger.info(f"Watchlist Inputs: {inputs}")
     logger.info(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
-    logger.info("Optimization method:", optimization_model)
-    logger.info("Sharpe ratio:", round(sharpe, 2))
+        
     cumulative_pct = round((portfolio_cum_returns.iloc[-1] - 1) * 100, 2)
+    logger.info(f"Optimization method: {optimization_model}")
+    logger.info(f"Sharpe ratio: {round(sharpe, 2)}")
     logger.info(f"Cumulative return: {cumulative_pct}%")
     logger.info(f"Portfolio allocation weights (min {minimum_weight:.2f}):")
 
