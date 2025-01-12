@@ -47,26 +47,22 @@ Run the following command to start the API server:
 python api_main.py
 ```
 
-The server will start on `http://0.0.0.0:8000`.
+The server will start on `http://localhost:8000`.
 
 ## API Endpoint
 
 **POST** `/inference`
 
 - **Description**: Runs the portfolio optimization pipeline.
-- **Payload**: json { "symbols": ["AAPL", "MSFT", "TSLA"], // Optional: Override ticker symbols "config_file": "path/to/config.yaml" // Optional: Use a custom config file }
-
-  - If `symbols` is provided, it will override the ticker symbols in the config file.
-  - If `config_file` is not provided, the default `config.yaml` will be used.
+- **Payload**: json { "symbols": ["AAPL", "MSFT", "TSLA", "SPY", "TLT", "GLD"] }
 
 - **Example Request**:
 
 ```
-curl -X POST "http://0.0.0.0:8000/inference" \
+curl -X POST "http://localhost:8000/inference" \
 -H "Content-Type: application/json" \
 -d '{
-  "symbols": ["AAPL", "MSFT", "TSLA"],
-  "config_file": "config.yaml"
+  "symbols": ["AAPL", "MSFT", "TSLA", "SPY", "TLT", "GLD"],
 }'
 ```
 
@@ -75,6 +71,8 @@ curl -X POST "http://0.0.0.0:8000/inference" \
 ```json
 { "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "models": "model_name_1, model_name_2", "symbols": ["symbol1", "symbol2"], "normalized_avg": { "symbol1": 0.25, "symbol2": 0.75 } }
 ```
+
+![image](https://github.com/user-attachments/assets/5b0b3ef7-a1cd-4fb5-962c-48a7b8de5fc6)
 
 ---
 
@@ -109,3 +107,5 @@ pip install -r requirements.txt
 
 - Ensure your `config.yaml` file is correctly configured for your use case.
 - The API allows dynamic overrides for symbols and configurations without modifying the local `config.yaml`.
+
+
