@@ -86,9 +86,20 @@ To run the pipeline locally instead of via the API, use the CLI functionality:
 python src/cli_main.py
 ```
 
+# Environment Setup
+
+Python version: 3.8.x (tested with 3.8.5)
+
 # Dependencies
 
 Install the required Python libraries:
+
+```
+conda env create -f environment.yml
+conda activate venv
+```
+
+Or using pip 
 
 ```
 pip install -r requirements.txt

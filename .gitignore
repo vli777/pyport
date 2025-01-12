@@ -4,7 +4,7 @@ temp*
 .env
 *.bat
 config.yaml
-split adjuster.py
+other/
 pyport.c*
 setup*
 .pep8
