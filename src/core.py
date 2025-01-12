@@ -100,7 +100,7 @@ def run_pipeline(
     combined_models = ", ".join(sorted(set(sum(valid_models, []))))
     combined_input_files = ", ".join(config.input_files)
 
-    daily_returns, cum_returns = output(
+    daily_returns, cumulative_returns = output(
         data=dfs["data"],
         allocation_weights=normalized_avg,
         inputs=combined_input_files,
@@ -115,7 +115,10 @@ def run_pipeline(
 
     if run_local:
         plot_graphs(
-            daily_returns, cum_returns, config, symbols=daily_returns.columns.tolist()
+            daily_returns,
+            cumulative_returns,
+            config,
+            symbols=daily_returns.columns.tolist(),
         )
 
     cleanup_cache("cache")

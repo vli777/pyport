@@ -1,41 +1,69 @@
 # file: api_main.py
 
 from pathlib import Path
-from fastapi import FastAPI
-from core import run_pipeline
-
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import uvicorn
 
 from config import Config
+from core import run_pipeline
 
-app = FastAPI()
+
+app = FastAPI(
+    title="Pipeline API",
+    description="API to run pipelines with JSON configurations",
+    version="1.0.0",
+)
 
 
 class PipelineRequest(BaseModel):
-    symbols: Optional[List[str]] = None  # E.g., ["AAPL", "MSFT", "TSLA"]
-    config_file: Optional[str] = None
+    symbols: List[str]  # List of symbols is required
+
+    class Config:
+        json_schema_extra = {
+            "example": {"symbols": ["AAPL", "MSFT", "TSLA", "SPY", "TLT", "GLD"]}
+        }
+
+
+@app.get("/")
+def redirect_to_docs():
+    """Redirect root to Swagger UI."""
+    return RedirectResponse(url="/docs")
 
 
 @app.post("/inference")
 def inference(req: PipelineRequest):
-    # Use default local config.yaml if config_file is not provided
-    config_path = req.config_file or "config.yaml"
+    """
+    Run the pipeline without changing the loaded config object.
+    Only pass `symbols_override` to the pipeline.
+    """
+    # Load the default configuration
+    default_config_path = "config.yaml"
+    try:
+        config_obj = Config.from_yaml(default_config_path)
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Default configuration file '{default_config_path}' not found",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error loading default configuration: {str(e)}"
+        )
 
-    # Load configuration from the file
-    if not Path(config_path).exists():
-        return {"error": f"Config file '{config_path}' not found"}
+    try:
+        result = run_pipeline(
+            config=config_obj, symbols_override=req.symbols, run_local=False
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Pipeline execution failed: {str(e)}"
+        )
 
-    config_obj = Config.from_yaml(config_path)
-
-    # Override symbols if provided
-    symbols_override = req.symbols if req.symbols else None
-
-    # Run the pipeline with the configuration
-    return run_pipeline(config_obj, symbols_override=symbols_override, run_local=False)
+    return {"status": "success", "result": result}
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="localhost", port=8000)
