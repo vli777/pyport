@@ -120,7 +120,7 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
                     f"{sym} data starts at {earliest}. Not slicing older than that."
                 )
             else:
-                pos = df_sym.index.get_loc(start_date_ts, method="nearest")
+                pos = df_sym.index.get_indexer([start_date_ts], method="nearest")[0]
                 df_sym = df_sym.iloc[pos:]
 
         # Join the symbol's DataFrame into the main df_all
