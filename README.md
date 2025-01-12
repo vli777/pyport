@@ -47,26 +47,22 @@ Run the following command to start the API server:
 python api_main.py
 ```
 
-The server will start on `http://0.0.0.0:8000`.
+The server will start on `http://localhost:8000`.
 
 ## API Endpoint
 
 **POST** `/inference`
 
 - **Description**: Runs the portfolio optimization pipeline.
-- **Payload**: json { "symbols": ["AAPL", "MSFT", "TSLA"], // Optional: Override ticker symbols "config_file": "path/to/config.yaml" // Optional: Use a custom config file }
-
-  - If `symbols` is provided, it will override the ticker symbols in the config file.
-  - If `config_file` is not provided, the default `config.yaml` will be used.
+- **Payload**: json { "symbols": ["AAPL", "MSFT", "TSLA", "SPY", "TLT", "GLD"] }
 
 - **Example Request**:
 
 ```
-curl -X POST "http://0.0.0.0:8000/inference" \
+curl -X POST "http://localhost:8000/inference" \
 -H "Content-Type: application/json" \
 -d '{
-  "symbols": ["AAPL", "MSFT", "TSLA"],
-  "config_file": "config.yaml"
+  "symbols": ["AAPL", "MSFT", "TSLA", "SPY", "TLT", "GLD"],
 }'
 ```
 
