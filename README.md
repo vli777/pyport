@@ -86,7 +86,7 @@ python src/cli_main.py
 
 # Environment Setup
 
-Python version: 3.8.x (tested with 3.8.5)
+Python version: 3.9.x (tested with 3.9.9)
 
 # Dependencies
 
