@@ -79,7 +79,7 @@ def run_pipeline(
 
         # Optional: If test_mode is on, store a CSV of the full data
         if config.test_mode:
-            df.to_csv(config.folder / "full_df.csv")
+            df.to_csv("full_df.csv")
             df = df.head(int(len(df) * config.test_data_visible_pct))
 
         # Run optimization
