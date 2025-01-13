@@ -1,78 +1,110 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import pandas as pd
 import pytz
 
 from utils import logger
-from utils.data_utils import get_stock_data, get_last_date, update_store
-from utils.date_utils import get_non_holiday_weekdays, is_after_4pm_est, is_weekday
+from utils.data_utils import format_parquet_columns, get_stock_data
+from utils.date_utils import find_last_valid_trading_date, is_after_4pm_est
 
 
 def load_or_download_symbol_data(symbol, start_date, end_date, data_path, download):
     """
-    Load the symbol data from a Parquet file, or download it if the file doesn't exist
-    or needs an update. Append missing data to the Parquet file if necessary.
-
-    We'll skip downloading on weekends, holidays, and after market close
-    if data for today is already present.
+    Load the symbol data from a Parquet file, or download if missing or outdated.
+    If it's before market open, fetch data only up to the last valid trading day.
+    If after market close and we already have 'today', skip further downloading.
     """
+    # Convert start_date and end_date to pd.Timestamp
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date)
+
     pq_file = Path(data_path) / f"{symbol}.parquet"
     df_sym = pd.DataFrame()
 
     est = pytz.timezone("US/Eastern")
     now_est = datetime.now(est)
-    today = now_est.date()
+    today_ts = pd.Timestamp(now_est.date())
 
-    # 1) If not a weekday, just return what we have (or empty if no file)
-    if not is_weekday(today):
-        return pd.read_parquet(pq_file) if pq_file.exists() else df_sym
+    if not pq_file.is_file():
+        logger.info(
+            f"No existing file for {symbol}. Downloading full history from {start_date} to {end_date}."
+        )
+        df_new = get_stock_data(symbol, start_date=start_date, end_date=end_date)
 
-    # 2) If today is a holiday on the NYSE, skip
-    first_valid_date, _ = get_non_holiday_weekdays(today, today, tz=est)
-    if today != first_valid_date:
-        return pd.read_parquet(pq_file) if pq_file.exists() else df_sym
+        # Flatten multi-index columns if necessary
+        if isinstance(df_new.columns, pd.MultiIndex):
+            df_new.columns = df_new.columns.get_level_values(0)
 
-    # 3) If it's after 4:01 PM EST, check if we already have today's data
-    after_market_close = is_after_4pm_est()
-    if after_market_close and pq_file.is_file():
-        df_sym = pd.read_parquet(pq_file)
-        last_date = get_last_date(pq_file)
-
-        # If we already have today's data, no need to re-download
-        if last_date is not None and last_date >= pd.Timestamp(today):
+        if not df_new.empty:
+            df_new.to_parquet(pq_file)
+            df_new = format_parquet_columns(df_new, symbol)
+            return df_new
+        else:
+            logger.warning(
+                f"No data returned for {symbol} in range {start_ts} - {end_ts}."
+            )
             return df_sym
 
-    # 4) If the file exists and we're NOT forcing a download, maybe append missing data
-    if pq_file.is_file() and not download:
-        df_sym = pd.read_parquet(pq_file)
+    # If after market close and we have today's data, skip
+    if is_after_4pm_est() and pq_file.is_file():
+        df_existing = pd.read_parquet(pq_file)
+        if not df_existing.empty:
+            last_date = df_existing.index.max()
+            if last_date is not None and last_date >= today_ts:
+                logger.info(
+                    f"{symbol}: Already have today's data after market close, skipping."
+                )
+                return df_existing
 
-        first_date = df_sym.index[0] if not df_sym.empty else None
-        last_date = get_last_date(pq_file)
-
-        # If the first date is more recent than start_date, append missing older data
-        if first_date and first_date > pd.Timestamp(start_date):
-            logger.info(
-                f"Appending missing data from {start_date} to {first_date - pd.Timedelta(days=1)} for {symbol}"
+    # If before 9:30 AM, shift end_ts to last valid day
+    if now_est.time() < datetime.strptime("09:30", "%H:%M").time():
+        last_valid_ts = find_last_valid_trading_date(end_ts, tz=est)
+        if last_valid_ts < start_ts:
+            logger.warning(
+                f"{symbol}: No valid trading days in [{start_ts}, {end_ts}]."
             )
-            missing_data = get_stock_data(
-                symbol, start_date, first_date - pd.Timedelta(days=1)
-            )
-            df_sym = pd.concat([missing_data, df_sym]).sort_index().drop_duplicates()
-            df_sym.to_parquet(pq_file)
-
-        # If last_date is stale, update from last_date+1 day to end_date
-        if last_date and last_date < end_date:
-            logger.info(
-                f"Updating {symbol} data from {last_date+pd.Timedelta(days=1)} to {end_date}"
-            )
-            df_sym = update_store(
-                data_path, symbol, last_date + timedelta(days=1), end_date
-            )
+            if pq_file.is_file():
+                return pd.read_parquet(pq_file)
+            return df_sym
+        effective_end_ts = min(end_ts, last_valid_ts)
     else:
-        # 5) Otherwise, either the file doesn't exist or we forced a re-download
-        logger.info(f"Downloading {symbol} data from {start_date} to {end_date}")
-        df_sym = get_stock_data(symbol, start_date=start_date, end_date=end_date)
-        if not df_sym.empty:
+        effective_end_ts = end_ts
+
+    # Read existing data
+    df_sym = pd.read_parquet(pq_file)
+    last_date = df_sym.index.max() if not df_sym.empty else None
+
+    # If forced download => redownload everything
+    if download:
+        logger.info(f"{symbol}: Forced download from {start_ts} to {effective_end_ts}.")
+        df_new = get_stock_data(symbol, start_date=start_ts, end_date=effective_end_ts)
+
+        # Flatten multi-index columns if necessary
+        if isinstance(df_new.columns, pd.MultiIndex):
+            df_new.columns = df_new.columns.get_level_values(0)
+
+        if not df_new.empty:
+            df_new = format_parquet_columns(df_new, symbol=symbol)
+            df_sym = pd.concat([df_sym, df_new]).sort_index().drop_duplicates()
+            df_sym.to_parquet(pq_file)
+        return df_sym
+
+    # If missing data => fetch the missing range
+    if last_date is None or last_date < effective_end_ts:
+        update_start = (last_date + pd.Timedelta(days=1)) if last_date else start_ts
+        logger.info(
+            f"{symbol}: Updating data from {update_start} to {effective_end_ts}."
+        )
+        df_new = get_stock_data(
+            symbol, start_date=update_start, end_date=effective_end_ts
+        )
+        # Flatten multi-index columns if necessary
+        if isinstance(df_new.columns, pd.MultiIndex):
+            df_new.columns = df_new.columns.get_level_values(0)
+
+        if not df_new.empty:
+            df_new = format_parquet_columns(df_new, symbol=symbol)
+            df_sym = pd.concat([df_sym, df_new]).sort_index().drop_duplicates()
             df_sym.to_parquet(pq_file)
 
     return df_sym
@@ -100,6 +132,10 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
 
         # Drop duplicates in the index (if any)
         df_sym = df_sym.loc[~df_sym.index.duplicated(keep="first")]
+        
+        # Flatten multi-level columns if present
+        if isinstance(df_sym.columns, pd.MultiIndex):
+            df_sym.columns = df_sym.columns.get_level_values(0)
 
         # Rename 'Adj Close' to the ticker symbol, drop the other columns
         try:
