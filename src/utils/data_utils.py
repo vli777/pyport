@@ -53,7 +53,8 @@ def get_stock_data(symbol, start_date, end_date):
     download stock price data from yahoo finance with optional write to csv
     """
     logger.info(f"Downloading {symbol} {start_date} - {end_date} ...")
-    symbol_df = yf.download(symbol, start=start_date, end=end_date)
+    symbol_df = yf.download(symbol, start=start_date, end=end_date, auto_adjust=False)
+    print("GET_STOCK", symbol_df.head())
     return symbol_df
 
 
@@ -167,24 +168,27 @@ def get_last_date_parquet(parquet_file: Path) -> Optional[date]:
         return None
 
 
-def format_parquet_columns(df, symbol):
+def format_to_df_format(df, symbol):
     """
-    Format the Parquet data to retain only 'Adj Close' and rename it to the symbol.
+    Convert the DataFrame into the desired format:
+    - Keep only 'Adj Close'
+    - Rename 'Adj Close' to the symbol name
+    - Ensure the index is set to 'Date'
 
-    :param df: (pd.DataFrame) The input DataFrame to format.
-    :param symbol: (str) The symbol to rename 'Adj Close' to.
-    :return: (pd.DataFrame) A DataFrame with the symbol column and proper formatting.
+    :param df: (pd.DataFrame) Input DataFrame
+    :param symbol: (str) Ticker symbol
+    :return: (pd.DataFrame) Reformatted DataFrame
     """
-    # Ensure 'Adj Close' exists in the DataFrame
     if "Adj Close" not in df.columns:
-        logger.warning(f"'Adj Close' column is missing in the DataFrame for {symbol}.")
-        return pd.DataFrame()  # Return an empty DataFrame if 'Adj Close' is not present
+        logger.warning(f"Expected 'Adj Close' column not found for {symbol}.")
+        return pd.DataFrame()
 
-    # Retain only the 'Adj Close' column
-    df = df[["Adj Close"]].copy()
+    # Keep only 'Adj Close' and rename it
+    df = df[["Adj Close"]].rename(columns={"Adj Close": symbol})
 
-    # Rename 'Adj Close' to the symbol
-    df.rename(columns={"Adj Close": symbol}, inplace=True)
+    # Ensure the index is 'Date'
+    if not isinstance(df.index, pd.DatetimeIndex):
+        df.index = pd.to_datetime(df.index)
 
     return df
 

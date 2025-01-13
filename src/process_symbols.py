@@ -4,7 +4,7 @@ import pandas as pd
 import pytz
 
 from utils import logger
-from utils.data_utils import format_parquet_columns, get_stock_data
+from utils.data_utils import format_to_df_format, get_stock_data
 from utils.date_utils import find_last_valid_trading_date, is_after_4pm_est
 
 
@@ -25,6 +25,7 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     now_est = datetime.now(est)
     today_ts = pd.Timestamp(now_est.date())
 
+    # If the file doesn't exist, download the full range
     if not pq_file.is_file():
         logger.info(
             f"No existing file for {symbol}. Downloading full history from {start_date} to {end_date}."
@@ -36,8 +37,11 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             df_new.columns = df_new.columns.get_level_values(0)
 
         if not df_new.empty:
+            # Save the data in yfinance's default format
             df_new.to_parquet(pq_file)
-            df_new = format_parquet_columns(df_new, symbol)
+
+            # Format for internal use (rename `Adj Close` to symbol and drop others)
+            df_new = format_to_df_format(df_new, symbol)
             return df_new
         else:
             logger.warning(
@@ -54,7 +58,7 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
                 logger.info(
                     f"{symbol}: Already have today's data after market close, skipping."
                 )
-                return df_existing
+                return format_to_df_format(df_existing, symbol)
 
     # If before 9:30 AM, shift end_ts to last valid day
     if now_est.time() < datetime.strptime("09:30", "%H:%M").time():
@@ -64,7 +68,8 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
                 f"{symbol}: No valid trading days in [{start_ts}, {end_ts}]."
             )
             if pq_file.is_file():
-                return pd.read_parquet(pq_file)
+                df_existing = pd.read_parquet(pq_file)
+                return format_to_df_format(df_existing, symbol)
             return df_sym
         effective_end_ts = min(end_ts, last_valid_ts)
     else:
@@ -84,10 +89,13 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             df_new.columns = df_new.columns.get_level_values(0)
 
         if not df_new.empty:
-            df_new = format_parquet_columns(df_new, symbol=symbol)
+            # Save the data in yfinance's default format
+            df_new.to_parquet(pq_file)
+
+            # Merge and format for internal use
             df_sym = pd.concat([df_sym, df_new]).sort_index().drop_duplicates()
-            df_sym.to_parquet(pq_file)
-        return df_sym
+            df_sym = format_to_df_format(df_sym, symbol)
+            return df_sym
 
     # If missing data => fetch the missing range
     if last_date is None or last_date < effective_end_ts:
@@ -103,10 +111,14 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             df_new.columns = df_new.columns.get_level_values(0)
 
         if not df_new.empty:
-            df_new = format_parquet_columns(df_new, symbol=symbol)
-            df_sym = pd.concat([df_sym, df_new]).sort_index().drop_duplicates()
-            df_sym.to_parquet(pq_file)
+            # Save the data in yfinance's default format
+            df_new.to_parquet(pq_file)
 
+            # Merge and format for internal use
+            df_sym = pd.concat([df_sym, df_new]).sort_index().drop_duplicates()
+
+    # Format and return for internal use
+    df_sym = format_to_df_format(df_sym, symbol)
     return df_sym
 
 
@@ -132,7 +144,7 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
 
         # Drop duplicates in the index (if any)
         df_sym = df_sym.loc[~df_sym.index.duplicated(keep="first")]
-        
+
         # Flatten multi-level columns if present
         if isinstance(df_sym.columns, pd.MultiIndex):
             df_sym.columns = df_sym.columns.get_level_values(0)
