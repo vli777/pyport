@@ -1,17 +1,8 @@
 import json
 from pathlib import Path
 import numpy as np
-from portfoliolab.clustering.herc import HierarchicalEqualRiskContribution
-from portfoliolab.clustering.hrp import HierarchicalRiskParity
-from portfoliolab.modern_portfolio_theory.mean_variance import MeanVarianceOptimisation
-from portfoliolab.modern_portfolio_theory.mean_variance import ReturnsEstimators
-from portfoliolab.modern_portfolio_theory import CriticalLineAlgorithm
-from portfoliolab.clustering.nco import NestedClusteredOptimisation
-from portfoliolab.online_portfolio_selection.rmr import RMR
-from portfoliolab.online_portfolio_selection.olmar import OLMAR
-from portfoliolab.online_portfolio_selection.fcornk import FCORNK
-from portfoliolab.online_portfolio_selection.scorn import SCORN
 
+from models.optimization_methods import HERC, HRP, MVO, mvo_returns, CLA, NCO, RMR, OLMAR, FCORNK, SCORN 
 from result_output import output_results
 from config import Config
 from utils.portfolio_utils import convert_to_dict, normalize_weights
@@ -24,18 +15,18 @@ def run_optimization(method, df, config: Config):
     Returns an optimizer instance or something containing .weights
     """
     OPTIMIZATION_METHODS = {
-        "hrp": HierarchicalRiskParity,
-        "herc": HierarchicalEqualRiskContribution,
-        "nco": NestedClusteredOptimisation,
-        "mc": NestedClusteredOptimisation,
-        "mc2": NestedClusteredOptimisation,
-        "cla": CriticalLineAlgorithm,
-        "cla2": CriticalLineAlgorithm,
+        "hrp": HRP,
+        "herc": HERC,
+        "nco": NCO,
+        "mc": NCO,
+        "mc2": NCO,
+        "cla": CLA,
+        "cla2": CLA,
         "olmar": OLMAR,
         "rmr": RMR,
         "scorn": SCORN,
         "fcornk": FCORNK,
-        "mean_variance": MeanVarianceOptimisation,
+        "mean_variance": MVO,
     }
 
     optimizer_class = OPTIMIZATION_METHODS.get(method)
@@ -116,10 +107,10 @@ def run_optimization(method, df, config: Config):
         optimizer.allocate(asset_prices=df, solution=solution)
 
     elif method == "mean_variance":
-        expected_returns = ReturnsEstimators().calculate_mean_historical_returns(
+        expected_returns = mvo_returns().calculate_mean_historical_returns(
             asset_prices=df
         )
-        covariance = ReturnsEstimators().calculate_returns(asset_prices=df).cov()
+        covariance = mvo_returns().calculate_returns(asset_prices=df).cov()
 
         # Top-level optimization fields like efficient_risk, etc. are floats
         optimizer.allocate(
