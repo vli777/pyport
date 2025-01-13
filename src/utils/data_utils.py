@@ -127,33 +127,6 @@ def download_all_tickers(watchlist_files, data_path, years=5):
             logger.info(f"No update needed for {symbol} — up to date.")
 
 
-def convert_all_csv_to_parquet(data_folder: str):
-    """
-    Convert all CSV files in `data_folder` to Parquet.
-    Assumes the first column of each CSV is the date column and should be the index.
-    """
-    data_path = Path(data_folder)
-
-    # Loop through every CSV file in data_path
-    for csv_file in data_path.glob("*.csv"):
-        logger.info(f"Converting {csv_file} to Parquet...")
-
-        # Read CSV, parse first column as dates, set as index
-        df = pd.read_csv(csv_file, parse_dates=[0], index_col=0)
-
-        # Optionally ensure the index is a DatetimeIndex
-        if not isinstance(df.index, pd.DatetimeIndex):
-            df.index = pd.to_datetime(df.index)
-
-        # Construct the Parquet file path (same base name, different extension)
-        parquet_file = csv_file.with_suffix(".parquet")
-
-        # Write DataFrame to Parquet
-        df.to_parquet(parquet_file)
-
-        logger.info(f"Converted {csv_file.name} -> {parquet_file.name}")
-
-
 def get_last_date_parquet(parquet_file: Path) -> Optional[date]:
     """
     Reads the Parquet file, inspects the last row, and returns that date as a `date` object.
@@ -191,6 +164,45 @@ def format_to_df_format(df, symbol):
         df.index = pd.to_datetime(df.index)
 
     return df
+
+
+def flatten_columns(df, symbol):
+    """
+    Flatten the DataFrame's columns by removing MultiIndex or trailing symbol suffixes.
+    """
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    else:
+        # Remove trailing symbol from column names if present.
+        df.columns = [col.replace(f" {symbol}", "") for col in df.columns]
+    return df
+
+
+def convert_all_csv_to_parquet(data_folder: str):
+    """
+    Convert all CSV files in `data_folder` to Parquet.
+    Assumes the first column of each CSV is the date column and should be the index.
+    """
+    data_path = Path(data_folder)
+
+    # Loop through every CSV file in data_path
+    for csv_file in data_path.glob("*.csv"):
+        logger.info(f"Converting {csv_file} to Parquet...")
+
+        # Read CSV, parse first column as dates, set as index
+        df = pd.read_csv(csv_file, parse_dates=[0], index_col=0)
+
+        # Optionally ensure the index is a DatetimeIndex
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
+
+        # Construct the Parquet file path (same base name, different extension)
+        parquet_file = csv_file.with_suffix(".parquet")
+
+        # Write DataFrame to Parquet
+        df.to_parquet(parquet_file)
+
+        logger.info(f"Converted {csv_file.name} -> {parquet_file.name}")
 
 
 import os

@@ -34,7 +34,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         df_new = flatten_columns(df_new, symbol)
 
         if df_new.empty:
-            logger.warning(f"No data returned for {symbol} in range {start_ts} - {end_ts}.")
+            logger.warning(
+                f"No data returned for {symbol} in range {start_ts} - {end_ts}."
+            )
             return pd.DataFrame()
 
         # Save raw data to parquet
@@ -50,20 +52,35 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         if not df_existing.empty:
             last_date = df_existing.index.max()
             if last_date is not None and last_date >= today_ts:
-                logger.info(f"{symbol}: Already have today's data after market close, skipping.")
+                logger.info(
+                    f"{symbol}: Already have today's data after market close, skipping."
+                )
                 return format_to_df_format(df_existing, symbol)
 
     # 3) Adjust end_ts if before market open
-    if now_est.time() < datetime.strptime("09:30", "%H:%M").time():        
-        last_valid_ts = find_valid_trading_date(end_ts, tz=est, direction='backward')
+    if now_est.time() < datetime.strptime("09:30", "%H:%M").time():
+        last_valid_ts = find_valid_trading_date(end_ts, tz=est, direction="backward")
         if last_valid_ts < start_ts:
-            logger.warning(f"{symbol}: No valid trading days in [{start_ts}, {end_ts}].")
+            logger.warning(
+                f"{symbol}: No valid trading days in [{start_ts}, {end_ts}]."
+            )
             df_existing = pd.read_parquet(pq_file)
             df_existing = flatten_columns(df_existing, symbol)
-            return format_to_df_format(df_existing, symbol) if not df_existing.empty else pd.DataFrame()
+            return (
+                format_to_df_format(df_existing, symbol)
+                if not df_existing.empty
+                else pd.DataFrame()
+            )
         effective_end_ts = min(end_ts, last_valid_ts)
     else:
         effective_end_ts = end_ts
+
+    # If effective_end_ts falls on or after today, adjust it to the last valid trading day before today
+    if effective_end_ts.normalize() >= today_ts.normalize():
+        # Find the last valid trading day before today
+        effective_end_ts = find_valid_trading_date(
+            today_ts - pd.Timedelta(days=1), tz=est, direction="backward"
+        )
 
     # 4) Read and flatten existing data
     df_existing = pd.read_parquet(pq_file)
@@ -77,7 +94,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
-            df_combined = pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            df_combined = (
+                pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            )
             df_combined.to_parquet(pq_file)
             return format_to_df_format(df_combined, symbol)
         else:
@@ -88,18 +107,28 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         # Determine tentative start for update
         tentative_start = (last_date + pd.Timedelta(days=1)) if last_date else start_ts
         # Adjust tentative_start to the next valid trading date
-        next_valid = find_valid_trading_date(tentative_start, tz=est, direction='forward')
+        next_valid = find_valid_trading_date(
+            tentative_start, tz=est, direction="forward"
+        )
         if next_valid > effective_end_ts:
-            logger.info(f"{symbol}: Data already up-to-date. No valid trading days for update.")
+            logger.info(
+                f"{symbol}: Data already up-to-date. No valid trading days for update."
+            )
             return format_to_df_format(df_existing, symbol)
         update_start = next_valid
 
-        logger.info(f"{symbol}: Updating data from {update_start} to {effective_end_ts}.")
-        df_new = get_stock_data(symbol, start_date=update_start, end_date=effective_end_ts)
+        logger.info(
+            f"{symbol}: Updating data from {update_start} to {effective_end_ts}."
+        )
+        df_new = get_stock_data(
+            symbol, start_date=update_start, end_date=effective_end_ts
+        )
         df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
-            df_combined = pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            df_combined = (
+                pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            )
             df_combined.to_parquet(pq_file)
             return format_to_df_format(df_combined, symbol)
         else:

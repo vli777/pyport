@@ -135,9 +135,9 @@ def get_last_date(parquet_file: Path):
         return None
 
 
-def find_valid_trading_date(start_date, tz, direction='forward'):
+def find_valid_trading_date(start_date, tz, direction="forward"):
     """
-    Walk through time from 'start_date' in the specified direction until 
+    Walk through time from 'start_date' in the specified direction until
     a valid trading day is found. Returns a pandas Timestamp of that day.
 
     Args:
@@ -147,12 +147,12 @@ def find_valid_trading_date(start_date, tz, direction='forward'):
                          Default is 'forward'.
     """
     current_date = pd.Timestamp(start_date).normalize()
-    
+
     # Determine the step based on search direction
-    if direction == 'forward':
+    if direction == "forward":
         step = timedelta(days=1)
         weekday_check = lambda d: not is_weekday(d)  # Move forward if weekend
-    elif direction == 'backward':
+    elif direction == "backward":
         step = -timedelta(days=1)
         weekday_check = lambda d: not is_weekday(d)  # Move backward if weekend
     else:
