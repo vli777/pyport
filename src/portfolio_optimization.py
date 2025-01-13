@@ -16,6 +16,11 @@ from models.optimization_methods import (
 )
 from result_output import output_results
 from config import Config
+from utils.caching_utils import (
+    load_model_results_from_cache,
+    make_cache_key,
+    save_model_results_to_cache,
+)
 from utils.portfolio_utils import convert_to_dict, normalize_weights
 
 
@@ -155,33 +160,15 @@ def run_optimization(method, df, config: Config):
     return optimizer
 
 
-def make_cache_key(method, years, symbols, config_hash):
-    # config_hash can be an MD5 of the config dictionary or something
-    # e.g. str(sorted(config.items()))
-    sorted_symbols = "_".join(sorted(symbols))
-    return f"{method}_{years}_{sorted_symbols}_{config_hash}.json"
-
-
-def load_model_results_from_cache(cache_key):
-    cache_file = Path("cache") / cache_key
-    if cache_file.exists():
-        with open(cache_file, "r") as f:
-            return json.load(f)  # or pickle.load
-    return None
-
-
-def save_model_results_to_cache(cache_key, weights_dict):
-    cache_file = Path("cache") / cache_key
-    with open(cache_file, "w") as f:
-        json.dump(weights_dict, f, indent=4)
-
-
 def run_optimization_and_save(
     df, config: Config, start_date, end_date, symbols, stack, years
 ):
     for optimization in config.models[years]:
         method = optimization.lower()
-        cache_key = make_cache_key(method, years, symbols, config_hash="123456")  # etc.
+        cache_key = make_cache_key(method, years, symbols, config_hash="123456")
+
+        # Ensure cache directory exists (optional, as save/load functions handle this)
+        Path("cache").mkdir(parents=True, exist_ok=True)
 
         # 1) Check cache
         cached = load_model_results_from_cache(cache_key)
