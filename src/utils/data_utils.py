@@ -6,7 +6,7 @@ import re
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-from src.utils.date_utils import get_last_date
+from utils.date_utils import get_last_date
 from .logger import logger
 
 
@@ -167,24 +167,24 @@ def get_last_date_parquet(parquet_file: Path) -> Optional[date]:
         return None
 
 
-def format_parquet_columns(df):
+def format_parquet_columns(df, symbol):
     """
-    Format the columns to match the expected format (flatten and correct names).
-    Ensures that columns are not multi-indexed and follow the correct naming convention.
+    Format the Parquet data to retain only 'Adj Close' and rename it to the symbol.
+
+    :param df: (pd.DataFrame) The input DataFrame to format.
+    :param symbol: (str) The symbol to rename 'Adj Close' to.
+    :return: (pd.DataFrame) A DataFrame with the symbol column and proper formatting.
     """
-    # Flatten the multi-index columns if present
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = [" ".join(col).strip() for col in df.columns.values]
+    # Ensure 'Adj Close' exists in the DataFrame
+    if "Adj Close" not in df.columns:
+        logger.warning(f"'Adj Close' column is missing in the DataFrame for {symbol}.")
+        return pd.DataFrame()  # Return an empty DataFrame if 'Adj Close' is not present
 
-    # Ensure column names match the correct format
-    expected_columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume", "Date"]
+    # Retain only the 'Adj Close' column
+    df = df[["Adj Close"]].copy()
 
-    # Check if we have the correct columns, and rename if necessary
-    if not set(expected_columns).issubset(df.columns):
-        logger.warning(
-            f"Some columns are missing or misnamed in {df.columns}. Renaming."
-        )
-        df.columns = expected_columns  # Set the expected column names
+    # Rename 'Adj Close' to the symbol
+    df.rename(columns={"Adj Close": symbol}, inplace=True)
 
     return df
 
