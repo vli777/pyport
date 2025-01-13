@@ -282,3 +282,28 @@ def calculate_portfolio_performance(
         portfolio_cumulative_returns,
         (all_daily_returns, all_cumulative_returns),
     )
+
+
+def sharpe_ratio(returns: pd.Series, entries_per_year: int = 252, risk_free_rate: float = 0) -> float:
+    """
+    Calculates annualized Sharpe ratio for pd.Series of normal or log returns.
+
+    Risk-free rate should be given for the same period the returns are given.
+    For example, if the input returns are observed in 3 months, the risk-free
+    rate given should be the 3-month risk-free rate.
+
+    :param returns: (pd.Series) Returns - normal or log
+    :param entries_per_year: (int) Times returns are recorded per year (252 by default)
+    :param risk_free_rate: (float) Risk-free rate (0 by default)
+    :return: (float) Annualized Sharpe ratio
+    """
+    # Calculate the average return
+    excess_return = returns.mean() - risk_free_rate
+
+    # Adjust the standard deviation for annualization
+    annualized_volatility = returns.std() * np.sqrt(entries_per_year)
+
+    # Return the Sharpe ratio
+    sharpe_r = excess_return / annualized_volatility
+
+    return sharpe_r
