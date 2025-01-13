@@ -129,9 +129,11 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
         else:
             df_all = df_all.join(df_sym, how="outer")
 
-    # Fill leading NaNs with the next valid data
-    df_all.fillna(method="bfill", inplace=True)  # Fill from the back
-    df_all.fillna(method="ffill", inplace=True)  # Fill from the front
+    # Fill missing values using forward fill
+    df_all.ffill(inplace=True)
+    # Fill missing values using backward fill
+    df_all.bfill(inplace=True)
+
     if df_all.isna().any().any():
         logger.warning(
             "Data still has missing values after fill. Dropping remaining nulls."

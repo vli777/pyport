@@ -48,7 +48,7 @@ def output(
     (
         returns,
         portfolio_returns,
-        portfolio_cum_returns,
+        portfolio_cumulative_returns,
         (all_daily_returns, all_cumulative_returns),
     ) = calculate_portfolio_performance(data[clean_weights.keys()], clean_weights)
 
@@ -63,7 +63,7 @@ def output(
         logger.info(f"Watchlist Inputs: {inputs}")
     logger.info(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
 
-    cumulative_pct = round((portfolio_cum_returns.iloc[-1] - 1) * 100, 2)
+    cumulative_pct = round((portfolio_cumulative_returns.iloc[-1] - 1) * 100, 2)
     logger.info(f"Optimization method: {optimization_model}")
     logger.info(f"Sharpe ratio: {round(sharpe, 2)}")
     logger.info(f"Cumulative return: {cumulative_pct}%")
