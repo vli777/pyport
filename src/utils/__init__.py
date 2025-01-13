@@ -16,7 +16,7 @@ from .portfolio_utils import (
     holdings_match,
 )
 from .caching_utils import (
-    save_model_results,
+    save_model_results_to_cache,
     load_model_results_from_cache,
     cleanup_cache,
 )
@@ -34,7 +34,7 @@ __all__ = [
     "normalize_weights",
     "stacked_output",
     "holdings_match",
-    "save_model_results",
+    "save_model_results_to_cache",
     "load_model_results_from_cache",
     "cleanup_cache",
     "logger",
