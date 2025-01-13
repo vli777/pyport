@@ -4,122 +4,110 @@ import pandas as pd
 import pytz
 
 from utils import logger
-from utils.data_utils import format_to_df_format, get_stock_data
-from utils.date_utils import find_last_valid_trading_date, is_after_4pm_est
+from utils.data_utils import flatten_columns, format_to_df_format, get_stock_data
+from utils.date_utils import find_valid_trading_date, is_after_4pm_est
 
 
 def load_or_download_symbol_data(symbol, start_date, end_date, data_path, download):
     """
     Load the symbol data from a Parquet file, or download if missing or outdated.
-    If it's before market open, fetch data only up to the last valid trading day.
-    If after market close and we already have 'today', skip further downloading.
+    Merges new data with existing data (appending instead of overwriting),
+    properly flattens columns, and adjusts update_start to valid trading dates.
     """
     # Convert start_date and end_date to pd.Timestamp
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
 
     pq_file = Path(data_path) / f"{symbol}.parquet"
-    df_sym = pd.DataFrame()
 
     est = pytz.timezone("US/Eastern")
     now_est = datetime.now(est)
     today_ts = pd.Timestamp(now_est.date())
 
-    # If the file doesn't exist, download the full range
+    # 1) If file doesn't exist, download full range
     if not pq_file.is_file():
         logger.info(
             f"No existing file for {symbol}. Downloading full history from {start_date} to {end_date}."
         )
-        df_new = get_stock_data(symbol, start_date=start_date, end_date=end_date)
+        df_new = get_stock_data(symbol, start_date=start_ts, end_date=end_ts)
 
-        # Flatten multi-index columns if necessary
-        if isinstance(df_new.columns, pd.MultiIndex):
-            df_new.columns = df_new.columns.get_level_values(0)
+        df_new = flatten_columns(df_new, symbol)
 
-        if not df_new.empty:
-            # Save the data in yfinance's default format
-            df_new.to_parquet(pq_file)
+        if df_new.empty:
+            logger.warning(f"No data returned for {symbol} in range {start_ts} - {end_ts}.")
+            return pd.DataFrame()
 
-            # Format for internal use (rename `Adj Close` to symbol and drop others)
-            df_new = format_to_df_format(df_new, symbol)
-            return df_new
-        else:
-            logger.warning(
-                f"No data returned for {symbol} in range {start_ts} - {end_ts}."
-            )
-            return df_sym
+        # Save raw data to parquet
+        df_new.to_parquet(pq_file)
 
-    # If after market close and we have today's data, skip
+        # Return formatted data (single column) for internal use
+        return format_to_df_format(df_new, symbol)
+
+    # 2) If after market close and we already have today's data, skip
     if is_after_4pm_est() and pq_file.is_file():
         df_existing = pd.read_parquet(pq_file)
+        df_existing = flatten_columns(df_existing, symbol)
         if not df_existing.empty:
             last_date = df_existing.index.max()
             if last_date is not None and last_date >= today_ts:
-                logger.info(
-                    f"{symbol}: Already have today's data after market close, skipping."
-                )
+                logger.info(f"{symbol}: Already have today's data after market close, skipping.")
                 return format_to_df_format(df_existing, symbol)
 
-    # If before 9:30 AM, shift end_ts to last valid day
-    if now_est.time() < datetime.strptime("09:30", "%H:%M").time():
-        last_valid_ts = find_last_valid_trading_date(end_ts, tz=est)
+    # 3) Adjust end_ts if before market open
+    if now_est.time() < datetime.strptime("09:30", "%H:%M").time():        
+        last_valid_ts = find_valid_trading_date(end_ts, tz=est, direction='backward')
         if last_valid_ts < start_ts:
-            logger.warning(
-                f"{symbol}: No valid trading days in [{start_ts}, {end_ts}]."
-            )
-            if pq_file.is_file():
-                df_existing = pd.read_parquet(pq_file)
-                return format_to_df_format(df_existing, symbol)
-            return df_sym
+            logger.warning(f"{symbol}: No valid trading days in [{start_ts}, {end_ts}].")
+            df_existing = pd.read_parquet(pq_file)
+            df_existing = flatten_columns(df_existing, symbol)
+            return format_to_df_format(df_existing, symbol) if not df_existing.empty else pd.DataFrame()
         effective_end_ts = min(end_ts, last_valid_ts)
     else:
         effective_end_ts = end_ts
 
-    # Read existing data
-    df_sym = pd.read_parquet(pq_file)
-    last_date = df_sym.index.max() if not df_sym.empty else None
+    # 4) Read and flatten existing data
+    df_existing = pd.read_parquet(pq_file)
+    df_existing = flatten_columns(df_existing, symbol)
+    last_date = df_existing.index.max() if not df_existing.empty else None
 
-    # If forced download => redownload everything
+    # 5) Handle forced download: redownload everything
     if download:
         logger.info(f"{symbol}: Forced download from {start_ts} to {effective_end_ts}.")
         df_new = get_stock_data(symbol, start_date=start_ts, end_date=effective_end_ts)
-
-        # Flatten multi-index columns if necessary
-        if isinstance(df_new.columns, pd.MultiIndex):
-            df_new.columns = df_new.columns.get_level_values(0)
+        df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
-            # Save the data in yfinance's default format
-            df_new.to_parquet(pq_file)
+            df_combined = pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            df_combined.to_parquet(pq_file)
+            return format_to_df_format(df_combined, symbol)
+        else:
+            return format_to_df_format(df_existing, symbol)
 
-            # Merge and format for internal use
-            df_sym = pd.concat([df_sym, df_new]).sort_index().drop_duplicates()
-            df_sym = format_to_df_format(df_sym, symbol)
-            return df_sym
-
-    # If missing data => fetch the missing range
+    # 6) Update missing data if needed
     if last_date is None or last_date < effective_end_ts:
-        update_start = (last_date + pd.Timedelta(days=1)) if last_date else start_ts
-        logger.info(
-            f"{symbol}: Updating data from {update_start} to {effective_end_ts}."
-        )
-        df_new = get_stock_data(
-            symbol, start_date=update_start, end_date=effective_end_ts
-        )
-        # Flatten multi-index columns if necessary
-        if isinstance(df_new.columns, pd.MultiIndex):
-            df_new.columns = df_new.columns.get_level_values(0)
+        # Determine tentative start for update
+        tentative_start = (last_date + pd.Timedelta(days=1)) if last_date else start_ts
+        # Adjust tentative_start to the next valid trading date
+        next_valid = find_valid_trading_date(tentative_start, tz=est, direction='forward')
+        if next_valid > effective_end_ts:
+            logger.info(f"{symbol}: Data already up-to-date. No valid trading days for update.")
+            return format_to_df_format(df_existing, symbol)
+        update_start = next_valid
+
+        logger.info(f"{symbol}: Updating data from {update_start} to {effective_end_ts}.")
+        df_new = get_stock_data(symbol, start_date=update_start, end_date=effective_end_ts)
+        df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
-            # Save the data in yfinance's default format
-            df_new.to_parquet(pq_file)
-
-            # Merge and format for internal use
-            df_sym = pd.concat([df_sym, df_new]).sort_index().drop_duplicates()
-
-    # Format and return for internal use
-    df_sym = format_to_df_format(df_sym, symbol)
-    return df_sym
+            df_combined = pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            df_combined.to_parquet(pq_file)
+            return format_to_df_format(df_combined, symbol)
+        else:
+            logger.info(f"{symbol}: No new data found for the update period.")
+            return format_to_df_format(df_existing, symbol)
+    else:
+        # Already up-to-date
+        return format_to_df_format(df_existing, symbol)
 
 
 def process_symbols(symbols, start_date, end_date, data_path, download):
