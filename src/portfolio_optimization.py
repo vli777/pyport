@@ -21,7 +21,10 @@ from utils.caching_utils import (
     make_cache_key,
     save_model_results_to_cache,
 )
-from utils.portfolio_utils import convert_to_dict, normalize_weights
+from utils.portfolio_utils import (
+    convert_to_dict,
+    normalize_weights,
+)
 
 
 def run_optimization(method, df, config: Config):
@@ -167,9 +170,6 @@ def run_optimization_and_save(
         method = optimization.lower()
         cache_key = make_cache_key(method, years, symbols, config_hash="123456")
 
-        # Ensure cache directory exists (optional, as save/load functions handle this)
-        Path("cache").mkdir(parents=True, exist_ok=True)
-
         # 1) Check cache
         cached = load_model_results_from_cache(cache_key)
         if cached is not None:
@@ -178,11 +178,9 @@ def run_optimization_and_save(
             stack[method + str(years)] = normalized_weights
         else:
             # 2) Not in cache => run optimization
-            optimizer = run_optimization(method, df, config)
+            optimizer = run_optimization(method, df[symbols], config)
             # Convert optimizer.weights to a dictionary and normalize
-            converted_weights = convert_to_dict(
-                optimizer.weights, asset_names=df.columns
-            )
+            converted_weights = convert_to_dict(optimizer.weights, asset_names=symbols)
             normalized_weights = normalize_weights(converted_weights, config.min_weight)
 
             # 3) Save new result to cache
@@ -191,7 +189,7 @@ def run_optimization_and_save(
             # 4) Update your stack
             stack[method + str(years)] = normalized_weights
 
-        # Output / Print / Plot
+        # Output / Print / Plot results
         output_results(
             df, normalized_weights, method, config, start_date, end_date, years
         )

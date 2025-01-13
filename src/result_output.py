@@ -55,9 +55,8 @@ def output(
         (all_daily_returns, all_cumulative_returns),
     ) = calculate_portfolio_performance(data[clean_weights.keys()], clean_weights)
 
-    # Compute Sharpe ratio (assuming you have a sharpe_ratio function)
     try:
-        sharpe = sharpe_ratio(portfolio_returns)
+        sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
     except ZeroDivisionError:
         sharpe = 0
 

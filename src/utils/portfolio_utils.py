@@ -285,7 +285,7 @@ def calculate_portfolio_performance(
 
 
 def sharpe_ratio(
-    returns: pd.Series, entries_per_year: int = 252, risk_free_rate: float = 0
+    returns: pd.Series, entries_per_year: int = 252, risk_free_rate: float = 0.0
 ) -> float:
     """
     Calculates annualized Sharpe ratio for pd.Series of normal or log returns.
@@ -299,13 +299,111 @@ def sharpe_ratio(
     :param risk_free_rate: (float) Risk-free rate (0 by default)
     :return: (float) Annualized Sharpe ratio
     """
-    # Calculate the average return
     excess_return = returns.mean() - risk_free_rate
-
-    # Adjust the standard deviation for annualization
     annualized_volatility = returns.std() * np.sqrt(entries_per_year)
-
-    # Return the Sharpe ratio
     sharpe_r = excess_return / annualized_volatility
 
     return sharpe_r
+
+
+def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
+    daily_rf = risk_free_rate / 252
+    means = returns_df.mean()
+    stds = returns_df.std()
+    excess = means - daily_rf
+
+    sample_tickers = returns_df.columns[:5]
+    for ticker in sample_tickers:
+        logger.debug(
+            f"{ticker} - Mean: {means[ticker]:.6f}, Std: {stds[ticker]:.6f}, Excess Return: {excess[ticker]:.6f}"
+        )
+
+    sharpe_ratios = (excess / stds) * np.sqrt(252)
+    total_returns = (1 + returns_df).prod() - 1
+
+    for ticker in sample_tickers:
+        logger.debug(
+            f"{ticker} - Sharpe Ratio: {sharpe_ratios[ticker]:.4f}, Total Return: {total_returns[ticker]:.4f}"
+        )
+
+    performance_df = pd.DataFrame(
+        {"Sharpe Ratio": sharpe_ratios, "Total Return": total_returns}
+    )
+
+    return performance_df
+
+
+def identify_correlated_groups(returns_df, threshold=0.8):
+    corr_matrix = returns_df.corr().abs()
+    np.fill_diagonal(corr_matrix.values, 0)
+    correlated_pairs = corr_matrix.stack()[lambda x: x > threshold].index.tolist()
+    groups = []
+    for ticker1, ticker2 in correlated_pairs:
+        found = False
+        for group in groups:
+            if ticker1 in group or ticker2 in group:
+                group.update([ticker1, ticker2])
+                found = True
+                break
+        if not found:
+            groups.append(set([ticker1, ticker2]))
+    return groups
+
+
+def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.005):
+    """
+    Select the best ticker from each correlated group based on Sharpe Ratio and Total Return.
+    Logs detailed comparisons and decisions.
+
+    Args:
+        performance_df (pd.DataFrame): DataFrame with Sharpe Ratio and Total Return for each ticker.
+        correlated_groups (list of sets): Groups of highly correlated tickers.
+        sharpe_threshold (float, optional): Threshold to consider Sharpe ratios as similar.
+
+    Returns:
+        set: Tickers to exclude.
+    """
+    tickers_to_exclude = set()
+
+    for group in correlated_groups:
+        logger.info(f"Evaluating group of correlated tickers: {group}")
+        group_metrics = performance_df.loc[list(group)]
+
+        # Log performance metrics for tickers in group
+        for ticker in group:
+            sharpe = group_metrics.at[ticker, "Sharpe Ratio"]
+            total_ret = group_metrics.at[ticker, "Total Return"]
+            logger.info(
+                f"Ticker: {ticker}, Sharpe Ratio: {sharpe:.4f}, Total Return: {total_ret:.4f}"
+            )
+
+        max_sharpe = group_metrics["Sharpe Ratio"].max()
+        logger.info(f"Maximum Sharpe Ratio in group: {max_sharpe:.4f}")
+
+        # Identify tickers within the Sharpe threshold of the max
+        top_sharpe_tickers = group_metrics[
+            group_metrics["Sharpe Ratio"] >= (max_sharpe - sharpe_threshold)
+        ]
+
+        logger.info(
+            f"Tickers within Sharpe threshold: {list(top_sharpe_tickers.index)}"
+        )
+
+        # From these, select the one with highest total return
+        best_ticker = top_sharpe_tickers["Total Return"].idxmax()
+        best_sharpe = top_sharpe_tickers.at[best_ticker, "Sharpe Ratio"]
+        best_return = top_sharpe_tickers.at[best_ticker, "Total Return"]
+
+        logger.info(
+            f"Selected best ticker: {best_ticker} with Sharpe Ratio: {best_sharpe:.4f} and Total Return: {best_return:.4f}"
+        )
+
+        # Exclude other tickers in group
+        for ticker in group:
+            if ticker != best_ticker:
+                tickers_to_exclude.add(ticker)
+                logger.info(
+                    f"Excluding ticker {ticker} due to high correlation with selected {best_ticker}."
+                )
+
+    return tickers_to_exclude

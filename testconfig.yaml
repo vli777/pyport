@@ -14,6 +14,7 @@ plot_daily_returns: bool  # Whether to plot daily returns
 plot_cumulative_returns: bool  # Whether to plot cumulative returns
 min_weight: float  # Minimum weight for portfolio optimization
 portfolio_max_size: int  # Maximum number of assets in the portfolio
+risk_free_rate: float 
 sort_by_weights: bool  # Whether to sort weights in the output
 test_mode: bool  # Whether to enable test mode
 test_data_visible_pct: float  # Percentage of test data to show
