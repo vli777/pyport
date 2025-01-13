@@ -4,7 +4,11 @@ import pandas as pd
 
 from config import Config
 from utils import logger
-from utils.portfolio_utils import calculate_portfolio_performance, sharpe_ratio, trim_weights
+from utils.portfolio_utils import (
+    calculate_portfolio_performance,
+    sharpe_ratio,
+    trim_weights,
+)
 
 
 def output(

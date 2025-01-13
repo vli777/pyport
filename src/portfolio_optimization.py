@@ -2,7 +2,18 @@ import json
 from pathlib import Path
 import numpy as np
 
-from models.optimization_methods import HERC, HRP, MVO, mvo_returns, CLA, NCO, RMR, OLMAR, FCORNK, SCORN 
+from models.optimization_methods import (
+    HERC,
+    HRP,
+    MVO,
+    mvo_returns,
+    CLA,
+    NCO,
+    RMR,
+    OLMAR,
+    FCORNK,
+    SCORN,
+)
 from result_output import output_results
 from config import Config
 from utils.portfolio_utils import convert_to_dict, normalize_weights

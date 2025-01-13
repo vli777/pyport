@@ -284,7 +284,9 @@ def calculate_portfolio_performance(
     )
 
 
-def sharpe_ratio(returns: pd.Series, entries_per_year: int = 252, risk_free_rate: float = 0) -> float:
+def sharpe_ratio(
+    returns: pd.Series, entries_per_year: int = 252, risk_free_rate: float = 0
+) -> float:
     """
     Calculates annualized Sharpe ratio for pd.Series of normal or log returns.
 
