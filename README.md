@@ -1,19 +1,6 @@
 # PyPort
 Portfolio Optimization
 
-## Optimization Models Available
-- **min_volatility** (CLA)
-- **max_sharpe** (CLA2)
-- **efficient_risk** (MVO)
-- **efficient_return** (MVO)
-- **hierarchical risk parity** (HRP)
-- **hierarchical equal risk contribution** (HERC)
-- **online moving average reversion** (OLMAR)
-- **robust median reversion** (RMR)
-- **symmetric correlation driven nonparametric learning** (SCORN)
-- **functional correlation driven nonparametric learning** (FCORNK)
-- **nested clustered optimization** (NCO)
-
 ## Instructions
 
 ### Setting Up Configuration
@@ -75,27 +62,6 @@ curl -X POST "http://localhost:8000/inference" \
 ![image](https://github.com/user-attachments/assets/5b0b3ef7-a1cd-4fb5-962c-48a7b8de5fc6)
 
 ---
-
-# Running Locally (CLI Alternative)
-
-To run the pipeline locally instead of via the API, use the CLI functionality:
-
-```
-python src/cli_main.py
-```
-
-# Environment Setup
-
-Python version: 3.9.x (tested with 3.9.9)
-
-# Dependencies
-
-Install the required Python libraries:
-
-```
-conda env create -f environment.yml
-conda activate venv
-```
 
 # Notes
 

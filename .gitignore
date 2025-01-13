@@ -4,7 +4,7 @@ temp*
 .env
 *.bat
 config.yaml
-other/
+environment.yml
 pyport.c*
 setup*
 .pep8
@@ -17,3 +17,7 @@ logs/
 cache/
 data/
 venv/
+build/
+.vscode/
+other/
+src/models/
