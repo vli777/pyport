@@ -135,28 +135,42 @@ def get_last_date(parquet_file: Path):
         return None
 
 
-def find_last_valid_trading_date(date, tz):
+def find_valid_trading_date(start_date, tz, direction='forward'):
     """
-    Walk backward in time from 'date' until finding a valid trading day.
-    Returns a pandas Timestamp of the last valid trading day.
+    Walk through time from 'start_date' in the specified direction until 
+    a valid trading day is found. Returns a pandas Timestamp of that day.
+
+    Args:
+        start_date (datetime or date-like): The starting point for the search.
+        tz (pytz.timezone): The timezone to consider for holiday/weekend calculations.
+        direction (str): 'forward' to search future dates, 'backward' to search past dates.
+                         Default is 'forward'.
     """
-    current_date = pd.Timestamp(
-        date
-    ).normalize()  # Make sure we are dealing with midnight
+    current_date = pd.Timestamp(start_date).normalize()
+    
+    # Determine the step based on search direction
+    if direction == 'forward':
+        step = timedelta(days=1)
+        weekday_check = lambda d: not is_weekday(d)  # Move forward if weekend
+    elif direction == 'backward':
+        step = -timedelta(days=1)
+        weekday_check = lambda d: not is_weekday(d)  # Move backward if weekend
+    else:
+        raise ValueError("direction must be 'forward' or 'backward'")
 
     while True:
-        # 1) If it's a weekend, step back
-        if not is_weekday(current_date):
-            current_date -= timedelta(days=1)
+        # 1) If it's a weekend, step in the chosen direction
+        if weekday_check(current_date.date()):
+            current_date += step
             continue
 
-        # 2) If it's a holiday, step back
+        # 2) If it's a holiday, step in the chosen direction
         first_valid_date, _ = get_non_holiday_weekdays(
             current_date.date(), current_date.date(), tz=tz
         )
         if current_date.date() != first_valid_date:
-            current_date -= timedelta(days=1)
+            current_date += step
             continue
 
-        # If we pass both checks, this is valid
+        # If we pass both checks, this is a valid trading day
         return current_date
