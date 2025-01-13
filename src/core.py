@@ -81,7 +81,7 @@ def run_pipeline(
 
     # Calculate performance metrics
     performance_df_long = calculate_performance_metrics(
-        returns_df_long, risk_free_rate=0.048
+        returns_df_long, risk_free_rate=config.risk_free_rate
     )
 
     # Identify correlated groups and select redundant tickers

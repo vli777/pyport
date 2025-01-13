@@ -66,7 +66,7 @@ class Config:
             min_weight=config_dict["min_weight"],
             portfolio_max_size=config_dict["portfolio_max_size"],
             risk_free_rate=config_dict.get("risk_free_rate", 0.0),
-            sort_by_weights=config_dict.get("sort_by_weights", False),  
+            sort_by_weights=config_dict.get("sort_by_weights", False),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
             optimization_config=optimization_config,

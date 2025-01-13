@@ -21,8 +21,8 @@ from utils.caching_utils import (
     make_cache_key,
     save_model_results_to_cache,
 )
-from utils.portfolio_utils import (    
-    convert_to_dict,    
+from utils.portfolio_utils import (
+    convert_to_dict,
     normalize_weights,
 )
 

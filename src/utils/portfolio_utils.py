@@ -314,7 +314,7 @@ def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
 
     sample_tickers = returns_df.columns[:5]
     for ticker in sample_tickers:
-        logger.info(
+        logger.debug(
             f"{ticker} - Mean: {means[ticker]:.6f}, Std: {stds[ticker]:.6f}, Excess Return: {excess[ticker]:.6f}"
         )
 
@@ -322,7 +322,7 @@ def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
     total_returns = (1 + returns_df).prod() - 1
 
     for ticker in sample_tickers:
-        logger.info(
+        logger.debug(
             f"{ticker} - Sharpe Ratio: {sharpe_ratios[ticker]:.4f}, Total Return: {total_returns[ticker]:.4f}"
         )
 
@@ -333,7 +333,7 @@ def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
     return performance_df
 
 
-def identify_correlated_groups(returns_df, threshold=0.95):
+def identify_correlated_groups(returns_df, threshold=0.8):
     corr_matrix = returns_df.corr().abs()
     np.fill_diagonal(corr_matrix.values, 0)
     correlated_pairs = corr_matrix.stack()[lambda x: x > threshold].index.tolist()
