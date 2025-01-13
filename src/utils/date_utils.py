@@ -2,10 +2,11 @@
 
 from datetime import datetime, date, timedelta
 from pathlib import Path
+import pandas as pd
 import pandas_market_calendars as mcal
 import pytz
-import csv
 from typing import Tuple, Optional
+
 from .logger import logger
 
 
@@ -118,38 +119,44 @@ def calculate_start_end_dates(
     return get_non_holiday_weekdays(start_date, reference_date)
 
 
-def get_last_date(csv_filename: str) -> Optional[date]:
+def get_last_date(parquet_file: Path):
     """
-    Retrieve the last valid date from a CSV file where dates are in the first column.
-
-    This function reads the file in reverse to efficiently find the last valid date.
-
-    Args:
-        csv_filename (str): The path to the CSV file.
-
-    Returns:
-        Optional[date]: The last valid date found, or None if not found.
+    Reads the Parquet file, inspects the last row, and returns that date as a `date` object.
     """
-    csv_path = Path(csv_filename)
-
-    if not csv_path.is_file():
-        logger.error(f"File '{csv_filename}' does not exist.")
-        raise FileNotFoundError(f"File '{csv_filename}' does not exist.")
-
     try:
-        with csv_path.open("r", newline="") as file:
-            reader = csv.reader(file)
-            for row in reversed(list(reader)):
-                if row:
-                    last_date_str = row[0].strip()
-                    try:
-                        return datetime.strptime(last_date_str, "%Y-%m-%d").date()
-                    except ValueError:
-                        logger.warning(
-                            f"Invalid date format: '{last_date_str}' in file '{csv_filename}'. Skipping."
-                        )
-        logger.info(f"No valid dates found in '{csv_filename}'.")
-        return None
+        df = pd.read_parquet(parquet_file)
+        if not df.empty:
+            # Assuming the index is a DatetimeIndex
+            return df.index.max().date()
+        else:
+            return None
     except Exception as e:
-        logger.exception(f"An error occurred while reading '{csv_filename}': {e}")
-        raise
+        logger.warning(f"Could not read Parquet file {parquet_file}: {e}")
+        return None
+
+
+def find_last_valid_trading_date(date, tz):
+    """
+    Walk backward in time from 'date' until finding a valid trading day.
+    Returns a pandas Timestamp of the last valid trading day.
+    """
+    current_date = pd.Timestamp(
+        date
+    ).normalize()  # Make sure we are dealing with midnight
+
+    while True:
+        # 1) If it's a weekend, step back
+        if not is_weekday(current_date):
+            current_date -= timedelta(days=1)
+            continue
+
+        # 2) If it's a holiday, step back
+        first_valid_date, _ = get_non_holiday_weekdays(
+            current_date.date(), current_date.date(), tz=tz
+        )
+        if current_date.date() != first_valid_date:
+            current_date -= timedelta(days=1)
+            continue
+
+        # If we pass both checks, this is valid
+        return current_date

@@ -5,6 +5,8 @@ from pathlib import Path
 import re
 from datetime import date, datetime, timedelta
 from dateutil.relativedelta import relativedelta
+
+from src.utils.date_utils import get_last_date
 from .logger import logger
 
 
@@ -124,22 +126,6 @@ def download_all_tickers(watchlist_files, data_path, years=5):
             logger.info(f"No update needed for {symbol} — up to date.")
 
 
-def get_last_date(parquet_file: Path):
-    """
-    Reads the Parquet file, inspects the last row, and returns that date as a `date` object.
-    """
-    try:
-        df = pd.read_parquet(parquet_file)
-        if not df.empty:
-            # Assuming the index is a DatetimeIndex
-            return df.index.max().date()
-        else:
-            return None
-    except Exception as e:
-        logger.warning(f"Could not read Parquet file {parquet_file}: {e}")
-        return None
-
-
 def convert_all_csv_to_parquet(data_folder: str):
     """
     Convert all CSV files in `data_folder` to Parquet.
@@ -179,6 +165,28 @@ def get_last_date_parquet(parquet_file: Path) -> Optional[date]:
     except Exception as e:
         logger.warning(f"Could not read Parquet file {parquet_file}: {e}")
         return None
+
+
+def format_parquet_columns(df):
+    """
+    Format the columns to match the expected format (flatten and correct names).
+    Ensures that columns are not multi-indexed and follow the correct naming convention.
+    """
+    # Flatten the multi-index columns if present
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [" ".join(col).strip() for col in df.columns.values]
+
+    # Ensure column names match the correct format
+    expected_columns = ["Open", "High", "Low", "Close", "Adj Close", "Volume", "Date"]
+
+    # Check if we have the correct columns, and rename if necessary
+    if not set(expected_columns).issubset(df.columns):
+        logger.warning(
+            f"Some columns are missing or misnamed in {df.columns}. Renaming."
+        )
+        df.columns = expected_columns  # Set the expected column names
+
+    return df
 
 
 import os
