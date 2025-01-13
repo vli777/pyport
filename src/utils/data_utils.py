@@ -54,7 +54,7 @@ def get_stock_data(symbol, start_date, end_date):
     """
     logger.info(f"Downloading {symbol} {start_date} - {end_date} ...")
     symbol_df = yf.download(symbol, start=start_date, end=end_date, auto_adjust=False)
-    
+
     return symbol_df
 
 

@@ -12,7 +12,13 @@ from result_output import output
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
-from utils.portfolio_utils import normalize_weights, stacked_output
+from utils.portfolio_utils import (
+    calculate_performance_metrics,
+    identify_correlated_groups,
+    normalize_weights,
+    select_best_tickers,
+    stacked_output,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -62,6 +68,34 @@ def run_pipeline(
     filtered_times = [k for k in config.models if config.models[k]]
     sorted_times = sorted(filtered_times, reverse=True)
 
+    # Calculate start and end dates for the longest time period
+    start_date_long, end_date_long = calculate_start_end_dates(sorted_times[0])
+
+    # Load data for the longest period using all symbols
+    df_long = process_symbols(
+        all_symbols, start_date_long, end_date_long, PATH, config.download
+    )
+
+    # Calculate daily returns for the longest period
+    returns_df_long = df_long.pct_change().dropna()
+
+    # Calculate performance metrics
+    performance_df_long = calculate_performance_metrics(
+        returns_df_long, risk_free_rate=0.048
+    )
+
+    # Identify correlated groups and select redundant tickers
+    correlated_groups_long = identify_correlated_groups(returns_df_long, threshold=0.95)
+    redundant_tickers = select_best_tickers(
+        performance_df_long, correlated_groups_long, sharpe_threshold=0.01
+    )
+
+    # Filter out redundant tickers
+    filtered_symbols = [s for s in all_symbols if s not in redundant_tickers]
+
+    print(f"Redundant tickers identified and excluded: {redundant_tickers}")
+    print(f"Symbols for further optimization: {filtered_symbols}")
+
     for years in sorted_times:
         start_date, end_date = calculate_start_end_dates(years)
         if config.test_mode:
@@ -84,7 +118,7 @@ def run_pipeline(
 
         # Run optimization
         run_optimization_and_save(
-            df, config, start_date, end_date, all_symbols, stack, years
+            df, config, start_date, end_date, filtered_symbols, stack, years
         )
 
     if not stack:
