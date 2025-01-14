@@ -73,22 +73,39 @@ def run_pipeline(
 
     # Load data for the longest period using all symbols
     df_long = process_symbols(
-        all_symbols, start_date_long, end_date_long, PATH, config.download
+        all_symbols,
+        start_date_long,
+        end_date_long,
+        PATH,
+        config.download,
+        allow_short=config.allow_short,
     )
 
     # Calculate daily returns for the longest period
-    returns_df_long = df_long.pct_change().dropna()
+    returns_df = df_long.pct_change().dropna()
 
     # Calculate performance metrics
-    performance_df_long = calculate_performance_metrics(
-        returns_df_long, risk_free_rate=config.risk_free_rate
+    performance_df = calculate_performance_metrics(
+        returns_df, risk_free_rate=config.risk_free_rate
     )
 
     # Identify correlated groups and select redundant tickers
-    correlated_groups_long = identify_correlated_groups(returns_df_long, threshold=0.95)
-    redundant_tickers = select_best_tickers(
-        performance_df_long, correlated_groups_long, sharpe_threshold=0.01
+    longs = returns_df[
+        [col for col in returns_df.columns if not col.startswith("short_")]
+    ]
+    shorts = returns_df[[col for col in returns_df.columns if col.startswith("short_")]]
+    # Process longs
+    long_groups = identify_correlated_groups(longs, threshold=0.8)
+    redundant_longs = select_best_tickers(
+        performance_df.loc[longs.columns], long_groups, sharpe_threshold=0.005
     )
+    # Process shorts
+    short_groups = identify_correlated_groups(shorts, threshold=0.8)
+    redundant_shorts = select_best_tickers(
+        performance_df.loc[shorts.columns], short_groups, sharpe_threshold=0.005
+    )
+    # Combine redundant tickers from both sets
+    redundant_tickers = redundant_longs.union(redundant_shorts)
 
     # Filter out redundant tickers
     filtered_symbols = [s for s in all_symbols if s not in redundant_tickers]
@@ -102,7 +119,14 @@ def run_pipeline(
             logger.info(f"Time period: {years}, symbols: {all_symbols}")
 
         # Load data
-        df = process_symbols(all_symbols, start_date, end_date, PATH, config.download)
+        df = process_symbols(
+            all_symbols,
+            start_date,
+            end_date,
+            PATH,
+            config.download,
+            allow_short=config.allow_short,
+        )
 
         # If this is the first loop, store the big DataFrame; else update min/max dates
         if "data" not in dfs:

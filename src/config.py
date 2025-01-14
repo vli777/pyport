@@ -38,6 +38,7 @@ class Config:
     portfolio_max_size: int
     risk_free_rate: float
     sort_by_weights: bool
+    allow_short: bool
     test_mode: bool
     test_data_visible_pct: float
     optimization_config: OptimizationConfig
@@ -67,6 +68,7 @@ class Config:
             portfolio_max_size=config_dict["portfolio_max_size"],
             risk_free_rate=config_dict.get("risk_free_rate", 0.0),
             sort_by_weights=config_dict.get("sort_by_weights", False),
+            allow_short=config_dict.get("allow_short", False),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
             optimization_config=optimization_config,

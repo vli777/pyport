@@ -103,6 +103,10 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             return format_to_df_format(df_existing, symbol)
 
     # 6) Update missing data if needed
+    last_valid = find_valid_trading_date(effective_end_ts, tz=est, direction="backward")
+    # Adjust effective_end_ts to the last valid trading day
+    effective_end_ts = min(effective_end_ts, last_valid)
+
     if last_date is None or last_date < effective_end_ts:
         # Determine tentative start for update
         tentative_start = (last_date + pd.Timedelta(days=1)) if last_date else start_ts
@@ -110,11 +114,14 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         next_valid = find_valid_trading_date(
             tentative_start, tz=est, direction="forward"
         )
-        if next_valid > effective_end_ts:
+
+        # Use '>=' to catch empty or invalid ranges
+        if next_valid >= effective_end_ts:
             logger.info(
                 f"{symbol}: Data already up-to-date. No valid trading days for update."
             )
             return format_to_df_format(df_existing, symbol)
+
         update_start = next_valid
 
         logger.info(
@@ -133,13 +140,21 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             return format_to_df_format(df_combined, symbol)
         else:
             logger.info(f"{symbol}: No new data found for the update period.")
-            return format_to_df_format(df_existing, symbol)
+            # Mark the date as checked to avoid future redundant attempts
+            empty_df = pd.DataFrame(index=[effective_end_ts])
+            df_combined = (
+                pd.concat([df_existing, empty_df]).sort_index().drop_duplicates()
+            )
+            df_combined.to_parquet(pq_file)
+            return format_to_df_format(df_combined, symbol)
     else:
         # Already up-to-date
         return format_to_df_format(df_existing, symbol)
 
 
-def process_symbols(symbols, start_date, end_date, data_path, download):
+def process_symbols(
+    symbols, start_date, end_date, data_path, download, allow_short=False
+):
     """
     For each symbol:
       1) Load or download data (using yfinance)
@@ -204,5 +219,16 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
             "Data still has missing values after fill. Dropping remaining nulls."
         )
         df_all.dropna(inplace=True)
+
+    # Add short position columns if enabled
+    if allow_short:
+        for sym in symbols:
+            if sym in df_all.columns:
+                # Create a short price series as the inverse of the long prices
+                df_all[f"short_{sym}"] = 1 / df_all[sym]
+            else:
+                logger.warning(
+                    f"Symbol {sym} not found in DataFrame for short simulation."
+                )
 
     return df_all
