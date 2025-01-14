@@ -335,8 +335,22 @@ def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
 
 def identify_correlated_groups(returns_df, threshold=0.8):
     corr_matrix = returns_df.corr().abs()
+
+    # Zero out the diagonal to ignore self-correlation
     np.fill_diagonal(corr_matrix.values, 0)
-    correlated_pairs = corr_matrix.stack()[lambda x: x > threshold].index.tolist()
+
+    # Find all pairs above the threshold
+    all_pairs = corr_matrix.stack()[lambda x: x > threshold].index.tolist()
+
+    # Filter out pairs where one ticker is the short version of the other
+    correlated_pairs = []
+    for ticker1, ticker2 in all_pairs:
+        if (ticker1.startswith("short_") and ticker1[6:] == ticker2) or (
+            ticker2.startswith("short_") and ticker2[6:] == ticker1
+        ):
+            continue
+        correlated_pairs.append((ticker1, ticker2))
+
     groups = []
     for ticker1, ticker2 in correlated_pairs:
         found = False
@@ -347,63 +361,48 @@ def identify_correlated_groups(returns_df, threshold=0.8):
                 break
         if not found:
             groups.append(set([ticker1, ticker2]))
+
     return groups
 
 
-def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.005):
+def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.005, n=1):
     """
-    Select the best ticker from each correlated group based on Sharpe Ratio and Total Return.
-    Logs detailed comparisons and decisions.
+    Select top N tickers from each correlated group based on Sharpe Ratio and Total Return.
 
     Args:
-        performance_df (pd.DataFrame): DataFrame with Sharpe Ratio and Total Return for each ticker.
+        performance_df (pd.DataFrame): DataFrame with performance metrics.
         correlated_groups (list of sets): Groups of highly correlated tickers.
-        sharpe_threshold (float, optional): Threshold to consider Sharpe ratios as similar.
+        sharpe_threshold (float): Threshold to consider Sharpe ratios as similar.
+        n (int): Number of top tickers to select per group.
 
     Returns:
         set: Tickers to exclude.
     """
-    tickers_to_exclude = set()
+    tickers_to_keep = set()
 
     for group in correlated_groups:
         logger.info(f"Evaluating group of correlated tickers: {group}")
         group_metrics = performance_df.loc[list(group)]
 
-        # Log performance metrics for tickers in group
-        for ticker in group:
-            sharpe = group_metrics.at[ticker, "Sharpe Ratio"]
-            total_ret = group_metrics.at[ticker, "Total Return"]
-            logger.info(
-                f"Ticker: {ticker}, Sharpe Ratio: {sharpe:.4f}, Total Return: {total_ret:.4f}"
-            )
-
         max_sharpe = group_metrics["Sharpe Ratio"].max()
         logger.info(f"Maximum Sharpe Ratio in group: {max_sharpe:.4f}")
 
         # Identify tickers within the Sharpe threshold of the max
-        top_sharpe_tickers = group_metrics[
+        top_candidates = group_metrics[
             group_metrics["Sharpe Ratio"] >= (max_sharpe - sharpe_threshold)
         ]
 
-        logger.info(
-            f"Tickers within Sharpe threshold: {list(top_sharpe_tickers.index)}"
-        )
+        # Select top n based on Total Return among these
+        top_n = top_candidates.nlargest(n, "Total Return").index.tolist()
+        logger.info(f"Selected top {n} tickers: {top_n} from group {group}")
 
-        # From these, select the one with highest total return
-        best_ticker = top_sharpe_tickers["Total Return"].idxmax()
-        best_sharpe = top_sharpe_tickers.at[best_ticker, "Sharpe Ratio"]
-        best_return = top_sharpe_tickers.at[best_ticker, "Total Return"]
+        tickers_to_keep.update(top_n)
 
-        logger.info(
-            f"Selected best ticker: {best_ticker} with Sharpe Ratio: {best_sharpe:.4f} and Total Return: {best_return:.4f}"
-        )
+    # Aggregate all tickers from all groups
+    all_group_tickers = set()
+    for group in correlated_groups:
+        all_group_tickers.update(group)
 
-        # Exclude other tickers in group
-        for ticker in group:
-            if ticker != best_ticker:
-                tickers_to_exclude.add(ticker)
-                logger.info(
-                    f"Excluding ticker {ticker} due to high correlation with selected {best_ticker}."
-                )
-
+    # Determine tickers to exclude: those in groups but not among top keepers
+    tickers_to_exclude = all_group_tickers - tickers_to_keep
     return tickers_to_exclude
