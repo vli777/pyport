@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 
+import pandas as pd
 import pytz
 
 from utils.date_utils import find_valid_trading_date
@@ -44,11 +45,9 @@ def cleanup_cache(cache_dir: Optional[str] = None, max_age_hours: int = 24) -> N
                 logger.error(f"Failed to remove cache file {filepath}: {e}")
 
 
-def make_cache_key(method, years, symbols, config_hash):
-    # config_hash can be an MD5 of the config dictionary or something
-    # e.g. str(sorted(config.items()))
+def make_cache_key(method, years, symbols):
     sorted_symbols = "_".join(sorted(symbols))
-    return f"{method}_{years}_{sorted_symbols}_{config_hash}.json"
+    return f"{method}_{years}_{sorted_symbols}.json"
 
 
 def load_model_results_from_cache(cache_key):
@@ -72,7 +71,7 @@ def load_model_results_from_cache(cache_key):
         )
 
         # Validate if cache is from the current trading day
-        if cache_mtime.date() == most_recent_trading_day:
+        if pd.Timestamp(cache_mtime.date()) >= most_recent_trading_day:
             with open(cache_file, "r") as f:
                 return json.load(f)  # or pickle.load
 

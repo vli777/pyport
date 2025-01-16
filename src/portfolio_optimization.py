@@ -168,8 +168,8 @@ def run_optimization_and_save(
 ):
     for optimization in config.models[years]:
         method = optimization.lower()
-        cache_key = make_cache_key(method, years, symbols, config_hash="123456")
-
+        cache_key = make_cache_key(method, years, symbols)
+ 
         # 1) Check cache
         cached = load_model_results_from_cache(cache_key)
         if cached is not None:
