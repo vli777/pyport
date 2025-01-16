@@ -122,7 +122,7 @@ def run_pipeline(
 
         # Load data
         df = df_long.loc[start_date:end_date].copy()
-        
+
         # Update min/max dates in the dfs dict
         dfs["start"] = min(dfs["start"], start_date)
         dfs["end"] = max(dfs["end"], end_date)

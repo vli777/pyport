@@ -117,7 +117,7 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
 
         # Use '>=' to catch empty or invalid ranges
         if next_valid >= effective_end_ts:
-            logger.info(
+            logger.debug(
                 f"{symbol}: Data already up-to-date. No valid trading days for update."
             )
             return format_to_df_format(df_existing, symbol)
