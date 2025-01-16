@@ -113,27 +113,19 @@ def run_pipeline(
     print(f"Redundant tickers identified and excluded: {redundant_tickers}")
     print(f"Symbols for further optimization: {filtered_symbols}")
 
+    dfs.update({"data": df_long, "start": start_date_long, "end": end_date_long})
+
     for years in sorted_times:
         start_date, end_date = calculate_start_end_dates(years)
         if config.test_mode:
             logger.info(f"Time period: {years}, symbols: {all_symbols}")
 
         # Load data
-        df = process_symbols(
-            all_symbols,
-            start_date,
-            end_date,
-            PATH,
-            config.download,
-            allow_short=config.allow_short,
-        )
-
-        # If this is the first loop, store the big DataFrame; else update min/max dates
-        if "data" not in dfs:
-            dfs.update({"data": df, "start": start_date, "end": end_date})
-        else:
-            dfs["start"] = min(dfs["start"], start_date)
-            dfs["end"] = max(dfs["end"], end_date)
+        df = df_long.loc[start_date:end_date].copy()
+        
+        # Update min/max dates in the dfs dict
+        dfs["start"] = min(dfs["start"], start_date)
+        dfs["end"] = max(dfs["end"], end_date)
 
         # Optional: If test_mode is on, store a CSV of the full data
         if config.test_mode:
