@@ -1,5 +1,6 @@
 # src/utils/caching_utils.py
 
+import hashlib
 import json
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -8,7 +9,6 @@ from typing import Dict, Optional, Any
 import pandas as pd
 import pytz
 
-from utils.date_utils import find_valid_trading_date
 from .logger import logger
 
 
@@ -46,8 +46,9 @@ def cleanup_cache(cache_dir: Optional[str] = None, max_age_hours: int = 24) -> N
 
 
 def make_cache_key(method, years, symbols):
-    sorted_symbols = "_".join(sorted(symbols))
-    return f"{method}_{years}_{sorted_symbols}.json"
+    symbols_hash = hashlib.md5("_".join(sorted(symbols)).encode()).hexdigest()
+    cache_file = f"{method}_{years}_{symbols_hash}.json"
+    return cache_file
 
 
 def load_model_results_from_cache(cache_key):
