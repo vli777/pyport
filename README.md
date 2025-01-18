@@ -1,5 +1,6 @@
 # PyPort
-Portfolio Optimization
+Portfolio Optimization with ensemble Monte Carlo methods and correlation-driven mean reversion.
+
 
 ## Instructions
 
@@ -59,7 +60,8 @@ curl -X POST "http://localhost:8000/inference" \
 { "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "models": "model_name_1, model_name_2", "symbols": ["symbol1", "symbol2"], "normalized_avg": { "symbol1": 0.25, "symbol2": 0.75 } }
 ```
 
-![image](https://github.com/user-attachments/assets/5b0b3ef7-a1cd-4fb5-962c-48a7b8de5fc6)
+![image](https://github.com/user-attachments/assets/6a25886c-7a68-447b-9720-cd203c7aec0f)
+
 
 ---
 
@@ -67,5 +69,6 @@ curl -X POST "http://localhost:8000/inference" \
 
 - Ensure your `config.yaml` file is correctly configured for your use case.
 - The API allows dynamic overrides for symbols and configurations without modifying the local `config.yaml`.
+- The symbol selection process will auto-remove highly correlated pairs within a group and select representatives based on sharpe ratio vs the group
 
 
