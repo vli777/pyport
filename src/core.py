@@ -187,4 +187,6 @@ def run_pipeline(
         "models": combined_models,
         "symbols": list(daily_returns.columns),
         "normalized_avg": normalized_avg,
+        "daily_returns": daily_returns,
+        "cumulative_returns": cumulative_returns,
     }
