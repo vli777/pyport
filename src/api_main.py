@@ -8,7 +8,7 @@ from typing import List, Optional
 import uvicorn
 
 from config import Config
-from core import run_pipeline
+from iterative_pipeline import iterative_pipeline_runner
 
 
 app = FastAPI(
@@ -19,7 +19,7 @@ app = FastAPI(
 
 
 class PipelineRequest(BaseModel):
-    symbols: List[str]  # List of symbols is required
+    symbols: Optional[List[str]]
 
     class Config:
         json_schema_extra = {
@@ -36,8 +36,9 @@ def redirect_to_docs():
 @app.post("/inference")
 def inference(req: PipelineRequest):
     """
-    Run the pipeline without changing the loaded config object.
-    Only pass `symbols_override` to the pipeline.
+    Run the pipeline without changing the loaded config object. Note that the default configured set of
+    symbol watchlists may cause the pipeline to run for awhile if it is the first run.
+    Only pass `symbols` to the pipeline if you want to specify which symbols to allocate.
     """
     # Load the default configuration
     default_config_path = "config.yaml"
@@ -54,8 +55,8 @@ def inference(req: PipelineRequest):
         )
 
     try:
-        result = run_pipeline(
-            config=config_obj, symbols_override=req.symbols, run_local=False
+        result = iterative_pipeline_runner(
+            config=config_obj, initial_symbols=req.symbols, run_local=False
         )
     except Exception as e:
         raise HTTPException(
