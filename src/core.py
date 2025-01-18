@@ -171,6 +171,16 @@ def run_pipeline(
         config=config,
     )
 
+    # Sort symbols by allocation weights (descending)
+    sorted_symbols = [
+        symbol
+        for symbol, _ in sorted(
+            zip(daily_returns.columns, normalized_avg),
+            key=lambda x: x[1],  # Sort by weight
+            reverse=True,  # Descending order
+        )
+    ]
+
     if run_local:
         plot_graphs(
             daily_returns,
@@ -185,7 +195,7 @@ def run_pipeline(
         "start_date": str(dfs["start"]),
         "end_date": str(dfs["end"]),
         "models": combined_models,
-        "symbols": list(daily_returns.columns),
+        "symbols": sorted_symbols,
         "normalized_avg": normalized_avg,
         "daily_returns": daily_returns,
         "cumulative_returns": cumulative_returns,
