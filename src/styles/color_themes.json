@@ -1,5 +1,25 @@
 {
-    "blue grotto": [
-        "#012949", "#024376", "#035CA3", "#0476D0", "#088FFA", "#35A4FB", "#62B8FC"
+    "natural": [
+        "#582f0e", "#7f4f24", "#936639", "#a68a64", "#b6ad90", "#c2c5aa", "#a4ac86", "#656d4a", "#414833", "#333d29"
+    ],
+    "verdant": [
+        "#007f5f", "#2b9348", "#55a630", "#80b918", "#aacc00", "#bfd200", "#d4d700", "#dddf00", "#eeef20", "#ffff3f"
+    ],
+    "all blue": [
+        "#0d47a1", "#1565c0", "#1976d2", "#1e88e5", "#2196f3", "#42a5f5", "#64b5f6", "#90caf9", "#bbdefb", "#e3f2fd"
+    ],
+    "tropical lagoon": [
+        "#d9ed92", "#b5e48c", "#99d98c", "#76c893", "#52b69a", "#34a0a4", "#168aad", "#1a759f", "#1e6091", "#184e77"
+    ],
+    "life's a beach": [
+        "#DD5588", "#FF7687", "#FFAF80", "#FFDF7B", "#FFF4B3", "#77B5BD", "#F7E1B5", "#FAB796", "#ECA393", "#C48A8C"
+    ],
+    "nyan": [
+        "#3B3993","#893EB1","#C74DA4","#D3646D","#DEB17C","#DAE896","#BEF0B2","#CFF7E0","#EDFCFD","#FFFFFF"
+    ],
+    "default": [
+        "#FFDA1F","#A9FF1F","#2EFF1F","#1FFF8B","#1FF8FF","#1F7CFF","#3D1FFF","#B81FFF","#FF1FCB","#FF1F4F"
     ]
+    
+
 }

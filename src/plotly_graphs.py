@@ -324,8 +324,7 @@ def plot_cumulative_returns(
                     mode="lines",
                     meta=col,
                     name=col,
-                    line=dict(width=2, color=color_map.get(col, "gray")),
-                    opacity=0.7,
+                    line=dict(width=3, color=color_map.get(col, "gray")),
                     hovertemplate=get_hovertemplate_with_diff(),
                     customdata=customdata,
                 )
@@ -339,7 +338,7 @@ def plot_cumulative_returns(
                     mode="lines",
                     meta=col,
                     name=col,
-                    line=dict(width=3, color=color_map.get(col, "gold")),
+                    line=dict(width=6, color=color_map.get(col, "gold")),
                     hovertemplate=get_hovertemplate(),
                 )
             )
@@ -358,8 +357,9 @@ def plot_graphs(
     cumulative_returns: pd.DataFrame,
     config: Config,
     symbols: List[str],
-    paper_bgcolor: str = "#888",
-    plot_bgcolor: str = "#f1f1f1",
+    paper_bgcolor: str = "#f4f4f4",
+    plot_bgcolor: str = "#202346",
+    palette: str = "default",
 ) -> None:
     """
     Creates Plotly graphs for daily returns and cumulative returns.
@@ -378,14 +378,14 @@ def plot_graphs(
     symbols : List[str]
         List of symbols corresponding to columns in `cumulative_returns`.
     paper_bgcolor : str, optional
-        Background color for the entire figure (paper), by default "#f1f1f1".
+        Background color for the entire figure (paper)
     plot_bgcolor : str, optional
-        Background color for the plotting area, by default "#0476D0".
+        Background color for the plotting area
     """
     # Load color dictionary and generate color map
     color_dict = load_colors_from_json("color_themes.json")
     color_map, sorted_symbols = generate_color_map(
-        symbols, cumulative_returns, palette="pastel", color_dict=color_dict
+        symbols, cumulative_returns, palette=palette, color_dict=color_dict
     )
 
     # Plot daily returns
