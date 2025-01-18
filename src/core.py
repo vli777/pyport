@@ -14,9 +14,8 @@ from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
 from utils.portfolio_utils import (
     calculate_performance_metrics,
-    identify_correlated_groups,
+    filter_correlated_groups,
     normalize_weights,
-    select_best_tickers,
     stacked_output,
 )
 
@@ -94,23 +93,32 @@ def run_pipeline(
         [col for col in returns_df.columns if not col.startswith("short_")]
     ]
     shorts = returns_df[[col for col in returns_df.columns if col.startswith("short_")]]
+
     # Process longs
-    long_groups = identify_correlated_groups(longs, threshold=0.8)
-    redundant_longs = select_best_tickers(
-        performance_df.loc[longs.columns], long_groups, sharpe_threshold=0.005
+    longs = returns_df[
+        [col for col in returns_df.columns if not col.startswith("short_")]
+    ]
+    filtered_longs = filter_correlated_groups(
+        returns_df=longs,
+        performance_df=performance_df.loc[longs.columns],
+        sharpe_threshold=0.005,
+        correlation_threshold=0.8,
+        n=1,
     )
+
     # Process shorts
-    short_groups = identify_correlated_groups(shorts, threshold=0.8)
-    redundant_shorts = select_best_tickers(
-        performance_df.loc[shorts.columns], short_groups, sharpe_threshold=0.005
+    shorts = returns_df[[col for col in returns_df.columns if col.startswith("short_")]]
+    filtered_shorts = filter_correlated_groups(
+        returns_df=shorts,
+        performance_df=performance_df.loc[shorts.columns],
+        sharpe_threshold=0.005,
+        correlation_threshold=0.8,
+        n=1,
     )
-    # Combine redundant tickers from both sets
-    redundant_tickers = redundant_longs.union(redundant_shorts)
 
-    # Filter out redundant tickers
-    filtered_symbols = [s for s in all_symbols if s not in redundant_tickers]
+    # Combine filtered symbols
+    filtered_symbols = filtered_longs + filtered_shorts
 
-    print(f"Redundant tickers identified and excluded: {redundant_tickers}")
     print(f"Symbols for further optimization: {filtered_symbols}")
 
     dfs.update({"data": df_long, "start": start_date_long, "end": end_date_long})

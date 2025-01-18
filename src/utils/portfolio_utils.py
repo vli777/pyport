@@ -333,26 +333,23 @@ def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
     return performance_df
 
 
-def identify_correlated_groups(returns_df, threshold=0.8):
-    corr_matrix = returns_df.corr().abs()
+def identify_correlated_groups(corr_matrix, threshold=0.8):
+    """
+    Identifies groups of highly correlated tickers.
 
-    # Zero out the diagonal to ignore self-correlation
-    np.fill_diagonal(corr_matrix.values, 0)
+    Args:
+        corr_matrix (pd.DataFrame): Correlation matrix.
+        threshold (float): Correlation threshold to define groups.
 
-    # Find all pairs above the threshold
+    Returns:
+        list of sets: Groups of correlated tickers.
+    """
+    # Find pairs above the correlation threshold
     all_pairs = corr_matrix.stack()[lambda x: x > threshold].index.tolist()
 
-    # Filter out pairs where one ticker is the short version of the other
-    correlated_pairs = []
-    for ticker1, ticker2 in all_pairs:
-        if (ticker1.startswith("short_") and ticker1[6:] == ticker2) or (
-            ticker2.startswith("short_") and ticker2[6:] == ticker1
-        ):
-            continue
-        correlated_pairs.append((ticker1, ticker2))
-
+    # Build groups of correlated tickers
     groups = []
-    for ticker1, ticker2 in correlated_pairs:
+    for ticker1, ticker2 in all_pairs:
         found = False
         for group in groups:
             if ticker1 in group or ticker2 in group:
@@ -363,6 +360,50 @@ def identify_correlated_groups(returns_df, threshold=0.8):
             groups.append(set([ticker1, ticker2]))
 
     return groups
+
+
+def filter_correlated_groups(
+    returns_df, performance_df, sharpe_threshold=0.005, correlation_threshold=0.8, n=1
+):
+    """
+    Iteratively filter correlated tickers based on correlation and Sharpe Ratio.
+    """
+    total_excluded = set()
+    iteration = 1
+
+    while True:
+        # Compute the correlation matrix
+        corr_matrix = returns_df.corr().abs()
+        np.fill_diagonal(corr_matrix.values, 0)
+
+        # Identify correlated groups
+        groups = identify_correlated_groups(
+            corr_matrix, threshold=correlation_threshold
+        )
+
+        if not groups:  # Exit if no groups found
+            break
+
+        # Use Sharpe-based selection to decide tickers to exclude
+        excluded_tickers = select_best_tickers(
+            performance_df=performance_df,
+            correlated_groups=groups,
+            sharpe_threshold=sharpe_threshold,
+            n=n,
+        )
+        total_excluded.update(excluded_tickers)
+
+        # Log tickers excluded in this iteration
+        print(f"Iteration {iteration}: Excluded tickers: {excluded_tickers}")
+
+        # Drop excluded tickers from the returns DataFrame
+        returns_df = returns_df.drop(columns=excluded_tickers)
+
+        iteration += 1
+
+    # Log total excluded tickers
+    print(f"Total excluded tickers: {total_excluded}")
+    return returns_df.columns.tolist()
 
 
 def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.005, n=1):
