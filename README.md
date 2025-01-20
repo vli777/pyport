@@ -1,6 +1,8 @@
 # PyPort
 Portfolio Optimization with ensemble Monte Carlo methods and correlation-driven mean reversion.
 
+![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
+
 
 ## Instructions
 
