@@ -16,6 +16,7 @@ from utils.portfolio_utils import (
     calculate_performance_metrics,
     filter_correlated_groups,
     normalize_weights,
+    remove_anomalous_stocks,
     stacked_output,
 )
 
@@ -82,6 +83,9 @@ def run_pipeline(
 
     # Calculate daily returns for the longest period
     returns_df = df_long.pct_change().dropna()
+
+    # Remove anomalous stocks
+    returns_df = remove_anomalous_stocks(returns_df, threshold=12.0)
 
     # Calculate performance metrics
     performance_df = calculate_performance_metrics(
