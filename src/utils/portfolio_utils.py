@@ -4,6 +4,10 @@ from typing import Any, Dict, Tuple
 from collections import defaultdict
 import numpy as np
 import pandas as pd
+from pykalman import KalmanFilter
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 from .logger import logger
 
 
@@ -404,6 +408,146 @@ def filter_correlated_groups(
     # Log total excluded tickers
     print(f"Total excluded tickers: {total_excluded}")
     return returns_df.columns.tolist()
+
+
+def apply_kalman_filter(returns_series, threshold=7.0):
+    # Ensure returns_series is 1-dimensional
+    if not isinstance(returns_series, pd.Series):
+        raise ValueError("returns_series must be a Pandas Series.")
+
+    # Initialize the Kalman filter
+    kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
+
+    # Reshape the input to 2D array (T x 1)
+    values = returns_series.values.reshape(-1, 1)
+
+    # Train the Kalman filter
+    kf = kf.em(values, n_iter=10)
+
+    # Get smoothed state means
+    smoothed_state_means, _ = kf.smooth(values)
+
+    # Calculate residuals
+    residuals = values - smoothed_state_means
+
+    # Calculate the median of residuals
+    median_res = np.median(residuals)
+
+    # Compute the Median Absolute Deviation (MAD)
+    mad = np.median(np.abs(residuals - median_res))
+
+    # Define a modified Z-score using MAD (constant 0.6745 makes it comparable to standard deviation under normality)
+    modified_z_scores = 0.6745 * (residuals - median_res) / mad
+
+    # Identify anomalies based on a threshold on the modified Z-score
+    anomaly_flags = np.abs(modified_z_scores) > threshold
+
+    # Squeeze anomaly_flags to convert from 2D to 1D
+    anomaly_flags = anomaly_flags.squeeze()
+
+    return anomaly_flags
+
+
+def plot_anomalies(stock, returns_series, anomaly_flags):
+    """
+    Plots the stock's return series and highlights anomalies using Seaborn.
+
+    Args:
+        stock (str): The name of the stock.
+        returns_series (pd.Series): Daily returns for the stock.
+        anomaly_flags (np.array): Boolean array indicating anomalies.
+    """
+    # Convert anomaly_flags to a Pandas Series aligned with returns_series
+    anomaly_flags_series = pd.Series(anomaly_flags, index=returns_series.index)
+
+    # Create a DataFrame for easier plotting
+    plot_df = pd.DataFrame(
+        {
+            "Date": returns_series.index,
+            "Returns": returns_series.values,
+            "Anomaly": anomaly_flags_series,  # True/False for anomalies
+        }
+    )
+
+    # Initialize Kalman filter and perform smoothing to get predicted range
+    kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
+    values = returns_series.values.reshape(-1, 1)  # Reshape for KalmanFilter input
+    kf = kf.em(values, n_iter=10)
+    smoothed_state_means, smoothed_state_covariances = kf.smooth(values)
+
+    # Calculate 95% confidence intervals from the smoothed estimates
+    mean = smoothed_state_means.squeeze()
+    std_dev = np.sqrt(smoothed_state_covariances.squeeze())
+    lower_bounds = mean - 1.96 * std_dev
+    upper_bounds = mean + 1.96 * std_dev
+
+    # Initialize the plot
+    plt.figure(figsize=(12, 6))
+
+    # Plot the observed returns
+    sns.lineplot(
+        data=plot_df, x="Date", y="Returns", label="Observed Returns", color="blue"
+    )
+
+    # Overlay the Kalman smoothed mean
+    plt.plot(plot_df["Date"], mean, label="Kalman Smoothed Mean", color="green")
+
+    # Fill between the confidence intervals
+    plt.fill_between(
+        plot_df["Date"],
+        lower_bounds,
+        upper_bounds,
+        color="gray",
+        alpha=0.3,
+        label="95% Confidence Interval",
+    )
+
+    # Highlight anomalies
+    sns.scatterplot(
+        data=plot_df[plot_df["Anomaly"]],  # Filter rows with anomalies
+        x="Date",
+        y="Returns",
+        color="red",
+        label="Anomalies",
+        s=50,  # Size of anomaly points
+    )
+
+    # Customize the plot
+    plt.title(f"Anomalies and Kalman Range for {stock}")
+    plt.xlabel("Date")
+    plt.ylabel("Daily Returns")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+def remove_anomalous_stocks(returns_df, threshold=7.0, plot=False):
+    """
+    Removes stocks with anomalous returns based on the Kalman filter.
+
+    Args:
+        returns_df (pd.DataFrame): DataFrame of daily returns.
+        threshold (float): Number of standard deviations to flag anomalies.
+        plot (bool): Bool if the anomalies should be plotted, default False
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame with anomalous stocks removed.
+    """
+    anomalous_cols = []
+    for stock in returns_df.columns:
+        returns_series = returns_df[stock]
+        anomaly_flags = apply_kalman_filter(returns_series, threshold=threshold)
+
+        if anomaly_flags.any():
+            anomalous_cols.append(stock)
+            # Plot anomalies for visual inspection
+            if plot:
+                plot_anomalies(stock, returns_series, anomaly_flags)
+
+    print(
+        f"Removing {len(anomalous_cols)} stocks with Kalman anomalies: {anomalous_cols}"
+    )
+    return returns_df.drop(columns=anomalous_cols)
 
 
 def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.005, n=1):
