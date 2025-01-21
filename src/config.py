@@ -42,6 +42,7 @@ class Config:
     test_mode: bool
     test_data_visible_pct: float
     optimization_config: OptimizationConfig
+    expand_etfs: bool
 
     @classmethod
     def from_yaml(cls, config_file: str) -> "Config":
@@ -71,5 +72,6 @@ class Config:
             allow_short=config_dict.get("allow_short", False),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
+            expand_etfs=config_dict.get("expand_etfs", False),
             optimization_config=optimization_config,
         )
