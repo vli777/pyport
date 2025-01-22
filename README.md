@@ -1,4 +1,4 @@
-# PyPort 1.0.0
+# PyPort
 Modern Portfolio Optimization 
 
 # Latest Changes
