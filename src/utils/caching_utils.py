@@ -66,25 +66,20 @@ def load_model_results_from_cache(cache_key):
         # Check cache timestamp
         cache_mtime = datetime.fromtimestamp(cache_file.stat().st_mtime, tz=est)
 
-        # Get the most recent trading day
-        # most_recent_trading_day = find_valid_trading_date(
-        #     now_est.date(), tz=est, direction="backward"
-        # )
-
-        # Validate if cache is from the current trading day
-        # if pd.Timestamp(cache_mtime.date()) >= most_recent_trading_day:
-
-        # Allow 72 hrs cache
+        # Allow 72 hrs cache validity
         time_diff = now_est - cache_mtime
         if time_diff.total_seconds() < 72 * 3600:
+            # Check if file is not empty
+            if cache_file.stat().st_size == 0:
+                return None
+            # Attempt to load JSON, return None on failure
             with open(cache_file, "r") as f:
-                return json.load(f)
+                try:
+                    return json.load(f)
+                except json.JSONDecodeError:
+                    return None
 
-        # if now_est.weekday() in (5, 6) and cache_mtime.date() == (now_est - timedelta(days=now_est.weekday() - 4)).date():
-        #     with open(cache_file, "r") as f:
-        #         return json.load(f)
-
-    # Cache is invalid or doesn't exist
+    # Cache is invalid, doesn't exist, or empty/invalid
     return None
 
 

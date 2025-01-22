@@ -7,22 +7,13 @@ import os
 
 
 @dataclass
-class OptimizationConfig:
-    hrp: Dict[str, Any]
-    herc: Dict[str, Any]
-    nco: Dict[str, Any]
-    nco2: Dict[str, Any]
-    mc: Dict[str, Any]
-    mc2: Dict[str, Any]
-    olmar: Dict[str, Any]
-    rmr: Dict[str, Any]
-    scorn: Dict[str, Any]
-    fcornk: Dict[str, Any]
-    cla: Dict[str, Any]
-    cla2: Dict[str, Any]
-    efficient_risk: float
-    efficient_return: float
-    risk_aversion: float
+class ModelConfig:
+    nested_clustering: Dict[str, Any]
+
+    def __getitem__(self, key: str) -> Dict[str, Any]:
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(f"{key} not found in ModelConfig")
 
 
 @dataclass
@@ -34,14 +25,17 @@ class Config:
     download: bool
     plot_daily_returns: bool
     plot_cumulative_returns: bool
+    expand_etfs: bool
     min_weight: float
+    max_weight: float
     portfolio_max_size: int
     risk_free_rate: float
     sort_by_weights: bool
     allow_short: bool
+    short_long_ratio: float
     test_mode: bool
     test_data_visible_pct: float
-    optimization_config: OptimizationConfig
+    model_config: ModelConfig
     expand_etfs: bool
 
     @classmethod
@@ -52,10 +46,8 @@ class Config:
         with open(config_file, "r") as f:
             config_dict = yaml.safe_load(f)
 
-        # Parse nested optimization_config
-        optimization_config = OptimizationConfig(
-            **config_dict.get("optimization_config", {})
-        )
+        # Parse model config
+        model_config = ModelConfig(**config_dict.get("model_config", {}))
 
         return cls(
             folder=config_dict["folder"],
@@ -65,13 +57,15 @@ class Config:
             download=config_dict.get("download", False),
             plot_daily_returns=config_dict.get("plot_daily_returns", False),
             plot_cumulative_returns=config_dict.get("plot_cumulative_returns", False),
+            expand_etfs=config_dict.get("expand_etfs", False),
             min_weight=config_dict["min_weight"],
+            max_weight=config_dict["max_weight"],
             portfolio_max_size=config_dict["portfolio_max_size"],
             risk_free_rate=config_dict.get("risk_free_rate", 0.0),
-            sort_by_weights=config_dict.get("sort_by_weights", False),
             allow_short=config_dict.get("allow_short", False),
+            short_long_ratio=config_dict.get("short_long_ratio", 0.3),
+            sort_by_weights=config_dict.get("sort_by_weights", False),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
-            expand_etfs=config_dict.get("expand_etfs", False),
-            optimization_config=optimization_config,
+            model_config=model_config,
         )
