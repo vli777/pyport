@@ -381,7 +381,7 @@ def filter_correlated_groups(
     while True:
         # Check if the number of tickers is less than 2
         if len(returns_df.columns) < 2:
-            print("Less than two tickers remain. Stopping iteration.")
+            # print("Less than two tickers remain. Stopping iteration.")
             break
 
         # Compute the correlation matrix and set diagonal to zero
@@ -422,10 +422,6 @@ def filter_correlated_groups(
             print("Distance matrix:\n", distance_matrix)
             raise
 
-        # Debug: Print shapes
-        print("Distance matrix shape:", distance_matrix.shape)
-        print("Condensed distance matrix shape:", condensed_distance_matrix.shape)
-
         # Ensure correlation_threshold is within [0,1]
         if not (0 <= correlation_threshold <= 1):
             raise ValueError(
@@ -434,7 +430,6 @@ def filter_correlated_groups(
 
         # Convert correlation threshold to distance threshold
         distance_threshold = 1 - correlation_threshold
-        print(f"Using distance threshold: {distance_threshold}")
 
         # Perform hierarchical clustering
         linked = linkage(condensed_distance_matrix, method=linkage_method)
@@ -460,16 +455,13 @@ def filter_correlated_groups(
         for stock, cluster_label in zip(returns_df.columns, cluster_assignments):
             clusters.setdefault(cluster_label, []).append(stock)
 
-        for cluster_label, group in clusters.items():
-            print(f"Cluster {cluster_label}: {group}")
-
         # Identify correlated groups (clusters with more than one ticker)
         correlated_groups = [
             set(group) for group in clusters.values() if len(group) > 1
         ]
 
         if not correlated_groups:
-            print("No correlated groups found. Stopping iteration.")
+            # print("No correlated groups found. Stopping iteration.")
             break
 
         # Select tickers to exclude based on Sharpe Ratio
@@ -484,7 +476,7 @@ def filter_correlated_groups(
 
         # If no tickers are excluded this iteration, break to avoid infinite loop
         if not excluded_tickers:
-            print("No more tickers to exclude. Stopping iteration.")
+            # print("No more tickers to exclude. Stopping iteration.")
             break
 
         total_excluded.update(excluded_tickers)

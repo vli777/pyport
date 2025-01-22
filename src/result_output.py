@@ -62,7 +62,7 @@ def output(
 
     # logger.info stats
     if inputs is not None:
-        logger.info(f"\nWatchlist Inputs: {inputs}")
+        logger.info(f"\n\nWatchlist Inputs: {inputs}")
     logger.info(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
 
     cumulative_pct = round((portfolio_cumulative_returns.iloc[-1] - 1) * 100, 2)
