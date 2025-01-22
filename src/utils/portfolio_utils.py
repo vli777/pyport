@@ -7,6 +7,7 @@ import pandas as pd
 from pykalman import KalmanFilter
 import seaborn as sns
 import matplotlib.pyplot as plt
+from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 
 from .logger import logger
 
@@ -79,46 +80,45 @@ def convert_to_dict(weights: Any, asset_names: list) -> Dict[str, float]:
         raise TypeError("Unsupported weight type: must be ndarray, DataFrame, or dict.")
 
 
-def normalize_weights(weights: Dict[str, float], min_weight: float) -> Dict[str, float]:
+def normalize_weights(weights, min_weight: float) -> pd.Series:
     """
-    Normalize the weights by:
-      1. Filtering out assets where the absolute weight is below min_weight.
-      2. Scaling the remaining weights so that their sum equals 1.
-      3. Rounding each weight to three decimal places.
-
-    This function now supports negative weights by using the absolute value for filtering.
+    Normalize the weights by filtering out values below min_weight and scaling the remaining weights to sum to 1.
+    Additionally, rounds each weight to three decimal places.
 
     Args:
-        weights (Dict[str, float]): The input weights dictionary, possibly containing negative values.
-        min_weight (float): The minimum absolute weight threshold. Weights with |weight| below this value are filtered out.
+        weights (dict or pd.Series): The input weights.
+        min_weight (float): The minimum weight threshold.
 
     Returns:
-        Dict[str, float]: The normalized weights dictionary.
-
-    Raises:
-        ValueError: If no weights remain after filtering or if normalization cannot be performed.
+        pd.Series: The normalized weights with indices as asset symbols.
     """
     logger.debug(f"Original weights: {weights}")
     logger.debug(f"Minimum weight threshold: {min_weight}")
 
-    # Filter out assets whose absolute weight is below min_weight, preserving sign for others
-    filtered_weights = {k: v for k, v in weights.items() if abs(v) >= min_weight}
+    # Convert dict to Series if necessary
+    if isinstance(weights, dict):
+        weights = pd.Series(weights)
+
+    # Filter out assets whose absolute weight is below min_weight
+    import numbers
+
+    filtered_weights = {
+        k: float(v)
+        for k, v in weights.items()
+        if isinstance(v, numbers.Number) and abs(v) >= min_weight
+    }
     logger.debug(f"Filtered weights: {filtered_weights}")
 
-    # Sum the remaining weights (which may include negative values)
     total_weight = sum(filtered_weights.values())
     logger.debug(f"Total weight after filtering: {total_weight}")
 
-    # Check if the sum of weights is effectively zero, which prevents normalization
     if total_weight == 0:
-        logger.error(
-            "Sum of weights is zero after filtering; cannot normalize weights."
-        )
+        logger.error("No weights remain after filtering with the specified min_weight.")
         raise ValueError(
-            "No weights remain after filtering with the specified min_weight, or their sum is zero."
+            "No weights remain after filtering with the specified min_weight."
         )
 
-    # Normalize the remaining weights so that they sum to 1, preserving the sign of each weight
+    # Normalize the weights so they sum to 1
     normalized_weights = {k: v / total_weight for k, v in filtered_weights.items()}
     logger.debug(f"Normalized weights before rounding: {normalized_weights}")
 
@@ -126,7 +126,8 @@ def normalize_weights(weights: Dict[str, float], min_weight: float) -> Dict[str,
     rounded_weights = {k: round(v, 3) for k, v in normalized_weights.items()}
     logger.debug(f"Normalized weights after rounding: {rounded_weights}")
 
-    return rounded_weights
+    # Return a Pandas Series instead of a dict
+    return pd.Series(rounded_weights)
 
 
 def stacked_output(stack_dict: Dict[str, Dict[str, float]]) -> Dict[str, float]:
@@ -345,37 +346,41 @@ def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
     return performance_df
 
 
-def identify_correlated_groups(corr_matrix, threshold=0.8):
-    """
-    Identifies groups of highly correlated tickers.
+# def identify_correlated_groups(corr_matrix, threshold=0.8):
+#     """
+#     Identifies groups of highly correlated tickers.
 
-    Args:
-        corr_matrix (pd.DataFrame): Correlation matrix.
-        threshold (float): Correlation threshold to define groups.
+#     Args:
+#         corr_matrix (pd.DataFrame): Correlation matrix.
+#         threshold (float): Correlation threshold to define groups.
 
-    Returns:
-        list of sets: Groups of correlated tickers.
-    """
-    # Find pairs above the correlation threshold
-    all_pairs = corr_matrix.stack()[lambda x: x > threshold].index.tolist()
+#     Returns:
+#         list of sets: Groups of correlated tickers.
+#     """
+#     # Find pairs above the correlation threshold
+#     all_pairs = corr_matrix.stack()[lambda x: x > threshold].index.tolist()
 
-    # Build groups of correlated tickers
-    groups = []
-    for ticker1, ticker2 in all_pairs:
-        found = False
-        for group in groups:
-            if ticker1 in group or ticker2 in group:
-                group.update([ticker1, ticker2])
-                found = True
-                break
-        if not found:
-            groups.append(set([ticker1, ticker2]))
+#     # Build groups of correlated tickers
+#     groups = []
+#     for ticker1, ticker2 in all_pairs:
+#         found = False
+#         for group in groups:
+#             if ticker1 in group or ticker2 in group:
+#                 group.update([ticker1, ticker2])
+#                 found = True
+#                 break
+#         if not found:
+#             groups.append(set([ticker1, ticker2]))
 
-    return groups
+#     return groups
 
 
 def filter_correlated_groups(
-    returns_df, performance_df, sharpe_threshold=0.005, correlation_threshold=0.8, n=1
+    returns_df,
+    performance_df,
+    sharpe_threshold=0.005,
+    correlation_threshold=0.8,
+    plot=False,
 ):
     """
     Iteratively filter correlated tickers based on correlation and Sharpe Ratio.
@@ -388,21 +393,56 @@ def filter_correlated_groups(
         corr_matrix = returns_df.corr().abs()
         np.fill_diagonal(corr_matrix.values, 0)
 
-        # Identify correlated groups
-        groups = identify_correlated_groups(
-            corr_matrix, threshold=correlation_threshold
+        # Distance = 1 - correlation
+        distance_matrix = 1 - corr_matrix
+
+        # Use average linkage for clustering
+        linked = linkage(distance_matrix, method="average")
+
+        # Convert correlation threshold to distance threshold
+        distance_threshold = 1 - correlation_threshold  # 0.2 for 0.8 correlation
+
+        # Form clusters based on the distance threshold
+        cluster_assignments = fcluster(
+            linked, t=distance_threshold, criterion="distance"
         )
 
-        if not groups:  # Exit if no groups found
+        if plot:
+            plt.figure(figsize=(10, 7))
+            dendrogram(linked, labels=corr_matrix.index.tolist())
+            plt.axhline(
+                y=distance_threshold, color="r", linestyle="--"
+            )  # Visual cutoff line
+            plt.title("Hierarchical Clustering Dendrogram")
+            plt.xlabel("Stock")
+            plt.ylabel("Distance (1 - Correlation)")
+            plt.show()
+
+        # Identify correlated groups
+        clusters = {}
+        for stock, cluster_label in zip(returns_df.columns, cluster_assignments):
+            clusters.setdefault(cluster_label, []).append(stock)
+
+        if not clusters:  # Exit if no groups found
             break
+
+        # Convert clusters dictionary values to a list of sets
+        correlated_groups = [
+            set(group) for group in clusters.values() if len(group) > 1
+        ]
 
         # Use Sharpe-based selection to decide tickers to exclude
         excluded_tickers = select_best_tickers(
             performance_df=performance_df,
-            correlated_groups=groups,
+            correlated_groups=correlated_groups,
             sharpe_threshold=sharpe_threshold,
-            n=n,
         )
+
+        # If no tickers are excluded this iteration, break to avoid infinite loop
+        if not excluded_tickers:
+            print("No more tickers to exclude. Stopping iteration.")
+            break
+
         total_excluded.update(excluded_tickers)
 
         # Log tickers excluded in this iteration
@@ -418,7 +458,7 @@ def filter_correlated_groups(
     return returns_df.columns.tolist()
 
 
-def apply_kalman_filter(returns_series, threshold=7.0):
+def apply_kalman_filter(returns_series, threshold=7.0, epsilon=1e-6):
     # Ensure returns_series is 1-dimensional
     if not isinstance(returns_series, pd.Series):
         raise ValueError("returns_series must be a Pandas Series.")
@@ -426,11 +466,14 @@ def apply_kalman_filter(returns_series, threshold=7.0):
     # Initialize the Kalman filter
     kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
 
+    # Increase process noise for smoother estimates
+    kf.transition_covariance = np.eye(1) * 0.1
+
     # Reshape the input to 2D array (T x 1)
     values = returns_series.values.reshape(-1, 1)
 
     # Train the Kalman filter
-    kf = kf.em(values, n_iter=10)
+    kf = kf.em(values, n_iter=3)
 
     # Get smoothed state means
     smoothed_state_means, _ = kf.smooth(values)
@@ -444,7 +487,10 @@ def apply_kalman_filter(returns_series, threshold=7.0):
     # Compute the Median Absolute Deviation (MAD)
     mad = np.median(np.abs(residuals - median_res))
 
-    # Define a modified Z-score using MAD (constant 0.6745 makes it comparable to standard deviation under normality)
+    # Avoid division by zero or very small MAD
+    mad = max(mad, epsilon)
+
+    # Define a modified Z-score using MAD
     modified_z_scores = 0.6745 * (residuals - median_res) / mad
 
     # Identify anomalies based on a threshold on the modified Z-score
@@ -456,109 +502,171 @@ def apply_kalman_filter(returns_series, threshold=7.0):
     return anomaly_flags
 
 
-def plot_anomalies(stock, returns_series, anomaly_flags):
+def plot_anomalies(stocks, returns_data, anomaly_flags_data, stocks_per_page=36):
     """
-    Plots the stock's return series and highlights anomalies using Seaborn.
+    Plots multiple stocks' return series in paginated 6x6 grids and highlights anomalies using Seaborn.
 
     Args:
-        stock (str): The name of the stock.
-        returns_series (pd.Series): Daily returns for the stock.
-        anomaly_flags (np.array): Boolean array indicating anomalies.
+        stocks (list): List of stock names.
+        returns_data (dict): Dictionary of daily returns for each stock, keyed by stock name.
+        anomaly_flags_data (dict): Dictionary of anomaly flags (np.array) for each stock, keyed by stock name.
+        stocks_per_page (int): Maximum number of stocks to display per page (default is 36).
     """
-    # Convert anomaly_flags to a Pandas Series aligned with returns_series
-    anomaly_flags_series = pd.Series(anomaly_flags, index=returns_series.index)
+    grid_rows, grid_cols = 6, 6  # Fixed grid dimensions
+    total_plots = grid_rows * grid_cols
+    num_pages = (
+        len(stocks) + stocks_per_page - 1
+    ) // stocks_per_page  # Calculate pages
 
-    # Create a DataFrame for easier plotting
-    plot_df = pd.DataFrame(
-        {
-            "Date": returns_series.index,
-            "Returns": returns_series.values,
-            "Anomaly": anomaly_flags_series,  # True/False for anomalies
-        }
-    )
+    for page in range(num_pages):
+        # Determine the range of stocks for this page
+        start_idx = page * stocks_per_page
+        end_idx = min(start_idx + stocks_per_page, len(stocks))
+        stocks_to_plot = stocks[start_idx:end_idx]
 
-    # Initialize Kalman filter and perform smoothing to get predicted range
-    kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
-    values = returns_series.values.reshape(-1, 1)  # Reshape for KalmanFilter input
-    kf = kf.em(values, n_iter=10)
-    smoothed_state_means, smoothed_state_covariances = kf.smooth(values)
+        # Create a figure for this page
+        fig, axes = plt.subplots(
+            grid_rows, grid_cols, figsize=(18, 18), sharex=False, sharey=False
+        )
+        axes = axes.flatten()  # Flatten for easier indexing
 
-    # Calculate 95% confidence intervals from the smoothed estimates
-    mean = smoothed_state_means.squeeze()
-    std_dev = np.sqrt(smoothed_state_covariances.squeeze())
-    lower_bounds = mean - 1.96 * std_dev
-    upper_bounds = mean + 1.96 * std_dev
+        for i, stock in enumerate(stocks_to_plot):
+            ax = axes[i]
 
-    # Initialize the plot
-    plt.figure(figsize=(12, 6))
+            # Extract data for this stock using dictionary keys
+            if stock in returns_data:
+                returns_series = returns_data[stock]
+            else:
+                print(f"Warning: {stock} not found in returns_data.")
+                continue  # Skip this stock if data is missing
 
-    # Plot the observed returns
-    sns.lineplot(
-        data=plot_df, x="Date", y="Returns", label="Observed Returns", color="blue"
-    )
+            anomaly_flags = anomaly_flags_data[stock]
 
-    # Overlay the Kalman smoothed mean
-    plt.plot(plot_df["Date"], mean, label="Kalman Smoothed Mean", color="green")
+            # Convert anomaly_flags to a Pandas Series aligned with returns_series
+            anomaly_flags_series = pd.Series(anomaly_flags, index=returns_series.index)
 
-    # Fill between the confidence intervals
-    plt.fill_between(
-        plot_df["Date"],
-        lower_bounds,
-        upper_bounds,
-        color="gray",
-        alpha=0.3,
-        label="95% Confidence Interval",
-    )
+            # Initialize Kalman filter and perform smoothing
+            kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
+            values = returns_series.values.reshape(-1, 1)
+            kf = kf.em(values, n_iter=10)
+            smoothed_state_means, smoothed_state_covariances = kf.smooth(values)
 
-    # Highlight anomalies
-    sns.scatterplot(
-        data=plot_df[plot_df["Anomaly"]],  # Filter rows with anomalies
-        x="Date",
-        y="Returns",
-        color="red",
-        label="Anomalies",
-        s=50,  # Size of anomaly points
-    )
+            # Calculate 95% confidence intervals
+            mean = smoothed_state_means.squeeze()
+            std_dev = np.sqrt(smoothed_state_covariances.squeeze())
+            lower_bounds = mean - 1.96 * std_dev
+            upper_bounds = mean + 1.96 * std_dev
 
-    # Customize the plot
-    plt.title(f"Anomalies and Kalman Range for {stock}")
-    plt.xlabel("Date")
-    plt.ylabel("Daily Returns")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+            # Create a DataFrame for easier plotting
+            plot_df = pd.DataFrame(
+                {
+                    "Date": returns_series.index,
+                    "Returns": returns_series.values,
+                    "Anomaly": anomaly_flags_series,
+                }
+            )
+
+            # Plot the observed returns
+            sns.lineplot(
+                ax=ax,
+                data=plot_df,
+                x="Date",
+                y="Returns",
+                color="blue",
+                label="Observed Returns",
+            )
+
+            # Overlay the Kalman smoothed mean
+            ax.plot(plot_df["Date"], mean, color="green", label="Kalman Smoothed Mean")
+
+            # Fill between the confidence intervals
+            ax.fill_between(
+                plot_df["Date"],
+                lower_bounds,
+                upper_bounds,
+                color="gray",
+                alpha=0.3,
+                label="95% Confidence Interval",
+            )
+
+            # Highlight anomalies
+            sns.scatterplot(
+                ax=ax,
+                data=plot_df[plot_df["Anomaly"]],
+                x="Date",
+                y="Returns",
+                color="red",
+                s=20,
+                label="Anomalies",
+            )
+
+            # Customize each subplot
+            ax.set_title(stock, fontsize=10)
+            ax.set_xlabel("")
+            ax.set_ylabel("")
+            ax.legend(fontsize=8)
+            ax.grid(True)
+
+        # Remove unused subplots
+        for j in range(len(stocks_to_plot), total_plots):
+            fig.delaxes(axes[j])
+
+        # Adjust layout
+        plt.tight_layout()
+        plt.suptitle(f"Page {page + 1} of {num_pages}", fontsize=16)
+        plt.show()
 
 
 def remove_anomalous_stocks(returns_df, threshold=7.0, plot=False):
     """
     Removes stocks with anomalous returns based on the Kalman filter.
+    Optionally plots anomalies for all flagged stocks in a paginated 6x6 grid.
 
     Args:
         returns_df (pd.DataFrame): DataFrame of daily returns.
         threshold (float): Number of standard deviations to flag anomalies.
-        plot (bool): Bool if the anomalies should be plotted, default False
+        plot (bool): If True, anomalies will be plotted in a paginated grid.
 
     Returns:
         pd.DataFrame: Filtered DataFrame with anomalous stocks removed.
     """
     anomalous_cols = []
+
+    # Dictionaries to store data for plotting if needed
+    returns_data = {}
+    anomaly_flags_data = {}
+
     for stock in returns_df.columns:
         returns_series = returns_df[stock]
         anomaly_flags = apply_kalman_filter(returns_series, threshold=threshold)
 
+        # If anomalies found for the stock
         if anomaly_flags.any():
             anomalous_cols.append(stock)
-            # Plot anomalies for visual inspection
+            # Store data for plotting if plot is True
             if plot:
-                plot_anomalies(stock, returns_series, anomaly_flags)
+                returns_data[stock] = returns_series
+                anomaly_flags_data[stock] = anomaly_flags
 
     print(
         f"Removing {len(anomalous_cols)} stocks with Kalman anomalies: {anomalous_cols}"
     )
+
+    # If plotting is requested and there are stocks with anomalies, plot them
+    if plot and returns_data:
+        # Use the list of anomalous stocks for plotting
+        plot_anomalies(
+            stocks=anomalous_cols,
+            returns_data=returns_data,
+            anomaly_flags_data=anomaly_flags_data,
+            stocks_per_page=36,
+        )
+
+    # Return the DataFrame with anomalous stocks removed
     return returns_df.drop(columns=anomalous_cols)
 
 
-def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.005, n=1):
+def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.005):
     """
     Select top N tickers from each correlated group based on Sharpe Ratio and Total Return.
 
@@ -566,7 +674,6 @@ def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.00
         performance_df (pd.DataFrame): DataFrame with performance metrics.
         correlated_groups (list of sets): Groups of highly correlated tickers.
         sharpe_threshold (float): Threshold to consider Sharpe ratios as similar.
-        n (int): Number of top tickers to select per group.
 
     Returns:
         set: Tickers to exclude.
@@ -574,27 +681,35 @@ def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.00
     tickers_to_keep = set()
 
     for group in correlated_groups:
+        if len(group) < 2:
+            continue
+
         logger.info(f"Evaluating group of correlated tickers: {group}")
         group_metrics = performance_df.loc[list(group)]
 
         max_sharpe = group_metrics["Sharpe Ratio"].max()
-        logger.info(f"Maximum Sharpe Ratio in group: {max_sharpe:.4f}")
+        # logger.info(f"Maximum Sharpe Ratio in group: {max_sharpe:.4f}")
 
         # Identify tickers within the Sharpe threshold of the max
         top_candidates = group_metrics[
             group_metrics["Sharpe Ratio"] >= (max_sharpe - sharpe_threshold)
         ]
 
-        # Select top n based on Total Return among these
-        top_n = top_candidates.nlargest(n, "Total Return").index.tolist()
-        logger.info(f"Selected top {n} tickers: {top_n} from group {group}")
+        # Dynamically determine how many tickers to select: top 1/3 of the group
+        group_size = len(group)
+        dynamic_n = max(1, group_size // 3)  # at least one ticker
+
+        # If there are fewer candidates than dynamic_n, adjust the number to select
+        dynamic_n = min(dynamic_n, len(top_candidates))
+
+        # Select top 'dynamic_n' based on Total Return among the candidates
+        top_n = top_candidates.nlargest(dynamic_n, "Total Return").index.tolist()
+        # logger.info(f"Selected top {dynamic_n} tickers: {top_n} from group {group}")
 
         tickers_to_keep.update(top_n)
 
     # Aggregate all tickers from all groups
-    all_group_tickers = set()
-    for group in correlated_groups:
-        all_group_tickers.update(group)
+    all_group_tickers = set().union(*correlated_groups)
 
     # Determine tickers to exclude: those in groups but not among top keepers
     tickers_to_exclude = all_group_tickers - tickers_to_keep
