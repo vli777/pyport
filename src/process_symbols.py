@@ -152,9 +152,7 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         return format_to_df_format(df_existing, symbol)
 
 
-def process_symbols(
-    symbols, start_date, end_date, data_path, download, allow_short=False
-):
+def process_symbols(symbols, start_date, end_date, data_path, download):
     """
     For each symbol:
       1) Load or download data (using yfinance)
@@ -219,16 +217,5 @@ def process_symbols(
             "Data still has missing values after fill. Dropping remaining nulls."
         )
         df_all.dropna(inplace=True)
-
-    # Add short position columns if enabled
-    if allow_short:
-        for sym in symbols:
-            if sym in df_all.columns:
-                # Create a short price series as the inverse of the long prices
-                df_all[f"short_{sym}"] = 1 / df_all[sym]
-            else:
-                logger.warning(
-                    f"Symbol {sym} not found in DataFrame for short simulation."
-                )
 
     return df_all

@@ -72,60 +72,37 @@ def run_pipeline(
     start_date_long, end_date_long = calculate_start_end_dates(sorted_times[0])
 
     # Load data for the longest period using all symbols
-    df_long = process_symbols(
+    df = process_symbols(
         all_symbols,
         start_date_long,
         end_date_long,
         PATH,
         config.download,
-        allow_short=config.allow_short,
     )
 
     # Calculate daily returns for the longest period
-    returns_df = df_long.pct_change().dropna()
+    returns_df = df.pct_change().dropna()
 
     # Remove anomalous stocks
-    returns_df = remove_anomalous_stocks(returns_df, threshold=12.0)
+    returns_df = remove_anomalous_stocks(returns_df, threshold=8.0)
 
     # Calculate performance metrics
     performance_df = calculate_performance_metrics(
         returns_df, risk_free_rate=config.risk_free_rate
     )
 
-    # Identify correlated groups and select redundant tickers
-    longs = returns_df[
-        [col for col in returns_df.columns if not col.startswith("short_")]
-    ]
-    shorts = returns_df[[col for col in returns_df.columns if col.startswith("short_")]]
-
-    # Process longs
-    longs = returns_df[
-        [col for col in returns_df.columns if not col.startswith("short_")]
-    ]
-    filtered_longs = filter_correlated_groups(
-        returns_df=longs,
-        performance_df=performance_df.loc[longs.columns],
+    # Filter correlated groups based on performance metrics
+    filtered_symbols = filter_correlated_groups(
+        returns_df=returns_df,
+        performance_df=performance_df,
         sharpe_threshold=0.005,
         correlation_threshold=0.8,
-        n=1,
-    )
-
-    # Process shorts
-    shorts = returns_df[[col for col in returns_df.columns if col.startswith("short_")]]
-    filtered_shorts = filter_correlated_groups(
-        returns_df=shorts,
-        performance_df=performance_df.loc[shorts.columns],
-        sharpe_threshold=0.005,
-        correlation_threshold=0.8,
-        n=1,
     )
 
     # Combine filtered symbols
-    filtered_symbols = filtered_longs + filtered_shorts
-
     print(f"Symbols for further optimization: {filtered_symbols}")
 
-    dfs.update({"data": df_long, "start": start_date_long, "end": end_date_long})
+    dfs.update({"data": df, "start": start_date_long, "end": end_date_long})
 
     for years in sorted_times:
         start_date, end_date = calculate_start_end_dates(years)
@@ -133,7 +110,7 @@ def run_pipeline(
             logger.info(f"Time period: {years}, symbols: {all_symbols}")
 
         # Load data
-        df = df_long.loc[start_date:end_date].copy()
+        df = df.loc[start_date:end_date].copy()
 
         # Update min/max dates in the dfs dict
         dfs["start"] = min(dfs["start"], start_date)
