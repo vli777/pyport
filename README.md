@@ -1,7 +1,19 @@
 # PyPort
-Portfolio Optimization with ensemble Monte Carlo methods and correlation-driven mean reversion.
+Modern Portfolio Optimization 
 
+# Update
+- Reworked implementation of Nested Clustering with vector ops => much faster!
+- https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961
+- WIP: additional models to feature deep learning methods i.e. RL, transformers
+
+Daily and Cumulative Returns Statistics
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
+
+Anomaly Detection
+![image](https://github.com/user-attachments/assets/0cc9c310-fbef-42b6-834f-38a17b8edc2b)
+
+Hierarchical Clustering Dendrogram
+![image](https://github.com/user-attachments/assets/c3136d02-b4af-4072-a05b-a04667e2f49e)
 
 
 ## Instructions
@@ -24,6 +36,14 @@ Portfolio Optimization with ensemble Monte Carlo methods and correlation-driven 
     - file2.csv
 
 You can specify multiple models under models. The output will contain a simple average of all selected models.
+
+# Local Usage
+
+This project is now compatible with LTS Python version as of January 2025 (3.12.8) and can be installed simply with 
+```
+pip install -r requirements.txt
+```
+There is a CLI main runner, API main available, as well as a new iterative_pipeline for entrypoints.
 
 # Running the API
 
@@ -61,9 +81,6 @@ curl -X POST "http://localhost:8000/inference" \
 ```json
 { "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "models": "model_name_1, model_name_2", "symbols": ["symbol1", "symbol2"], "normalized_avg": { "symbol1": 0.25, "symbol2": 0.75 } }
 ```
-
-![image](https://github.com/user-attachments/assets/6a25886c-7a68-447b-9720-cd203c7aec0f)
-
 
 ---
 
