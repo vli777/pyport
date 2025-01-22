@@ -1,5 +1,10 @@
 # PyPort
-Portfolio Optimization with ensemble Monte Carlo methods and correlation-driven mean reversion.
+Modern Portfolio Optimization 
+
+# Update
+- Reworked implementation of Nested Clustering with vector ops => much faster!
+- https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961
+- WIP: additional models to feature deep learning methods i.e. RL, transformers
 
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
 
