@@ -30,6 +30,14 @@ Modern Portfolio Optimization
 
 You can specify multiple models under models. The output will contain a simple average of all selected models.
 
+# Local Usage
+
+This project is now compatible with LTS Python version as of January 2025 (3.12.8) and can be installed simply with 
+```
+pip install -r requirements.txt
+```
+There is a CLI main runner, API main available, as well as a new iterative_pipeline for entrypoints.
+
 # Running the API
 
 The API allows you to execute the pipeline dynamically by providing configurations and symbol overrides.
@@ -66,9 +74,6 @@ curl -X POST "http://localhost:8000/inference" \
 ```json
 { "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "models": "model_name_1, model_name_2", "symbols": ["symbol1", "symbol2"], "normalized_avg": { "symbol1": 0.25, "symbol2": 0.75 } }
 ```
-
-![image](https://github.com/user-attachments/assets/6a25886c-7a68-447b-9720-cd203c7aec0f)
-
 
 ---
 
