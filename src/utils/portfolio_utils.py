@@ -157,17 +157,16 @@ def stacked_output(stack_dict: Dict[str, Dict[str, float]]) -> Dict[str, float]:
             all_assets.update(portfolio.keys())
         else:
             logger.warning(f"Invalid portfolio format: {portfolio}. Expected a dict.")
-            continue
 
     if not all_assets:
-        logger.error("No valid assets found in stack_dict.")
-        raise ValueError("No valid assets found in stack_dict.")
+        logger.warning("No valid assets found in stack_dict.")
+        # Instead of raising an exception, return an empty dict
+        return {}
 
     logger.debug(f"All unique assets: {all_assets}")
 
     # Initialize a dictionary to accumulate weights
     total_weights = defaultdict(float)
-
     num_portfolios = len(stack_dict)
     logger.debug(f"Number of portfolios: {num_portfolios}")
 

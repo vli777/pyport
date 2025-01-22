@@ -4,6 +4,8 @@ from pathlib import Path
 import logging
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
+
 from config import Config
 from plotly_graphs import plot_graphs
 from portfolio_optimization import run_optimization_and_save
@@ -131,7 +133,15 @@ def run_pipeline(
         return {}
 
     # Post-processing
+    for key, value in stack.items():
+        if isinstance(value, pd.Series):
+            print(key, "stored as pd")
+            stack[key] = value.to_dict()
+
     avg = stacked_output(stack)
+    if not avg:
+        logger.warning("No valid averaged weights found. Skipping further processing.")
+
     sorted_avg = dict(sorted(avg.items(), key=lambda item: item[1]))
     normalized_avg = normalize_weights(sorted_avg, config.min_weight)
 
