@@ -13,7 +13,8 @@ Anomaly Detection
 ![image](https://github.com/user-attachments/assets/0cc9c310-fbef-42b6-834f-38a17b8edc2b)
 
 Hierarchical Clustering Dendrogram
-![image](https://github.com/user-attachments/assets/c5f979d4-bb77-4620-8796-6d0b251f849e)
+![image](https://github.com/user-attachments/assets/c3136d02-b4af-4072-a05b-a04667e2f49e)
+
 
 ## Instructions
 
