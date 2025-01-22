@@ -61,6 +61,13 @@ def iterative_pipeline_runner(
             final_result = result
             break
 
+        if len(valid_symbols) <= 10:
+            print(
+                f"Stopping epochs as the number of valid symbols ({len(valid_symbols)}) is <= 10."
+            )
+            final_result = result
+            break
+
         # Update symbols for the next epoch
         previous_top_symbols = set(valid_symbols)
         symbols = valid_symbols

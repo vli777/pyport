@@ -25,6 +25,9 @@ class Config:
     download: bool
     plot_daily_returns: bool
     plot_cumulative_returns: bool
+    plot_clustering: bool
+    plot_anomalies: bool
+    anomaly_detection_deviation_threshold: float
     expand_etfs: bool
     min_weight: float
     max_weight: float
@@ -57,6 +60,9 @@ class Config:
             download=config_dict.get("download", False),
             plot_daily_returns=config_dict.get("plot_daily_returns", False),
             plot_cumulative_returns=config_dict.get("plot_cumulative_returns", False),
+            plot_clustering=config_dict.get("plot_clustering", False),
+            plot_anomalies=config_dict.get("plot_anomalies", False),
+            anomaly_detection_deviation_threshold=config_dict.get("anomaly_detection_deviation_threshold", 7.0)
             expand_etfs=config_dict.get("expand_etfs", False),
             min_weight=config_dict["min_weight"],
             max_weight=config_dict["max_weight"],

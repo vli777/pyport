@@ -86,7 +86,9 @@ def run_pipeline(
     returns_df = df.pct_change().dropna()
 
     # Remove anomalous stocks
-    returns_df = remove_anomalous_stocks(returns_df, threshold=8.0)
+    returns_df = remove_anomalous_stocks(
+        returns_df, threshold=config.anomaly_detection_deviation_threshold, plot=config.plot_anomalies
+    )
 
     # Calculate performance metrics
     performance_df = calculate_performance_metrics(
@@ -99,6 +101,7 @@ def run_pipeline(
         performance_df=performance_df,
         sharpe_threshold=0.005,
         correlation_threshold=0.8,
+        plot=config.plot_clustering,
     )
 
     # Combine filtered symbols
