@@ -694,12 +694,9 @@ def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.00
             group_metrics["Sharpe Ratio"] >= (max_sharpe - sharpe_threshold)
         ]
 
-        # Dynamically determine how many tickers to select: top 1/3 of the group
+        # Dynamically determine how many tickers to select: top 10% of the group
         group_size = len(group)
-        dynamic_n = max(1, group_size // 3)  # at least one ticker
-
-        # If there are fewer candidates than dynamic_n, adjust the number to select
-        dynamic_n = min(dynamic_n, len(top_candidates))
+        dynamic_n = max(1, int(group_size * 0.1))
 
         # Select top 'dynamic_n' based on Total Return among the candidates
         top_n = top_candidates.nlargest(dynamic_n, "Total Return").index.tolist()
