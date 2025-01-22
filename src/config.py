@@ -7,22 +7,13 @@ import os
 
 
 @dataclass
-class OptimizationConfig:
-    hrp: Dict[str, Any]
-    herc: Dict[str, Any]
-    nco: Dict[str, Any]
-    nco2: Dict[str, Any]
-    mc: Dict[str, Any]
-    mc2: Dict[str, Any]
-    olmar: Dict[str, Any]
-    rmr: Dict[str, Any]
-    scorn: Dict[str, Any]
-    fcornk: Dict[str, Any]
-    cla: Dict[str, Any]
-    cla2: Dict[str, Any]
-    efficient_risk: float
-    efficient_return: float
-    risk_aversion: float
+class ModelConfig:
+    nested_clustering: Dict[str, Any]
+
+    def __getitem__(self, key: str) -> Dict[str, Any]:
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(f"{key} not found in ModelConfig")
 
 
 @dataclass
@@ -41,7 +32,7 @@ class Config:
     allow_short: bool
     test_mode: bool
     test_data_visible_pct: float
-    optimization_config: OptimizationConfig
+    model_config: ModelConfig
     expand_etfs: bool
 
     @classmethod
@@ -52,10 +43,8 @@ class Config:
         with open(config_file, "r") as f:
             config_dict = yaml.safe_load(f)
 
-        # Parse nested optimization_config
-        optimization_config = OptimizationConfig(
-            **config_dict.get("optimization_config", {})
-        )
+        # Parse model config
+        model_config = ModelConfig(**config_dict.get("model_config", {}))
 
         return cls(
             folder=config_dict["folder"],
@@ -73,5 +62,5 @@ class Config:
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
             expand_etfs=config_dict.get("expand_etfs", False),
-            optimization_config=optimization_config,
+            model_config=model_config,
         )
