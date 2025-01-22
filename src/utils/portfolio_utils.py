@@ -345,35 +345,6 @@ def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
     return performance_df
 
 
-# def identify_correlated_groups(corr_matrix, threshold=0.8):
-#     """
-#     Identifies groups of highly correlated tickers.
-
-#     Args:
-#         corr_matrix (pd.DataFrame): Correlation matrix.
-#         threshold (float): Correlation threshold to define groups.
-
-#     Returns:
-#         list of sets: Groups of correlated tickers.
-#     """
-#     # Find pairs above the correlation threshold
-#     all_pairs = corr_matrix.stack()[lambda x: x > threshold].index.tolist()
-
-#     # Build groups of correlated tickers
-#     groups = []
-#     for ticker1, ticker2 in all_pairs:
-#         found = False
-#         for group in groups:
-#             if ticker1 in group or ticker2 in group:
-#                 group.update([ticker1, ticker2])
-#                 found = True
-#                 break
-#         if not found:
-#             groups.append(set([ticker1, ticker2]))
-
-#     return groups
-
-
 def filter_correlated_groups(
     returns_df,
     performance_df,
@@ -694,9 +665,9 @@ def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.00
             group_metrics["Sharpe Ratio"] >= (max_sharpe - sharpe_threshold)
         ]
 
-        # Dynamically determine how many tickers to select: top 10% of the group
+        # Dynamically determine how many tickers to select: top 25% of the group
         group_size = len(group)
-        dynamic_n = max(1, int(group_size * 0.1))
+        dynamic_n = max(1, int(group_size * 0.25))
 
         # Select top 'dynamic_n' based on Total Return among the candidates
         top_n = top_candidates.nlargest(dynamic_n, "Total Return").index.tolist()
