@@ -25,11 +25,14 @@ class Config:
     download: bool
     plot_daily_returns: bool
     plot_cumulative_returns: bool
+    expand_etfs: bool
     min_weight: float
+    max_weight: float
     portfolio_max_size: int
     risk_free_rate: float
     sort_by_weights: bool
     allow_short: bool
+    short_long_ratio: float
     test_mode: bool
     test_data_visible_pct: float
     model_config: ModelConfig
@@ -54,13 +57,15 @@ class Config:
             download=config_dict.get("download", False),
             plot_daily_returns=config_dict.get("plot_daily_returns", False),
             plot_cumulative_returns=config_dict.get("plot_cumulative_returns", False),
+            expand_etfs=config_dict.get("expand_etfs", False),
             min_weight=config_dict["min_weight"],
+            max_weight=config_dict["max_weight"],
             portfolio_max_size=config_dict["portfolio_max_size"],
             risk_free_rate=config_dict.get("risk_free_rate", 0.0),
-            sort_by_weights=config_dict.get("sort_by_weights", False),
             allow_short=config_dict.get("allow_short", False),
+            short_long_ratio=config_dict.get("short_long_ratio", 0.3),
+            sort_by_weights=config_dict.get("sort_by_weights", False),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
-            expand_etfs=config_dict.get("expand_etfs", False),
             model_config=model_config,
         )
