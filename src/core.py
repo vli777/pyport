@@ -87,7 +87,7 @@ def run_pipeline(
 
     # Remove anomalous stocks
     returns_df = remove_anomalous_stocks(
-        returns_df, threshold=12.0, plot=config.plot_anomalies
+        returns_df, threshold=config.anomaly_detection_deviation_threshold, plot=config.plot_anomalies
     )
 
     # Calculate performance metrics
