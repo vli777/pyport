@@ -8,6 +8,8 @@ Modern Portfolio Optimization
 
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
 
+![image](https://github.com/user-attachments/assets/0cc9c310-fbef-42b6-834f-38a17b8edc2b)
+
 
 ## Instructions
 
