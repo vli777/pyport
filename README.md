@@ -1,7 +1,7 @@
-# PyPort
+# PyPort 1.0.0
 Modern Portfolio Optimization 
 
-# Update
+# Latest Changes
 - Reworked implementation of Nested Clustering with vector ops => much faster!
 - https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961
 - WIP: additional models to feature deep learning methods i.e. RL, transformers
