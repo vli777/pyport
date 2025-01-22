@@ -19,50 +19,8 @@ sort_by_weights: bool  # Whether to sort weights in the output
 test_mode: bool  # Whether to enable test mode
 test_data_visible_pct: float  # Percentage of test data to show
 
-optimization_config:
-  hrp:
-    linkage: str  # Linkage type
-  herc:
-    risk_measure: str  # Risk measure type
-    linkage: str
-  nco:
-    sharpe: bool
-  nco2:
-    sharpe: bool
-  mc:
-    sharpe: bool
-    num_obs: int  # Number of observations
-    num_sims: int  # Number of simulations
-    kde_bandwidth: float  # Bandwidth for KDE
-    lw_shrinkage: bool  # Whether to use Ledoit-Wolf shrinkage
-  mc2:
-    sharpe: bool
-    num_obs: int
-    num_sims: int
-    kde_bandwidth: float
-    lw_shrinkage: bool
-  olmar:
-    method: int
-    epsilon: int
-    window: int
-    alpha: float
-  rmr:
-    epsilon: int
-    n_iteration: int
-    window: int
-    tau: float
-  scorn:
-    rho: float
-    window: int
-  fcornk:
-    rho: int
-    window: int
-    lambd: int
-    k: int
-  cla:
-    solution: str
-  cla2:
-    solution: str
-  efficient_risk: float
-  efficient_return: float
-  risk_aversion: float
+model_config:
+  nested_clustering:
+    use_sharpe: true
+    max_clusters: 10
+
