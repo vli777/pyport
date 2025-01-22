@@ -81,36 +81,44 @@ def convert_to_dict(weights: Any, asset_names: list) -> Dict[str, float]:
 
 def normalize_weights(weights: Dict[str, float], min_weight: float) -> Dict[str, float]:
     """
-    Normalize the weights by filtering out values below min_weight and scaling the remaining weights to sum to 1.
-    Additionally, rounds each weight to three decimal places.
+    Normalize the weights by:
+      1. Filtering out assets where the absolute weight is below min_weight.
+      2. Scaling the remaining weights so that their sum equals 1.
+      3. Rounding each weight to three decimal places.
+
+    This function now supports negative weights by using the absolute value for filtering.
 
     Args:
-        weights (Dict[str, float]): The input weights dictionary.
-        min_weight (float): The minimum weight threshold. Weights below this value are filtered out.
+        weights (Dict[str, float]): The input weights dictionary, possibly containing negative values.
+        min_weight (float): The minimum absolute weight threshold. Weights with |weight| below this value are filtered out.
 
     Returns:
         Dict[str, float]: The normalized weights dictionary.
 
     Raises:
-        ValueError: If no weights remain after filtering.
+        ValueError: If no weights remain after filtering or if normalization cannot be performed.
     """
     logger.debug(f"Original weights: {weights}")
     logger.debug(f"Minimum weight threshold: {min_weight}")
 
-    # Filter out weights below min_weight
-    filtered_weights = {k: v for k, v in weights.items() if v >= min_weight}
+    # Filter out assets whose absolute weight is below min_weight, preserving sign for others
+    filtered_weights = {k: v for k, v in weights.items() if abs(v) >= min_weight}
     logger.debug(f"Filtered weights: {filtered_weights}")
 
+    # Sum the remaining weights (which may include negative values)
     total_weight = sum(filtered_weights.values())
     logger.debug(f"Total weight after filtering: {total_weight}")
 
+    # Check if the sum of weights is effectively zero, which prevents normalization
     if total_weight == 0:
-        logger.error("No weights remain after filtering with the specified min_weight.")
+        logger.error(
+            "Sum of weights is zero after filtering; cannot normalize weights."
+        )
         raise ValueError(
-            "No weights remain after filtering with the specified min_weight."
+            "No weights remain after filtering with the specified min_weight, or their sum is zero."
         )
 
-    # Normalize the remaining weights to sum to 1
+    # Normalize the remaining weights so that they sum to 1, preserving the sign of each weight
     normalized_weights = {k: v / total_weight for k, v in filtered_weights.items()}
     logger.debug(f"Normalized weights before rounding: {normalized_weights}")
 
@@ -591,3 +599,29 @@ def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.00
     # Determine tickers to exclude: those in groups but not among top keepers
     tickers_to_exclude = all_group_tickers - tickers_to_keep
     return tickers_to_exclude
+
+
+def limit_portfolio_size(
+    weights: pd.Series, max_holdings: int, target_sum: float
+) -> pd.Series:
+    """
+    Limit the portfolio to top N holdings by absolute weight and normalize the weights to a target sum.
+
+    Args:
+        weights (pd.Series): Series of asset weights (can include negatives for short positions).
+        max_holdings (int): Maximum number of assets to retain.
+        target_sum (float): The desired total sum for the normalized weights.
+
+    Returns:
+        pd.Series: The portfolio weights limited to top holdings and normalized to the target sum.
+    """
+    # Select top N holdings by absolute weight
+    top_holdings = weights.abs().nlargest(max_holdings).index
+    limited_weights = weights.loc[top_holdings]
+
+    # Normalize to the specified target sum
+    current_sum = limited_weights.sum()
+    if current_sum != 0:
+        limited_weights = limited_weights / current_sum * target_sum
+
+    return limited_weights
