@@ -6,10 +6,14 @@ Modern Portfolio Optimization
 - https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961
 - WIP: additional models to feature deep learning methods i.e. RL, transformers
 
+Daily and Cumulative Returns Statistics
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
 
+Anomaly Detection
 ![image](https://github.com/user-attachments/assets/0cc9c310-fbef-42b6-834f-38a17b8edc2b)
 
+Hierarchical Clustering Dendrogram
+![image](https://github.com/user-attachments/assets/c5f979d4-bb77-4620-8796-6d0b251f849e)
 
 ## Instructions
 
