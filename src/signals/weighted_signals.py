@@ -1,12 +1,12 @@
 import pandas as pd
 
-from macd import (
+from signals.macd import (
     calculate_macd,
     generate_macd_crossovers,
     generate_macd_preemptive_signals,
 )
-from adx import calculate_adx, generate_adx_signals
-from stochastics import calculate_stochastic_full, generate_convergence_signal
+from signals.adx import calculate_adx, generate_adx_signals
+from signals.stochastics import calculate_stochastic_full, generate_convergence_signal
 
 
 def assign_signal_weights(
@@ -162,7 +162,7 @@ def generate_signals(
             "MACD_Preemptive_Bearish": preemptive_bearish,
             "ADX_Support": adx_support,
         },
-        index=price_df.index,
+        index=price_df.columns,
     )
 
     return signals
