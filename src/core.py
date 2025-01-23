@@ -196,3 +196,5 @@ def run_pipeline(
         "daily_returns": daily_returns,
         "cumulative_returns": cumulative_returns,
     }
+
+    print("\nFinal result:", final_result)
