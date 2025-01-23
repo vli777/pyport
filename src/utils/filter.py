@@ -1,8 +1,3 @@
-import pandas as pd
-
-from utils import logger
-
-
 def filter_symbols_with_signals(
     price_df, generate_signals_fn, mean_reversion_fn, config
 ):
@@ -20,67 +15,72 @@ def filter_symbols_with_signals(
     Returns:
         list[str]: Final list of filtered tickers.
     """
+    # Identify the set of all tickers from the price_df (outer level)
+    all_tickers = set(price_df.columns.levels[0])  # Explicitly convert to a set
+    filtered_set = set(all_tickers)
 
-    # 1) Identify the set of all tickers from the price_df (outer level)
-    all_tickers = price_df.columns.levels[0]
-
-    # 2) Apply mean reversion
+    # Generate mean reversion exclusions and inclusions
     mean_reversion_exclusions, mean_reversion_inclusions = mean_reversion_fn(
         price_df=price_df,
         plot=config.plot_mean_reversion,
     )
 
-    # 3) Generate signals DataFrame (date x (signal_name, ticker)).
-    signals_df = generate_signals_fn(price_df)
+    # Convert exclusions and inclusions to sets for set operations
+    mean_reversion_exclusions = set(mean_reversion_exclusions)
+    mean_reversion_inclusions = set(mean_reversion_inclusions)
 
-    # 4) Extract the latest signals (the last date):
-    # Ensure that 'Buy_Signal_Weight' and 'Sell_Signal_Weight' are present
-    try:
-        # Extract 'Buy_Signal_Weight' and 'Sell_Signal_Weight' as separate Series
-        buy_signal_series = signals_df.xs("Buy_Signal_Weight", axis=1, level=0).iloc[-1]
-        sell_signal_series = signals_df.xs("Sell_Signal_Weight", axis=1, level=0).iloc[
-            -1
-        ]
-    except KeyError as e:
-        logger.error(f"Missing expected signal columns: {e}")
-        raise
+    # Generate signals DataFrame (date x (signal_name, ticker))
+    buy_signal_tickers, sell_signal_tickers = generate_signals_fn(price_df)
 
-    # 5) Convert to booleans: buy > 0, sell > 0
-    buy_signal_bool = buy_signal_series > 0
-    sell_signal_bool = sell_signal_series > 0
+    # Remove tickers with sell signals
+    filtered_set -= set(sell_signal_tickers)
 
-    # 6) Start with all_tickers as a set
-    filtered_set = set(all_tickers)
+    # Add tickers with buy signals
+    filtered_set |= set(buy_signal_tickers)
 
-    # 7) Update filtered symbols based on generate_signals (priority over mean reversion)
-    for ticker in all_tickers:
-        # Ensure that the value is a single boolean
-        sell_signal = sell_signal_bool.get(ticker, False)
-        buy_signal = buy_signal_bool.get(ticker, False)
+    # Tickers without buy or sell signals
+    no_signal_tickers = all_tickers - set(sell_signal_tickers) - set(buy_signal_tickers)
 
-        if isinstance(sell_signal, pd.Series) or isinstance(sell_signal, pd.DataFrame):
-            logger.warning(
-                f"Sell signal for ticker {ticker} is not a single boolean. Defaulting to False."
-            )
-            sell_signal = False
-        if isinstance(buy_signal, pd.Series) or isinstance(buy_signal, pd.DataFrame):
-            logger.warning(
-                f"Buy signal for ticker {ticker} is not a single boolean. Defaulting to False."
-            )
-            buy_signal = False
+    # Apply mean reversion logic
+    # Remove tickers in exclusions that have no signals
+    filtered_set -= no_signal_tickers & mean_reversion_exclusions
 
-        if sell_signal:
-            # If there's a sell signal for this ticker => discard it
-            filtered_set.discard(ticker)
-        elif buy_signal:
-            # If there's a buy signal => include it
-            filtered_set.add(ticker)
-        else:
-            # If no buy/sell signal, apply mean reversion logic
-            if ticker in mean_reversion_exclusions:
-                filtered_set.discard(ticker)
-            if ticker in mean_reversion_inclusions:
-                filtered_set.add(ticker)
+    # Add tickers in inclusions that have no signals
+    filtered_set |= no_signal_tickers & mean_reversion_inclusions
 
-    # Return the updated list of filtered symbols
+    # Return final filtered tickers as a list
     return list(filtered_set)
+
+
+def filter_signals_by_threshold(
+    weighted_signals, buy_signal_names, sell_signal_names, threshold=0.72
+):
+    """
+    Filter tickers with aggregated buy/sell weights exceeding a threshold.
+
+    Args:
+        weighted_signals (pd.DataFrame): DataFrame with weighted buy/sell signals.
+        buy_signal_names (list): List of signal names contributing to buy weight.
+        sell_signal_names (list): List of signal names contributing to sell weight.
+        threshold (float): Threshold for filtering signals.
+
+    Returns:
+        pd.Index: Tickers exceeding the buy/sell threshold.
+    """
+    # Aggregate buy and sell weights
+    weighted_signals["Buy_Signal_Weight"] = weighted_signals[buy_signal_names].sum(
+        axis=1
+    )
+    weighted_signals["Sell_Signal_Weight"] = weighted_signals[sell_signal_names].sum(
+        axis=1
+    )
+
+    # Filter tickers by threshold
+    buy_signal_tickers = weighted_signals[
+        weighted_signals["Buy_Signal_Weight"] > threshold
+    ].index
+    sell_signal_tickers = weighted_signals[
+        weighted_signals["Sell_Signal_Weight"] > threshold
+    ].index
+
+    return buy_signal_tickers, sell_signal_tickers
