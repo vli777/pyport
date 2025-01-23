@@ -2,6 +2,7 @@ import pandas as pd
 
 from utils import logger
 
+
 def filter_symbols_with_signals(
     price_df, generate_signals_fn, mean_reversion_fn, config
 ):

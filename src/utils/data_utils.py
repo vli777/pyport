@@ -147,9 +147,9 @@ def format_to_df_format(df, symbol):
     Ensure the DataFrame has the necessary OHLC columns without renaming them to the ticker symbol.
     """
     # Verify that necessary columns exist
-    required_columns = {'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'}
+    required_columns = {"Open", "High", "Low", "Close", "Adj Close", "Volume"}
     existing_columns = set(df.columns)
-    
+
     if not required_columns.issubset(existing_columns):
         logger.warning(
             f"{symbol}: Missing required columns. Available columns: {existing_columns}"
@@ -158,7 +158,7 @@ def format_to_df_format(df, symbol):
         for col in required_columns:
             if col not in df.columns:
                 df[col] = np.nan
-    
+
     return df
 
 

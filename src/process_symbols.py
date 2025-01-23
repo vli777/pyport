@@ -196,7 +196,7 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
                 df_sym = df_sym.iloc[pos:]
 
         # Convert columns to a multi-level: Outer = ticker, Inner = original column name
-        # Example final columns: (AAPL, 'Close'), (AAPL, 'High'), (AAPL, 'Adj Close'), etc.        
+        # Example final columns: (AAPL, 'Close'), (AAPL, 'High'), (AAPL, 'Adj Close'), etc.
         new_cols = pd.MultiIndex.from_product([[sym], df_sym.columns])
         df_sym.columns = new_cols
 

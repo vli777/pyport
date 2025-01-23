@@ -151,7 +151,9 @@ def generate_signals(
         ("ADX_Support", adx_support_df),
     ]:
         # Ensure the DataFrame is aligned
-        df_sig = df_sig.reindex(price_df.index).reindex(price_df.columns.levels[0], axis=1)
+        df_sig = df_sig.reindex(price_df.index).reindex(
+            price_df.columns.levels[0], axis=1
+        )
         # Assign a MultiIndex to columns: (signal_name, ticker)
         df_sig.columns = pd.MultiIndex.from_product([[label], df_sig.columns])
         signals_list.append(df_sig)

@@ -48,8 +48,8 @@ def calculate_stochastic_full(
                 k=window,
                 smooth_k=smooth_k,
                 smooth_d=smooth_d,
-                mamode='ema',
-                offset=0
+                mamode="ema",
+                offset=0,
             )
             # Columns from pandas_ta: e.g. "STOCHK_5_3_3", "STOCHD_5_3_3"
             col_k = f"STOCHk_{window}_{smooth_k}_{smooth_d}"
@@ -227,10 +227,9 @@ def generate_adx_signals(adx_df, adx_threshold=25):
     latest_adx = adx_df.iloc[-1]
     adx_trending = latest_adx > adx_threshold
     adx_trending = adx_trending.fillna(False)
-    
+
     # Convert Series to DataFrame
     adx_trending_df = adx_trending.to_frame().T
     adx_trending_df.index = [adx_df.index[-1]]  # Set the index to the latest date
-    
-    return adx_trending_df
 
+    return adx_trending_df
