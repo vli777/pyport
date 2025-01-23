@@ -1,4 +1,5 @@
 from typing import Optional
+import numpy as np
 import pandas as pd
 import yfinance as yf
 from pathlib import Path
@@ -143,26 +144,21 @@ def get_last_date_parquet(parquet_file: Path) -> Optional[date]:
 
 def format_to_df_format(df, symbol):
     """
-    Convert the DataFrame into the desired format:
-    - Keep only 'Adj Close'
-    - Rename 'Adj Close' to the symbol name
-    - Ensure the index is set to 'Date'
-
-    :param df: (pd.DataFrame) Input DataFrame
-    :param symbol: (str) Ticker symbol
-    :return: (pd.DataFrame) Reformatted DataFrame
+    Ensure the DataFrame has the necessary OHLC columns without renaming them to the ticker symbol.
     """
-    if "Adj Close" not in df.columns:
-        logger.warning(f"Expected 'Adj Close' column not found for {symbol}.")
-        return pd.DataFrame()
-
-    # Keep only 'Adj Close' and rename it
-    df = df[["Adj Close"]].rename(columns={"Adj Close": symbol})
-
-    # Ensure the index is 'Date'
-    if not isinstance(df.index, pd.DatetimeIndex):
-        df.index = pd.to_datetime(df.index)
-
+    # Verify that necessary columns exist
+    required_columns = {'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'}
+    existing_columns = set(df.columns)
+    
+    if not required_columns.issubset(existing_columns):
+        logger.warning(
+            f"{symbol}: Missing required columns. Available columns: {existing_columns}"
+        )
+        # Handle missing columns as needed, e.g., fill with NaN or drop the symbol
+        for col in required_columns:
+            if col not in df.columns:
+                df[col] = np.nan
+    
     return df
 
 

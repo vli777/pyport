@@ -30,7 +30,6 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             f"No existing file for {symbol}. Downloading full history from {start_date} to {end_date}."
         )
         df_new = get_stock_data(symbol, start_date=start_ts, end_date=end_ts)
-
         df_new = flatten_columns(df_new, symbol)
 
         if df_new.empty:
@@ -156,9 +155,11 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
     """
     For each symbol:
       1) Load or download data (using yfinance)
-      2) Rename 'Adj Close' -> symbol
-      3) Join all symbols into a single DataFrame
-      4) Return the combined DataFrame
+      2) Flatten columns if needed
+      3) Ensure columns are OHLC
+      4) Convert to multi-level columns: Outer = ticker, Inner = price fields
+      5) Join all symbols into a single DataFrame
+      6) Return the combined DataFrame
     """
     df_all = pd.DataFrame()
     start_date_ts = pd.Timestamp(start_date)
@@ -175,20 +176,13 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
         # Drop duplicates in the index (if any)
         df_sym = df_sym.loc[~df_sym.index.duplicated(keep="first")]
 
-        # Flatten multi-level columns if present
-        if isinstance(df_sym.columns, pd.MultiIndex):
-            df_sym.columns = df_sym.columns.get_level_values(0)
+        # Print columns to inspect structure
+        # print(f"Symbol: {sym}")
+        # print(df_sym.columns)
+        # print(df_sym.head())
 
-        # Rename 'Adj Close' to the ticker symbol, drop the other columns
-        try:
-            df_sym.rename(columns={"Adj Close": sym}, inplace=True)
-            columns_to_drop = ["Open", "High", "Low", "Close", "Volume", "Adj Close"]
-            for col in columns_to_drop:
-                if col in df_sym.columns and col != sym:
-                    df_sym.drop(col, axis=1, inplace=True)
-        except KeyError as e:
-            logger.warning(f"{sym} encountered a key error: {e}")
-            continue
+        # Ensure format_to_df_format retains OHLC columns
+        df_sym = format_to_df_format(df_sym, sym)
 
         # Slice from the start_date onward
         if not df_sym.empty:
@@ -201,15 +195,19 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
                 pos = df_sym.index.get_indexer([start_date_ts], method="nearest")[0]
                 df_sym = df_sym.iloc[pos:]
 
+        # Convert columns to a multi-level: Outer = ticker, Inner = original column name
+        # Example final columns: (AAPL, 'Close'), (AAPL, 'High'), (AAPL, 'Adj Close'), etc.        
+        new_cols = pd.MultiIndex.from_product([[sym], df_sym.columns])
+        df_sym.columns = new_cols
+
         # Join the symbol's DataFrame into the main df_all
         if df_all.empty:
             df_all = df_sym
         else:
             df_all = df_all.join(df_sym, how="outer")
 
-    # Fill missing values using forward fill
+    # Forward fill then backward fill to handle missing values
     df_all.ffill(inplace=True)
-    # Fill missing values using backward fill
     df_all.bfill(inplace=True)
 
     if df_all.isna().any().any():

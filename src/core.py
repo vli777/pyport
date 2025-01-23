@@ -77,7 +77,7 @@ def run_pipeline(
     start_date_long, end_date_long = calculate_start_end_dates(sorted_times[0])
 
     # Load data for the longest period using all symbols
-    df = process_symbols(
+    df_all = process_symbols(
         all_symbols,
         start_date_long,
         end_date_long,
@@ -86,7 +86,8 @@ def run_pipeline(
     )
 
     # Calculate daily returns for the longest period
-    returns_df = df.pct_change().dropna()
+    df_adj = df_all.xs("Adj Close", level=1, axis=1)
+    returns_df = df_adj.pct_change().dropna()
 
     # Remove anomalous stocks
     returns_df = remove_anomalous_stocks(
@@ -102,7 +103,7 @@ def run_pipeline(
 
     # Filter overbought, oversold
     filtered_symbols = filter_symbols_with_signals(
-        price_df=df,
+        price_df=df_all,
         generate_signals_fn=generate_signals,  # Function for technical indicators
         mean_reversion_fn=apply_mean_reversion,  # Function for mean reversion
         config=config,  # Configuration object
@@ -121,7 +122,7 @@ def run_pipeline(
     # Combine filtered symbols
     print(f"Symbols for further optimization: {filtered_decorrelated_symbols}")
 
-    dfs.update({"data": df, "start": start_date_long, "end": end_date_long})
+    dfs.update({"data": df_adj, "start": start_date_long, "end": end_date_long})
 
     for years in sorted_times:
         start_date, end_date = calculate_start_end_dates(years)
@@ -129,7 +130,7 @@ def run_pipeline(
             logger.info(f"Time period: {years}, symbols: {all_symbols}")
 
         # Load data
-        df = df.loc[start_date:end_date].copy()
+        df_adj = df_adj.loc[start_date:end_date].copy()
 
         # Update min/max dates in the dfs dict
         dfs["start"] = min(dfs["start"], start_date)
@@ -137,12 +138,12 @@ def run_pipeline(
 
         # Optional: If test_mode is on, store a CSV of the full data
         if config.test_mode:
-            df.to_csv("full_df.csv")
-            df = df.head(int(len(df) * config.test_data_visible_pct))
+            df_adj.to_csv("full_df.csv")
+            df_adj = df_adj.head(int(len(df_adj) * config.test_data_visible_pct))
 
         # Run optimization
         run_optimization_and_save(
-            df,
+            df_adj,
             config,
             start_date,
             end_date,
