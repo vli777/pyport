@@ -14,6 +14,7 @@ plot_daily_returns: bool  # Whether to plot daily returns
 plot_cumulative_returns: bool  # Whether to plot cumulative returns
 plot_clustering: bool # Where to plot hierarchical clustering dendrogram
 plot_anomalies: bool # Whether to plot anomalies detected by Kalman filter
+plot_mean_reversion: bool # Whether to plot mean reversion z scores
 correlation_threshold: float # Correlation % threshold when filtering correlated assets
 expand_etfs: bool # Whether to include the top holdings of etf inputs
 min_weight: float  # Minimum weight for inclusion in final weights
@@ -28,6 +29,4 @@ test_data_visible_pct: float  # Percentage of test data to show
 
 model_config:
   nested_clustering:
-    use_sharpe: bool # Whether cluster optimization goal is sharpe or minvar
-    max_clusters: int # This should match portfolio max size
-
+    sharpe: bool # Whether cluster optimization goal is sharpe or minvar
