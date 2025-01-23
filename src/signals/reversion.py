@@ -1,31 +1,27 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
-window_range = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
-
-def get_dynamic_thresholds(price_df, window=20, multiplier=1.0):
+def calculate_z_score(price_df, window=20):
     """
-    Calculate dynamic overbought and oversold thresholds based on historical volatility.
+    Calculate the Z-Score of each ticker's returns over a rolling window.
 
     Args:
-        price_df (pd.DataFrame): DataFrame containing price data of tickers.
+        returns_df (pd.DataFrame): DataFrame containing returns of tickers.
         window (int): Rolling window size.
-        multiplier (float): Multiplier to adjust threshold based on volatility.
 
     Returns:
-        float, float: Dynamic overbought and oversold thresholds.
+        pd.DataFrame: Z-Score DataFrame.
     """
-    z_scores = calculate_z_score(price_df, window=window)
-    # Calculate standard deviation of Z-Scores across all tickers
-    z_std = z_scores.std().mean()
-    overbought_threshold = multiplier * z_std
-    oversold_threshold = -multiplier * z_std
-    return overbought_threshold, oversold_threshold
+    rolling_mean = price_df.rolling(window=window).mean()
+    rolling_std = price_df.rolling(window=window).std()
+    z_score = (price_df - rolling_mean) / rolling_std
+    return z_score
 
 
 def find_optimal_window(
     price_series,
-    test_windows=window_range,
+    test_windows=range(10, 101, 10),
     overbought_threshold=1.0,
     oversold_threshold=-1.0,
 ):
@@ -76,21 +72,21 @@ def find_optimal_window(
 
 def find_dynamic_windows(
     price_df,
-    test_windows=window_range,
+    test_windows=range(10, 101, 10),
     overbought_threshold=1.0,
     oversold_threshold=-1.0,
 ):
     """
-    Find optimal mean reversion windows for each asset in a DataFrame.
+    Find optimal mean reversion windows for each ticker.
 
     Args:
-        price_df (pd.DataFrame): DataFrame containing price data of multiple tickers.
-        test_windows (list): List of rolling windows to test.
-        overbought_threshold (float): Z-Score threshold for overbought condition.
-        oversold_threshold (float): Z-Score threshold for oversold condition.
+        price_df (pd.DataFrame): Price data of multiple tickers (columns=tickers, index=dates).
+        test_windows (iterable): Possible rolling windows to test.
+        overbought_threshold (float): Fixed threshold for overbought detection during testing.
+        oversold_threshold (float): Fixed threshold for oversold detection during testing.
 
     Returns:
-        dict: Optimal rolling window size for each ticker.
+        dict: {ticker: optimal_window}
     """
     optimal_windows = {}
 
@@ -106,21 +102,25 @@ def find_dynamic_windows(
     return optimal_windows
 
 
-def calculate_z_score(price_df, window=20):
+def get_dynamic_thresholds(price_df, window=20, multiplier=1.0):
     """
-    Calculate the Z-Score of each ticker's returns over a rolling window.
+    Calculate ticker-specific dynamic overbought and oversold thresholds based on volatility of Z-scores.
 
     Args:
-        returns_df (pd.DataFrame): DataFrame containing returns of tickers.
-        window (int): Rolling window size.
+        price_df (pd.DataFrame): Single ticker DataFrame or slice (columns=[ticker]).
+        window (int): Rolling window size for Z-score calculation.
+        multiplier (float): Scales the standard deviation.
 
     Returns:
-        pd.DataFrame: Z-Score DataFrame.
+        (float, float): Overbought threshold, Oversold threshold
     """
-    rolling_mean = price_df.rolling(window=window).mean()
-    rolling_std = price_df.rolling(window=window).std()
-    z_score = (price_df - rolling_mean) / rolling_std
-    return z_score
+    z_scores = calculate_z_score(price_df, window=window)
+    z_std = z_scores.std().iloc[0]  # single ticker => single column => .iloc[0]
+
+    overbought_threshold = multiplier * z_std
+    oversold_threshold = -multiplier * z_std
+
+    return overbought_threshold, oversold_threshold
 
 
 def generate_mean_reversion_signals(
@@ -150,8 +150,9 @@ def generate_mean_reversion_signals(
 
 def apply_mean_reversion(
     price_df,
-    dynamic_windows,
+    dynamic_windows=None,
     dynamic_thresholds_fn=get_dynamic_thresholds,
+    test_windows=range(10, 101, 10),  # Range of rolling windows to test
     multiplier=1.0,
     plot=False,
 ):
@@ -160,20 +161,28 @@ def apply_mean_reversion(
 
     Args:
         price_df (pd.DataFrame): DataFrame containing prices of tickers.
-        dynamic_windows (dict): Optimal rolling window size for each ticker.
+        dynamic_windows (dict, optional): Optimal rolling window size for each ticker.
         dynamic_thresholds_fn (callable): Function to calculate dynamic thresholds.
+        test_windows (list, optional): Range of rolling windows to test (if dynamic).
         multiplier (float): Multiplier for threshold adjustment.
         plot (bool): Whether to plot Z-Scores for visualization.
 
     Returns:
         List[str], List[str]: Lists of ticker symbols to exclude and include respectively.
     """
+    # Dynamically find optimal windows if not provided
+    if dynamic_windows is None:
+        # Uses fixed thresholds during window discovery, e.g., +/-1.0
+        dynamic_windows = find_dynamic_windows(
+            price_df=price_df, test_windows=test_windows
+        )
+
     tickers_to_exclude = []
     tickers_to_include = []
 
     for ticker in price_df.columns:
         # Use the dynamic window for the current ticker
-        window = dynamic_windows.get(ticker, 20)  # Default to 20 if not available
+        window = dynamic_windows.get(ticker, 20)
 
         # Calculate Z-Scores
         z_scores = calculate_z_score(price_df[[ticker]], window=window)
@@ -198,7 +207,6 @@ def apply_mean_reversion(
 
         # Optional: Plot Z-Scores
         if plot:
-            import matplotlib.pyplot as plt
 
             plt.figure(figsize=(14, 7))
             plt.plot(z_scores[ticker], label=f"{ticker} Z-Score")
