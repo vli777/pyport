@@ -11,14 +11,14 @@ from plotly_graphs import plot_graphs
 from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
+from utils.anomaly_detection import remove_anomalous_stocks
+from utils.decorrelation import filter_correlated_groups
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
 from utils.portfolio_utils import (
     calculate_performance_metrics,
-    filter_correlated_groups,
     normalize_weights,
-    remove_anomalous_stocks,
     stacked_output,
 )
 
