@@ -93,9 +93,6 @@ def generate_convergence_signal(
     buy_signals = convergence & (stoch_k < oversold) & (stoch_d < oversold)
     sell_signals = convergence & (stoch_k > overbought) & (stoch_d > overbought)
 
-    buy_signals = buy_signals.fillna(0)
-    sell_signals = sell_signals.fillna(0)
-
     return buy_signals, sell_signals
 
 
