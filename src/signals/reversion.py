@@ -1,22 +1,27 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from joblib import Parallel, delayed
+import pandas as pd
+
+from utils import logger
+from signals.z_score_plot import plot_z_scores_grid
 
 
-def calculate_z_score(price_df, window=20):
+def calculate_z_score(price_series, window):
     """
-    Calculate the Z-Score of each ticker's returns over a rolling window.
+    Calculate the Z-Score for a given price series based on a rolling window.
 
     Args:
-        returns_df (pd.DataFrame): DataFrame containing returns of tickers.
+        price_series (pd.Series): Series of 'Adj Close' prices for a ticker.
         window (int): Rolling window size.
 
     Returns:
-        pd.DataFrame: Z-Score DataFrame.
+        pd.Series: Z-Score series.
     """
-    rolling_mean = price_df.rolling(window=window).mean()
-    rolling_std = price_df.rolling(window=window).std()
-    z_score = (price_df - rolling_mean) / rolling_std
-    return z_score
+    rolling_mean = price_series.rolling(window=window, min_periods=1).mean()
+    rolling_std = price_series.rolling(window=window, min_periods=1).std()
+    z_scores = (price_series - rolling_mean) / rolling_std
+    return z_scores
 
 
 def find_optimal_window(
@@ -26,11 +31,11 @@ def find_optimal_window(
     oversold_threshold=-1.0,
 ):
     """
-    Find the optimal mean reversion window for a single asset based on historical data.
+    Find the optimal mean reversion window for a single asset based on historical data using vectorized operations.
 
     Args:
         price_series (pd.Series): Price series of the asset.
-        test_windows (list): List of rolling windows to test.
+        test_windows (iterable): List of rolling windows to test.
         overbought_threshold (float): Z-Score threshold for overbought condition.
         oversold_threshold (float): Z-Score threshold for oversold condition.
 
@@ -42,22 +47,23 @@ def find_optimal_window(
 
     for window in test_windows:
         # Calculate Z-scores for the current window
-        z_scores = calculate_z_score(price_series.to_frame(), window=window)[
-            price_series.name
-        ]
+        # Assuming calculate_z_score can accept a Series directly
+        z_scores = calculate_z_score(price_series, window=window)
 
-        # Count reversion cases: Z-Score breaches and reversion within 1 std
-        reversion_count = 0
-        breach_count = 0
-        for i in range(len(z_scores) - 1):
-            if z_scores.iloc[i] > overbought_threshold:
-                breach_count += 1
-                if z_scores.iloc[i + 1] < overbought_threshold:
-                    reversion_count += 1
-            elif z_scores.iloc[i] < oversold_threshold:
-                breach_count += 1
-                if z_scores.iloc[i + 1] > oversold_threshold:
-                    reversion_count += 1
+        # Detect breaches
+        overbought = z_scores > overbought_threshold
+        oversold = z_scores < oversold_threshold
+        breach = overbought | oversold
+
+        # Detect reversion by shifting the signals by one day
+        # Added parentheses to ensure correct operator precedence
+        reversion = (overbought & (z_scores.shift(-1) < overbought_threshold)) | (
+            oversold & (z_scores.shift(-1) > oversold_threshold)
+        )
+
+        # Calculate counts
+        breach_count = breach.sum()
+        reversion_count = reversion.sum()
 
         # Calculate the reversion score
         reversion_score = reversion_count / breach_count if breach_count > 0 else 0
@@ -75,29 +81,44 @@ def find_dynamic_windows(
     test_windows=range(10, 101, 10),
     overbought_threshold=1.0,
     oversold_threshold=-1.0,
+    n_jobs=-1,  # Use all available CPU cores
 ):
     """
-    Find optimal mean reversion windows for each ticker.
+    Find optimal mean reversion windows for each ticker using parallel processing.
 
     Args:
-        price_df (pd.DataFrame): Price data of multiple tickers (columns=tickers, index=dates).
+        price_df (pd.DataFrame): Multi-level Price data of multiple tickers (columns=(ticker, field), index=dates).
         test_windows (iterable): Possible rolling windows to test.
         overbought_threshold (float): Fixed threshold for overbought detection during testing.
         oversold_threshold (float): Fixed threshold for oversold detection during testing.
+        n_jobs (int): Number of jobs to run in parallel. -1 means using all processors.
 
     Returns:
         dict: {ticker: optimal_window}
     """
-    optimal_windows = {}
+    # Extract only 'Adj Close' columns
+    try:
+        adj_close_df = price_df.xs("Adj Close", level=1, axis=1)
+    except KeyError:
+        logger.error("The 'Adj Close' column is missing from the price DataFrame.")
+        raise
 
-    for ticker in price_df.columns:
+    def process_ticker(ticker):
         optimal_window = find_optimal_window(
-            price_series=price_df[ticker],
+            price_series=adj_close_df[ticker],
             test_windows=test_windows,
             overbought_threshold=overbought_threshold,
             oversold_threshold=oversold_threshold,
         )
-        optimal_windows[ticker] = optimal_window
+        return (ticker, optimal_window)
+
+    # Parallel processing of tickers to find optimal windows
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process_ticker)(ticker) for ticker in adj_close_df.columns
+    )
+
+    # Convert list of tuples to dictionary
+    optimal_windows = dict(results)
 
     return optimal_windows
 
@@ -150,74 +171,102 @@ def generate_mean_reversion_signals(
 
 def apply_mean_reversion(
     price_df,
-    dynamic_windows=None,
-    dynamic_thresholds_fn=get_dynamic_thresholds,
     test_windows=range(10, 101, 10),  # Range of rolling windows to test
     multiplier=1.0,
     plot=False,
+    n_jobs=-1,  # Number of parallel jobs; -1 uses all available cores
 ):
     """
-    Apply mean reversion strategy with dynamic windows and thresholds.
+    Apply mean reversion strategy with dynamic windows and fixed thresholds using only 'Adj Close' prices.
 
     Args:
-        price_df (pd.DataFrame): DataFrame containing prices of tickers.
-        dynamic_windows (dict, optional): Optimal rolling window size for each ticker.
-        dynamic_thresholds_fn (callable): Function to calculate dynamic thresholds.
-        test_windows (list, optional): Range of rolling windows to test (if dynamic).
-        multiplier (float): Multiplier for threshold adjustment.
+        price_df (pd.DataFrame): Multi-level DataFrame containing 'Adj Close' prices of tickers.
+                                 Columns are tuples like (TICKER, 'Adj Close').
+                                 Index = dates.
+        test_windows (iterable, optional): Range of rolling windows to test during discovery.
+        multiplier (float): Multiplier for threshold adjustment after discovery.
         plot (bool): Whether to plot Z-Scores for visualization.
+        n_jobs (int): Number of parallel jobs to run. -1 utilizes all available CPU cores.
 
     Returns:
-        List[str], List[str]: Lists of ticker symbols to exclude and include respectively.
+        Tuple[List[str], List[str]]:
+            - List of ticker symbols to exclude (overbought).
+            - List of ticker symbols to include (oversold).
     """
-    # Dynamically find optimal windows if not provided
-    if dynamic_windows is None:
-        # Uses fixed thresholds during window discovery, e.g., +/-1.0
-        dynamic_windows = find_dynamic_windows(
-            price_df=price_df, test_windows=test_windows
-        )
+    # Extract only 'Adj Close' columns
+    try:
+        adj_close_df = price_df.xs("Adj Close", level=1, axis=1)
+    except KeyError:
+        logger.error("The 'Adj Close' column is missing from the price DataFrame.")
+        raise
 
-    tickers_to_exclude = []
-    tickers_to_include = []
+    # Discover optimal windows using fixed thresholds
+    logger.info("Discovering optimal rolling windows for each ticker...")
+    dynamic_windows = find_dynamic_windows(
+        price_df=price_df,  # Passing multi-level DataFrame
+        test_windows=test_windows,
+        overbought_threshold=1.0,  # Fixed overbought threshold
+        oversold_threshold=-1.0,  # Fixed oversold threshold
+    )
+    logger.info("Optimal rolling windows discovered.")
 
-    for ticker in price_df.columns:
-        # Use the dynamic window for the current ticker
-        window = dynamic_windows.get(ticker, 20)
+    # Initialize dictionaries to store Z-Scores and thresholds
+    z_scores_dict = {}
+    overbought_thresholds = {}
+    oversold_thresholds = {}
+
+    def process_ticker(ticker):
+        window = dynamic_windows.get(ticker, 20)  # Default window size 20 if not found
+        price_series = adj_close_df[ticker]
 
         # Calculate Z-Scores
-        z_scores = calculate_z_score(price_df[[ticker]], window=window)
+        z_scores = calculate_z_score(price_series, window=window)
 
-        # Calculate dynamic thresholds
-        overbought_threshold, oversold_threshold = dynamic_thresholds_fn(
-            price_df[[ticker]], window=window, multiplier=multiplier
+        # Determine dynamic thresholds based on multiplier
+        # Assuming dynamic_thresholds_fn is a fixed function that applies the multiplier
+        overbought_threshold = 1.0 * multiplier
+        oversold_threshold = -1.0 * multiplier
+
+        # Store Z-Scores and thresholds
+        z_scores_dict[ticker] = z_scores
+        overbought_thresholds[ticker] = overbought_threshold
+        oversold_thresholds[ticker] = oversold_threshold
+
+        # Determine if latest Z-Score breaches thresholds
+        latest_z = z_scores.iloc[-1]
+        overextended = latest_z > overbought_threshold
+        is_oversold = latest_z < oversold_threshold
+
+        return (ticker, overextended, is_oversold)
+
+    logger.info("Starting parallel processing of tickers for mean reversion signals...")
+    # Parallel processing of tickers
+    results = Parallel(n_jobs=n_jobs)(
+        delayed(process_ticker)(ticker) for ticker in adj_close_df.columns
+    )
+    logger.info("Parallel processing completed.")
+
+    # Separate tickers to exclude and include based on signals
+    tickers_to_exclude = [ticker for ticker, overext, _ in results if overext]
+    tickers_to_include = [ticker for ticker, _, oversold in results if oversold]
+
+    logger.info(f"Tickers to Exclude (Overbought): {tickers_to_exclude}")
+    logger.info(f"Tickers to Include (Oversold): {tickers_to_include}")
+
+    # Optional: Plot Z-Scores
+    if plot:
+        # Create DataFrames from the dictionaries
+        z_scores_df = pd.DataFrame(z_scores_dict)
+        overbought_series = pd.Series(overbought_thresholds)
+        oversold_series = pd.Series(oversold_thresholds)
+
+        # Call the plotting function
+        plot_z_scores_grid(
+            z_scores_df=z_scores_df,
+            overbought_thresholds=overbought_series,
+            oversold_thresholds=oversold_series,
+            grid_shape=(6, 6),
+            figsize=(24, 24),  # Adjusted for better readability
         )
-
-        # Generate mean reversion signals
-        overextended, oversold = generate_mean_reversion_signals(
-            z_scores,
-            overbought_threshold=overbought_threshold,
-            oversold_threshold=oversold_threshold,
-        )
-
-        # Append tickers to respective lists
-        if overextended.iloc[-1]:
-            tickers_to_exclude.append(ticker)
-        if oversold.iloc[-1]:
-            tickers_to_include.append(ticker)
-
-        # Optional: Plot Z-Scores
-        if plot:
-
-            plt.figure(figsize=(14, 7))
-            plt.plot(z_scores[ticker], label=f"{ticker} Z-Score")
-            plt.axhline(
-                y=overbought_threshold, color="r", linestyle="--", label="Overbought"
-            )
-            plt.axhline(
-                y=oversold_threshold, color="g", linestyle="--", label="Oversold"
-            )
-            plt.title(f"Z-Score of {ticker} for Mean Reversion")
-            plt.legend()
-            plt.show()
 
     return tickers_to_exclude, tickers_to_include
