@@ -9,7 +9,7 @@ def calculate_stochastic_full(
     d_window=3,
     mamode="ema",
     offset=0,
-    fillna=0,           
+    fillna=0,
 ):
     """
     Calculate %K and %D for all tickers in a multi-level DataFrame.
@@ -29,32 +29,34 @@ def calculate_stochastic_full(
     """
     # Validate MultiIndex
     if not isinstance(multi_df.columns, pd.MultiIndex):
-        raise ValueError("multi_df must have a MultiIndex for columns with levels [Ticker, PriceType].")
+        raise ValueError(
+            "multi_df must have a MultiIndex for columns with levels [Ticker, PriceType]."
+        )
 
     # Define required price types
-    required_price_types = {'High', 'Low', 'Close'}
+    required_price_types = {"High", "Low", "Close"}
     actual_price_types = set(multi_df.columns.get_level_values(1))
-    
+
     # Check if all required price types are present
     missing = required_price_types - actual_price_types
     if missing:
         raise ValueError(f"multi_df is missing required price types: {missing}")
-    
+
     # Extract the list of tickers
     tickers = multi_df.columns.get_level_values(0).unique()
-    
+
     # Initialize empty DataFrames for %K and %D
     stoch_k = pd.DataFrame(index=multi_df.index)
     stoch_d = pd.DataFrame(index=multi_df.index)
-    
+
     # Iterate over each ticker to compute %K and %D
     for ticker in tickers:
         try:
             # Extract High, Low, and Close for the ticker
-            high = multi_df[ticker]['High']
-            low = multi_df[ticker]['Low']
-            close = multi_df[ticker]['Close']
-            
+            high = multi_df[ticker]["High"]
+            low = multi_df[ticker]["Low"]
+            close = multi_df[ticker]["Close"]
+
             # Compute Stochastic Oscillator using pandas_ta
             stoch = ta.stoch(
                 high=high,
@@ -65,25 +67,33 @@ def calculate_stochastic_full(
                 smooth_k=smooth_window,
                 mamode=mamode,
                 offset=offset,
-                fillna=fillna,           
+                fillna=fillna,
             )
 
-            # Dynamically retrieve column names from the result 
+            # Dynamically retrieve column names from the result
             stoch_k_col, stoch_d_col = stoch.columns
-            
+
             # Assign to return df
             stoch_k[ticker] = stoch[stoch_k_col]
             stoch_d[ticker] = stoch[stoch_d_col]
-           
+
         except KeyError as e:
             print(f"KeyError for ticker {ticker}: {e}")
         except Exception as e:
             print(f"Error processing ticker {ticker}: {e}")
-    
+
     return stoch_k, stoch_d
 
 
-def calculate_rainbow_stoch(price_df, windows=(5, 31, 5), smooth_window=3, d_window=3, mamode="ema", offset=0, fillna=0):
+def calculate_rainbow_stoch(
+    price_df,
+    windows=(5, 31, 5),
+    smooth_window=3,
+    d_window=3,
+    mamode="ema",
+    offset=0,
+    fillna=0,
+):
     """
     Calculate %K for a range of windows and combine the results.
 
@@ -136,7 +146,7 @@ def generate_convergence_signals(
     # Ensure NaN rows are ignored in calculations
     combined_stoch_k = combined_stoch_k.dropna(how="all")
 
-     # Perform groupby operations without using axis=1
+    # Perform groupby operations without using axis=1
     grouped = combined_stoch_k.T.groupby(level="Ticker")
     mean_stoch_k = grouped.mean().T
     min_stoch_k = grouped.min().T
@@ -272,7 +282,6 @@ def generate_macd_preemptive_signals(
     preemptive_bearish = (plateau_signal & ~direction).astype(int)
 
     return preemptive_bullish, preemptive_bearish
-
 
 
 def calculate_adx(multi_df, length=14):
