@@ -11,6 +11,9 @@ from plotly_graphs import plot_graphs
 from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
+from signals.reversion import apply_mean_reversion
+from signals.weighted_signals import generate_signals
+from utils.filter import filter_symbols_with_signals
 from utils.anomaly_detection import remove_anomalous_stocks
 from utils.decorrelation import filter_correlated_groups
 from utils.caching_utils import cleanup_cache
@@ -97,9 +100,18 @@ def run_pipeline(
         returns_df, risk_free_rate=config.risk_free_rate
     )
 
+    # Filter overbought, oversold
+    filtered_symbols = filter_symbols_with_signals(
+        price_df=df,
+        generate_signals_fn=generate_signals,  # Function for technical indicators
+        mean_reversion_fn=apply_mean_reversion,  # Function for mean reversion
+        config=config,  # Configuration object
+    )
+
     # Filter correlated groups based on performance metrics
-    filtered_symbols = filter_correlated_groups(
-        returns_df=returns_df,
+    filtered_returns_df = returns_df[filtered_symbols]
+    filtered_decorrelated_symbols = filter_correlated_groups(
+        returns_df=filtered_returns_df,
         performance_df=performance_df,
         sharpe_threshold=0.005,
         correlation_threshold=config.correlation_threshold,
@@ -107,7 +119,7 @@ def run_pipeline(
     )
 
     # Combine filtered symbols
-    print(f"Symbols for further optimization: {filtered_symbols}")
+    print(f"Symbols for further optimization: {filtered_decorrelated_symbols}")
 
     dfs.update({"data": df, "start": start_date_long, "end": end_date_long})
 
@@ -130,7 +142,13 @@ def run_pipeline(
 
         # Run optimization
         run_optimization_and_save(
-            df, config, start_date, end_date, filtered_symbols, stack, years
+            df,
+            config,
+            start_date,
+            end_date,
+            filtered_decorrelated_symbols,
+            stack,
+            years,
         )
 
     if not stack:
