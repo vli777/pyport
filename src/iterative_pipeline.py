@@ -53,7 +53,7 @@ def iterative_pipeline_runner(
             if symbol != "SIM_PORT"  # Replace "SIM_PORT" with the actual name
         ]
 
-        print(f"Top symbols from epoch {epoch + 1}: {valid_symbols}")
+        print(f"\nTop symbols from epoch {epoch + 1}: {valid_symbols}")
 
         # Check for convergence
         if set(valid_symbols) == previous_top_symbols:
@@ -98,5 +98,3 @@ if __name__ == "__main__":
         portfolio_max_size=portfolio_max_size,
         run_local=True,
     )
-
-    print("Final result:", final_result)

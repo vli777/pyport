@@ -390,7 +390,7 @@ def filter_correlated_groups(
 
         # Debug: Verify that the diagonal is zero
         diag = np.diag(corr_matrix)
-        print(f"Iteration {iteration}: Diagonal of correlation matrix: {diag}")
+        # print(f"Iteration {iteration}: Diagonal of correlation matrix: {diag}")
 
         # Check for NaN or infinite values in correlation matrix
         if corr_matrix.isnull().values.any():
@@ -406,7 +406,7 @@ def filter_correlated_groups(
 
         # Debug: Verify that the distance matrix diagonal is zero
         diag_dist = np.diag(distance_matrix)
-        print(f"Iteration {iteration}: Diagonal of distance matrix: {diag_dist}")
+        # print(f"Iteration {iteration}: Diagonal of distance matrix: {diag_dist}")
 
         # Check for NaN or infinite values in distance matrix
         if distance_matrix.isnull().values.any():
