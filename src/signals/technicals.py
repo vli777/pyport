@@ -93,6 +93,9 @@ def generate_convergence_signal(
     buy_signals = convergence & (stoch_k < oversold) & (stoch_d < oversold)
     sell_signals = convergence & (stoch_k > overbought) & (stoch_d > overbought)
 
+    buy_signals = buy_signals.fillna(0)
+    sell_signals = sell_signals.fillna(0)
+
     return buy_signals, sell_signals
 
 
@@ -215,21 +218,19 @@ def calculate_adx(price_df, window=14):
 
 def generate_adx_signals(adx_df, adx_threshold=25):
     """
-    Generate ADX trend signals based on a specified threshold.
+    Generate ADX trend signals based on a specified threshold for all dates.
 
     Args:
         adx_df (pd.DataFrame): DataFrame containing ADX values with tickers as columns.
         adx_threshold (float): Threshold above which a trend is considered strong.
 
     Returns:
-        pd.DataFrame: DataFrame with boolean ADX trend signals for each ticker.
+        pd.DataFrame: DataFrame with boolean ADX trend signals for each ticker across all dates.
     """
-    latest_adx = adx_df.iloc[-1]
-    adx_trending = latest_adx > adx_threshold
-    adx_trending = adx_trending.fillna(False)
+    # Generate boolean signals where ADX > threshold
+    adx_trending = adx_df > adx_threshold
+    adx_trending = adx_trending.fillna(False)  # Handle any remaining NaNs
 
-    # Convert Series to DataFrame
-    adx_trending_df = adx_trending.to_frame().T
-    adx_trending_df.index = [adx_df.index[-1]]  # Set the index to the latest date
-
-    return adx_trending_df
+    return adx_trending.astype(
+        int
+    )  # Convert boolean to integer (1 for True, 0 for False)

@@ -158,6 +158,25 @@ def generate_signals(
         df_sig.columns = pd.MultiIndex.from_product([[label], df_sig.columns])
         signals_list.append(df_sig)
 
+        # **Inspection Steps**
+        # print(f"\n=== Inspecting Signal: {label} ===")
+
+        # 1. Display the first few rows
+        # print("Head of DataFrame:")
+        # print(df_sig.head())
+
+        # 2. Check the number of NaNs per column
+        # nan_counts = df_sig.isna().sum()
+        # print("\nNumber of NaNs per Ticker:")
+        # print(nan_counts[nan_counts > 0])
+
+        # 3. Summary statistics
+        # print("\nSummary Statistics:")
+        # print(df_sig.describe())
+
+        # Append to signals_list
+        signals_list.append(df_sig)
+
     # Concatenate all signals horizontally
     signals = pd.concat(signals_list, axis=1)
 

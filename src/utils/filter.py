@@ -25,28 +25,22 @@ def filter_symbols_with_signals(
     all_tickers = price_df.columns.levels[0]
 
     # 2) Apply mean reversion
-    #    Typically returns something like:
-    #       mean_reversion_exclusions = ['AAPL', 'GOOG', ...]
-    #       mean_reversion_inclusions = ['MSFT', ...]
     mean_reversion_exclusions, mean_reversion_inclusions = mean_reversion_fn(
         price_df=price_df,
         plot=config.plot_mean_reversion,
     )
 
     # 3) Generate signals DataFrame (date x (signal_name, ticker)).
-    #    Example columns might be: [('Buy_Signal_Weight', 'AAPL'), ('Buy_Signal_Weight', 'MSFT'), ...]
     signals_df = generate_signals_fn(price_df)
 
-    # 4) If we only need the latest signals (the last date):
-    latest_signals = signals_df.iloc[
-        -1
-    ]  # Series with multi-level index => (signal_name, ticker)
-
-    # Extract each signal from the multi-index:
-    # latest_signals.loc["Buy_Signal_Weight"] will be a Series indexed by tickers.
+    # 4) Extract the latest signals (the last date):
+    # Ensure that 'Buy_Signal_Weight' and 'Sell_Signal_Weight' are present
     try:
-        buy_signal_series = latest_signals.loc["Buy_Signal_Weight"]
-        sell_signal_series = latest_signals.loc["Sell_Signal_Weight"]
+        # Extract 'Buy_Signal_Weight' and 'Sell_Signal_Weight' as separate Series
+        buy_signal_series = signals_df.xs("Buy_Signal_Weight", axis=1, level=0).iloc[-1]
+        sell_signal_series = signals_df.xs("Sell_Signal_Weight", axis=1, level=0).iloc[
+            -1
+        ]
     except KeyError as e:
         logger.error(f"Missing expected signal columns: {e}")
         raise
@@ -60,10 +54,25 @@ def filter_symbols_with_signals(
 
     # 7) Update filtered symbols based on generate_signals (priority over mean reversion)
     for ticker in all_tickers:
-        if sell_signal_bool.get(ticker, False):
+        # Ensure that the value is a single boolean
+        sell_signal = sell_signal_bool.get(ticker, False)
+        buy_signal = buy_signal_bool.get(ticker, False)
+
+        if isinstance(sell_signal, pd.Series) or isinstance(sell_signal, pd.DataFrame):
+            logger.warning(
+                f"Sell signal for ticker {ticker} is not a single boolean. Defaulting to False."
+            )
+            sell_signal = False
+        if isinstance(buy_signal, pd.Series) or isinstance(buy_signal, pd.DataFrame):
+            logger.warning(
+                f"Buy signal for ticker {ticker} is not a single boolean. Defaulting to False."
+            )
+            buy_signal = False
+
+        if sell_signal:
             # If there's a sell signal for this ticker => discard it
             filtered_set.discard(ticker)
-        elif buy_signal_bool.get(ticker, False):
+        elif buy_signal:
             # If there's a buy signal => include it
             filtered_set.add(ticker)
         else:
