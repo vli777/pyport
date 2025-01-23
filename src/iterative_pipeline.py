@@ -98,3 +98,5 @@ if __name__ == "__main__":
         portfolio_max_size=portfolio_max_size,
         run_local=True,
     )
+
+    print("\nFinal result:", final_result)
