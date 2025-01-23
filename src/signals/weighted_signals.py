@@ -1,183 +1,165 @@
+import sys
+import numpy as np
 import pandas as pd
 
 from signals.technicals import (
     calculate_macd,
+    calculate_rainbow_stoch,
     generate_macd_crossovers,
     generate_macd_preemptive_signals,
     calculate_adx,
     generate_adx_signals,
-    calculate_stochastic_full,
-    generate_convergence_signal,
+    generate_convergence_signals,
 )
+from utils.filter import filter_signals_by_threshold
 
 
 def assign_signal_weights(
-    stoch_buy_df,
-    stoch_sell_df,
-    macd_bull_df,
-    macd_bear_df,
-    macd_pre_bull_df,
-    macd_pre_bear_df,
-    adx_support_df,
-    stoch_weight=1.0,
-    crossover_weight=0.5,
-    preemptive_weight=0.3,
-    adx_weight=0.2,
-):
-    """
-    Each arg is a DataFrame: index=dates, columns=tickers, with boolean signals.
-    Returns two DataFrames of floats (buy/sell weights).
-    """
-    # Convert booleans to floats for weighting
-    stoch_buy_w = stoch_buy_df.astype(float) * stoch_weight
-    stoch_sell_w = stoch_sell_df.astype(float) * stoch_weight
-
-    macd_bull_w = macd_bull_df.astype(float) * crossover_weight
-    macd_bear_w = macd_bear_df.astype(float) * crossover_weight
-
-    pre_bull_w = macd_pre_bull_df.astype(float) * preemptive_weight
-    pre_bear_w = macd_pre_bear_df.astype(float) * preemptive_weight
-
-    adx_w = adx_support_df.astype(float) * adx_weight
-
-    buy_weight_df = stoch_buy_w + macd_bull_w + pre_bull_w + adx_w
-    sell_weight_df = stoch_sell_w + macd_bear_w + pre_bear_w + adx_w
-
-    return buy_weight_df, sell_weight_df
-
-
-def generate_signals(
-    price_df,
-    stochastic_windows=[5, 10, 15, 20, 25, 30],
-    macd_fast=12,
-    macd_slow=26,
-    macd_signal=9,
-    adx_window=14,
-    adx_threshold=25,
-    stochastic_smooth_k=3,
-    stochastic_smooth_d=3,
-    stochastic_tolerance=5,
-    stochastic_overbought=80,
-    stochastic_oversold=20,
+    stoch_buy,
+    stoch_sell,
+    bullish_crossover,
+    bearish_crossover,
+    preemptive_bullish,
+    preemptive_bearish,
+    adx_support,
     stochastic_weight=1.0,
     crossover_weight=0.5,
     preemptive_weight=0.3,
     adx_weight=0.2,
 ):
     """
-    Generate weighted signals based on stochastic convergence, MACD (crossover and preemptive), and ADX.
+    Assign weights to various signals to compute buy and sell weights.
 
     Args:
-        price_df (pd.DataFrame): DataFrame containing price data of tickers.
-        stochastic_windows (list): List of window intervals for Stochastic calculations.
-        macd_fast (int): Fast EMA window for MACD.
-        macd_slow (int): Slow EMA window for MACD.
-        macd_signal (int): Signal line window for MACD.
-        adx_window (int): Window for ADX calculation.
-        adx_threshold (float): Threshold for ADX to consider the trend strong.
-        stochastic_smooth_k (int): Smoothing period for %K.
-        stochastic_smooth_d (int): Smoothing period for %D.
-        stochastic_tolerance (float): Tolerance level for stochastic convergence.
-        stochastic_overbought (float): Overbought threshold for stochastic signals.
-        stochastic_oversold (float): Oversold threshold for stochastic signals.
-        stochastic_weight (float): Weight for stochastic signals (absolute).
-        crossover_weight (float): Weight for MACD crossovers.
-        preemptive_weight (float): Weight for MACD preemptive signals.
-        adx_weight (float): Weight for ADX signals.
+        stoch_buy, stoch_sell (pd.Series): Weighted stochastic buy/sell signals.
+        bullish_crossover, bearish_crossover, preemptive_bullish, preemptive_bearish, adx_support (pd.Series): Other signals.
+        stochastic_weight, crossover_weight, preemptive_weight, adx_weight (float): Weights for each signal.
 
     Returns:
-        pd.DataFrame: Combined signal weights for buy and sell signals.
+        float: Buy weight.
+        float: Sell weight.
     """
-    # Calculate stochastic weighted averages
-    stoch_k, stoch_d = calculate_stochastic_full(
-        price_df,
-        windows=stochastic_windows,
-        smooth_k=stochastic_smooth_k,
-        smooth_d=stochastic_smooth_d,
-    )
+    # Calculate weighted buy and sell signals
+    buy_weight = (
+        stochastic_weight * stoch_buy
+        + crossover_weight * bullish_crossover
+        + preemptive_weight * preemptive_bullish
+        + adx_weight * adx_support
+    ).sum()
 
-    # Generate stochastic convergence signals
-    stochastic_buy, stochastic_sell = generate_convergence_signal(
-        stoch_k,
-        stoch_d,
-        overbought=stochastic_overbought,
-        oversold=stochastic_oversold,
-        tolerance=stochastic_tolerance,
-    )
+    sell_weight = (
+        stochastic_weight * stoch_sell
+        + crossover_weight * bearish_crossover
+        + preemptive_weight * preemptive_bearish
+    ).sum()
 
-    # Calculate MACD components
-    macd_line_df, macd_signal_df, macd_hist_df = calculate_macd(
-        price_df, fast=macd_fast, slow=macd_slow, signal=macd_signal
-    )
+    return buy_weight, sell_weight
 
-    # Generate MACD crossover and preemptive signals
-    bullish_crossover_df, bearish_crossover_df = generate_macd_crossovers(
+
+def calculate_weighted_signals_with_decay(
+    signals, signal_weights, days=7, weight_decay="linear"
+):
+    """
+    Calculate weighted signals with user-defined starting weights and decay.
+
+    Args:
+        signals (dict): A dictionary where keys are signal names and values are DataFrames
+                        with tickers as columns and dates as index.
+        signal_weights (dict): User-defined weights for each signal type.
+        days (int): Number of trading days to track for signals.
+        weight_decay (str): Type of weight decay ('linear' or other).
+
+    Returns:
+        pd.DataFrame: DataFrame with weighted buy/sell signals per ticker.
+    """
+    # Define weight decay (linear in this case)
+    if weight_decay == "linear":
+        decay_weights = np.linspace(
+            1, 0.14, num=days
+        )  # Decay from 1.0 to 0.14 over 7 days
+    else:
+        raise ValueError(f"Unsupported weight_decay type: {weight_decay}")
+
+    weighted_signals = []
+
+    for signal_name, signal_df in signals.items():
+        # Extract the last 'days' rows
+        signal_last_days = signal_df.iloc[-days:]
+
+        # Apply user-defined weight and decay
+        max_weight = signal_weights.get(signal_name, 0)
+        daily_weights = decay_weights * max_weight
+        weighted_signal = (signal_last_days * daily_weights[:, None]).sum(axis=0)
+
+        # Store results as a DataFrame for later aggregation
+        weighted_signal.name = signal_name
+        weighted_signals.append(weighted_signal)
+
+    # Combine all weighted signals into a single DataFrame
+    return pd.concat(weighted_signals, axis=1)
+
+
+def generate_signals(price_df):
+    """
+    Generate all technical signals and return a consolidated DataFrame.
+    Only uses the latest date's signals without aggregation.
+
+    Returns:
+        consolidated_signals (pd.DataFrame): DataFrame containing all signal weights and indicator values per ticker.
+    """
+    # Generate MACD signals
+    macd_line_df, macd_signal_df, macd_hist_df = calculate_macd(price_df)
+    bullish_crossover, bearish_crossover = generate_macd_crossovers(
         macd_line_df, macd_signal_df
     )
-    preemptive_bullish_df = generate_macd_preemptive_signals(macd_line_df)
-    preemptive_bearish_df = generate_macd_preemptive_signals(-macd_line_df)
-
-    # Calculate ADX
-    adx_df = calculate_adx(price_df, window=adx_window)
-    # Generate ADX signals
-    adx_support_df = generate_adx_signals(adx_df, adx_threshold)
-
-    # Assign weights to all signals
-    buy_signal_weight, sell_signal_weight = assign_signal_weights(
-        stoch_buy_df=stochastic_buy,
-        stoch_sell_df=stochastic_sell,
-        macd_bull_df=bullish_crossover_df,
-        macd_bear_df=bearish_crossover_df,
-        macd_pre_bull_df=preemptive_bullish_df,
-        macd_pre_bear_df=preemptive_bearish_df,
-        adx_support_df=adx_support_df,
-        stoch_weight=stochastic_weight,
-        crossover_weight=crossover_weight,
-        preemptive_weight=preemptive_weight,
-        adx_weight=adx_weight,
+    preemptive_bullish, preemptive_bearish = generate_macd_preemptive_signals(
+        macd_line_df
     )
 
-    # Create a multi-level DataFrame for the signals
-    signals_list = []
-    for label, df_sig in [
-        ("Buy_Signal_Weight", buy_signal_weight),
-        ("Sell_Signal_Weight", sell_signal_weight),
-        ("Stochastic_Buy", stochastic_buy),
-        ("Stochastic_Sell", stochastic_sell),
-        ("MACD_Bullish_Crossover", bullish_crossover_df),
-        ("MACD_Bearish_Crossover", bearish_crossover_df),
-        ("MACD_Preemptive_Bullish", preemptive_bullish_df),
-        ("MACD_Preemptive_Bearish", preemptive_bearish_df),
-        ("ADX_Support", adx_support_df),
-    ]:
-        # Ensure the DataFrame is aligned
-        df_sig = df_sig.reindex(price_df.index).reindex(
-            price_df.columns.levels[0], axis=1
-        )
-        # Assign a MultiIndex to columns: (signal_name, ticker)
-        df_sig.columns = pd.MultiIndex.from_product([[label], df_sig.columns])
-        signals_list.append(df_sig)
+    # Calculate ADX and generate ADX trend signals
+    adx_df = calculate_adx(price_df)
+    adx_signals = generate_adx_signals(adx_df)
 
-        # **Inspection Steps**
-        # print(f"\n=== Inspecting Signal: {label} ===")
+    # Calculate Stochastic Oscillator and generate convergence signals
+    stoch_ks = calculate_rainbow_stoch(price_df)
+    stoch_buy_signal, stoch_sell_signal = generate_convergence_signals(stoch_ks)
 
-        # 1. Display the first few rows
-        # print("Head of DataFrame:")
-        # print(df_sig.head())
+    # Input signal DataFrames
+    signals = {
+        "stoch_buy": stoch_buy_signal,
+        "stoch_sell": stoch_sell_signal,
+        "bullish_crossover": bullish_crossover,
+        "bearish_crossover": bearish_crossover,
+        "preemptive_bullish": preemptive_bullish,
+        "preemptive_bearish": preemptive_bearish,
+        "adx_support": adx_signals,
+    }
 
-        # 2. Check the number of NaNs per column
-        # nan_counts = df_sig.isna().sum()
-        # print("\nNumber of NaNs per Ticker:")
-        # print(nan_counts[nan_counts > 0])
+    # User-defined weights
+    signal_weights = {
+        "stoch_buy": 1.0,
+        "stoch_sell": 1.0,
+        "bullish_crossover": 0.5,
+        "bearish_crossover": 0.5,
+        "preemptive_bullish": 0.3,
+        "preemptive_bearish": 0.3,
+        "adx_support": 0.2,
+    }
 
-        # 3. Summary statistics
-        # print("\nSummary Statistics:")
-        # print(df_sig.describe())
+    # Calculate weighted signals with decay
+    weighted_signals = calculate_weighted_signals_with_decay(signals, signal_weights)
+    print(weighted_signals)
 
-        # Append to signals_list
-        signals_list.append(df_sig)
+    # Filter signals
+    buy_signal_names = [
+        "stoch_buy",
+        "bullish_crossover",
+        "preemptive_bullish",
+        "adx_support",
+    ]
+    sell_signal_names = ["stoch_sell", "bearish_crossover", "preemptive_bearish"]
+    buy_tickers, sell_tickers = filter_signals_by_threshold(
+        weighted_signals, buy_signal_names, sell_signal_names, threshold=0.72
+    )
 
-    # Concatenate all signals horizontally
-    signals = pd.concat(signals_list, axis=1)
-
-    return signals
+    return buy_tickers, sell_tickers
