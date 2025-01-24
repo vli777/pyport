@@ -31,7 +31,9 @@ def filter_symbols_with_signals(
     mean_reversion_inclusions = set(mean_reversion_inclusions)
 
     # Generate signals DataFrame (date x (signal_name, ticker))
-    buy_signal_tickers, sell_signal_tickers = generate_signals_fn(price_df, returns_df)
+    buy_signal_tickers, sell_signal_tickers = generate_signals_fn(
+        price_df, returns_df, plot=config.plot_signal_threshold
+    )
 
     # Remove tickers with sell signals
     filtered_set -= set(sell_signal_tickers)
@@ -54,34 +56,29 @@ def filter_symbols_with_signals(
 
 
 def filter_signals_by_threshold(
-    weighted_signals, buy_signal_names, sell_signal_names, threshold=1.0
+    weighted_signals,
+    buy_threshold=1.0,
+    sell_threshold=1.0,
 ):
     """
-    Filter tickers with aggregated buy/sell weights exceeding a threshold.
+    Filters buy and sell signals based on thresholds, separately for bullish and bearish categories.
 
     Args:
-        weighted_signals (pd.DataFrame): DataFrame with weighted buy/sell signals.
-        buy_signal_names (list): List of signal names contributing to buy weight.
-        sell_signal_names (list): List of signal names contributing to sell weight.
-        threshold (float): Threshold for filtering signals.
+        weighted_signals (pd.DataFrame): Weighted signals with MultiIndex columns (Category, Ticker).
+        buy_threshold (float): Threshold to classify buy signals for bullish signals.
+        sell_threshold (float): Threshold to classify sell signals for bearish signals.
 
     Returns:
-        pd.Index: Tickers exceeding the buy/sell threshold.
+        tuple: (buy_signal_tickers, sell_signal_tickers)
     """
-    # Aggregate buy and sell weights
-    weighted_signals["Buy_Signal_Weight"] = weighted_signals[buy_signal_names].sum(
-        axis=1
-    )
-    weighted_signals["Sell_Signal_Weight"] = weighted_signals[sell_signal_names].sum(
-        axis=1
-    )
+    # Separate bullish and bearish signals
+    bullish_signals = weighted_signals.loc[:, "bullish"]
+    bearish_signals = weighted_signals.loc[:, "bearish"]
 
-    # Filter tickers by threshold
-    buy_signal_tickers = weighted_signals[
-        weighted_signals["Buy_Signal_Weight"] > threshold
-    ].index
-    sell_signal_tickers = weighted_signals[
-        weighted_signals["Sell_Signal_Weight"] > threshold
-    ].index
+    # Identify buy tickers: bullish signals above buy_threshold
+    buy_signal_tickers = bullish_signals.columns[bullish_signals.max(axis=0) > buy_threshold].tolist()
+
+    # Identify sell tickers: bearish signals above sell_threshold
+    sell_signal_tickers = bearish_signals.columns[bearish_signals.max(axis=0) > sell_threshold].tolist()
 
     return buy_signal_tickers, sell_signal_tickers
