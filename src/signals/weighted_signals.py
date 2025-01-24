@@ -59,7 +59,8 @@ def calculate_weighted_signals(
         rolling_sum = pd.DataFrame(0, index=signal_df.index, columns=signal_df.columns)
 
         for i in range(days):
-            rolling_sum += signal_df.shift(i) * w[i]
+            shifted = signal_df.shift(i).fillna(0)
+            rolling_sum += shifted * w[i]
 
         rolling_sum *= wgt
 
@@ -69,5 +70,10 @@ def calculate_weighted_signals(
         elif sig_name in bearish_signals:
             rolling_sum.index = rolling_sum.index.astype(final_weighted.index.dtype)
             final_weighted.loc[:, ("bearish", slice(None))] += rolling_sum
+        else:
+            print(f"Warning: Signal '{sig_name}' not classified as 'bullish' or 'bearish'.")
+
+    # Replace any remaining NaNs with 0
+    final_weighted = final_weighted.fillna(0)
 
     return final_weighted
