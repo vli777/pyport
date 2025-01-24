@@ -1,4 +1,6 @@
+from typing import Dict, List, Union
 import numpy as np
+import pandas as pd
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 
@@ -21,51 +23,61 @@ def create_multiday_target(returns_df, window=3, threshold=0.0):
     return target
 
 
-def process_multiindex_signals(weighted_signals, category, threshold):
+def process_multiindex_signals(
+    weighted_signals: pd.DataFrame,
+    category: str,
+    threshold: Union[float, Dict[str, float]],
+) -> pd.DataFrame:
     """
-    Processes MultiIndex signals to apply threshold filtering by category.
+    Filters signals by category and applies threshold.
 
     Args:
-        weighted_signals (pd.DataFrame): MultiIndex DataFrame with levels ['Category', 'Ticker'].
+        weighted_signals (pd.DataFrame): MultiIndex DataFrame (date x [Category, Ticker]).
         category (str): 'bullish' or 'bearish'.
-        threshold (float): Threshold to filter signals.
+        threshold (float or dict): Single float threshold or a dict with thresholds per ticker.
 
     Returns:
-        pd.DataFrame: Filtered signals for the specified category.
+        pd.DataFrame: Binary signals (date x ticker) after threshold filtering.
     """
-    # Filter by category
     category_signals = weighted_signals.loc[:, (category, slice(None))]
 
-    # Apply threshold
-    filtered_signals = (category_signals > threshold).astype(int)
+    if isinstance(threshold, dict):
+        filtered_signals = category_signals.copy()
+        for ticker, ticker_threshold in threshold.items():
+            if ticker in category_signals.columns:
+                filtered_signals[ticker] = (
+                    category_signals[ticker] > ticker_threshold
+                ).astype(int)
+    else:
+        filtered_signals = (category_signals > threshold).astype(int)
 
     return filtered_signals
 
 
-def evaluate_signal_accuracy(weighted_signals, returns_df, category, threshold=0.0):
+def evaluate_signal_accuracy(
+    weighted_signals: pd.DataFrame,
+    returns_df: pd.DataFrame,
+    category: str,
+    threshold: float,
+) -> Dict[str, float]:
     """
-    Evaluate signal accuracy using precision, recall, and F1-score for a given category.
+    Evaluates precision, recall, and F1-score for a given category and threshold.
 
     Args:
-        weighted_signals (pd.DataFrame): MultiIndex weighted signals.
-        returns_df (pd.DataFrame): Actual stock returns.
+        weighted_signals (pd.DataFrame): MultiIndex DataFrame (date x [Category, Ticker]).
+        returns_df (pd.DataFrame): Actual stock returns (date x ticker).
         category (str): 'bullish' or 'bearish'.
-        threshold (float): Signal threshold for classification.
+        threshold (float): Threshold for binary classification.
 
     Returns:
-        dict: {"precision": float, "recall": float, "f1_score": float}
+        dict: Metrics {"precision", "recall", "f1_score"}.
     """
-    # Filter signals by category
-    filtered_signals = process_multiindex_signals(weighted_signals, category, threshold)
+    category_signals = weighted_signals.loc[:, (category, slice(None))]
+    ws_aligned, ret_aligned = category_signals.align(returns_df, join="inner", axis=0)
 
-    # Align shapes
-    ws_aligned, ret_aligned = filtered_signals.align(returns_df, join="inner", axis=0)
-
-    # Flatten for metric calculation
-    predicted = ws_aligned.values.flatten()
+    predicted = (ws_aligned > threshold).astype(int).values.flatten()
     actual = (ret_aligned > 0).astype(int).values.flatten()
 
-    # Compute metrics
     precision = precision_score(actual, predicted, zero_division=0)
     recall = recall_score(actual, predicted, zero_division=0)
     f1 = f1_score(actual, predicted, zero_division=0)
@@ -73,25 +85,31 @@ def evaluate_signal_accuracy(weighted_signals, returns_df, category, threshold=0
     return {"precision": precision, "recall": recall, "f1_score": f1}
 
 
-def analyze_thresholds(weighted_signals, returns_df, thresholds, category):
+def analyze_thresholds(
+    weighted_signals: pd.DataFrame,
+    returns_df: pd.DataFrame,
+    thresholds: List[float],
+    category: str,
+) -> Dict[str, List[float]]:
     """
-    Analyze thresholds for a specific category ('bullish' or 'bearish').
+    Analyze performance metrics for various thresholds for a specific category.
 
     Args:
-        weighted_signals (pd.DataFrame): MultiIndex weighted signals.
-        returns_df (pd.DataFrame): Actual stock returns.
-        thresholds (list or np.array): List of thresholds to analyze.
+        weighted_signals (pd.DataFrame): MultiIndex DataFrame (date x [Category, Ticker]).
+        returns_df (pd.DataFrame): Actual stock returns (date x ticker).
+        thresholds (list): Threshold values to evaluate.
         category (str): 'bullish' or 'bearish'.
 
     Returns:
-        dict: Metrics for each threshold.
+        dict: Metrics {"F1-Score", "Precision", "Recall"} for each threshold.
     """
     metrics = {"F1-Score": [], "Precision": [], "Recall": []}
+    category_signals = weighted_signals.loc[:, (category, slice(None))]
 
     for threshold in thresholds:
         try:
             accuracy_metrics = evaluate_signal_accuracy(
-                weighted_signals, returns_df, category, threshold
+                category_signals, returns_df, category, threshold
             )
             metrics["F1-Score"].append(accuracy_metrics["f1_score"])
             metrics["Precision"].append(accuracy_metrics["precision"])
@@ -105,42 +123,39 @@ def analyze_thresholds(weighted_signals, returns_df, thresholds, category):
     return metrics
 
 
-def simulate_strategy_returns(weighted_signals, returns_df, threshold=0.0):
+def simulate_strategy_returns(
+    weighted_signals: pd.DataFrame,
+    returns_df: pd.DataFrame,
+    buy_threshold: float = 0.0,
+    sell_threshold: float = 0.0,
+) -> Dict[str, pd.Series]:
     """
-    Simulate strategy returns for bullish and bearish signals.
+    Simulates strategy returns based on thresholds for bullish and bearish signals.
+
     Args:
-        weighted_signals (pd.DataFrame): Weighted signals (date x (category, ticker)).
-        returns_df (pd.DataFrame): Actual returns (date x ticker).
-        threshold (float): Threshold for binary classification.
+        weighted_signals (pd.DataFrame): MultiIndex DataFrame (date x [Category, Ticker]).
+        returns_df (pd.DataFrame): Actual stock returns (date x ticker).
+        buy_threshold (float): Threshold for bullish signals.
+        sell_threshold (float): Threshold for bearish signals.
 
     Returns:
-        dict: Cumulative returns for follow_all, ignore_all, partial_adherence.
+        dict: Strategies {"follow_all", "avoid_bearish", "partial_adherence"} with cumulative returns.
     """
-    # Align DataFrames
-    ws_aligned, ret_aligned = weighted_signals.align(returns_df, join="inner", axis=0)
+    bullish_signals = weighted_signals.loc[:, ("bullish", slice(None))]
+    bearish_signals = weighted_signals.loc[:, ("bearish", slice(None))]
 
-    # Flatten MultiIndex columns to Ticker level
-    ws_aligned.columns = ws_aligned.columns.get_level_values("Ticker")
+    buy_signals = (bullish_signals > buy_threshold).astype(int)
+    sell_signals = (bearish_signals > sell_threshold).astype(int)
 
-    # Apply threshold to create binary signals
-    predicted_binary = (ws_aligned > threshold).astype(int)
+    buy_signals, ret_aligned = buy_signals.align(returns_df, join="inner", axis=1)
+    sell_signals, _ = sell_signals.align(returns_df, join="inner", axis=1)
 
-    # Align binary predictions and returns
-    predicted_binary, ret_aligned = predicted_binary.align(
-        ret_aligned, join="inner", axis=1
-    )
+    follow_all_daily = (buy_signals * ret_aligned).sum(axis=1)
+    avoid_bearish_daily = ((1 - sell_signals) * buy_signals * ret_aligned).sum(axis=1)
+    partial_daily = ((1 - 0.5 * sell_signals) * buy_signals * ret_aligned).sum(axis=1)
 
-    # Calculate strategy returns
-    follow_all_daily = (predicted_binary * ret_aligned).sum(axis=1)
-    ignore_all_daily = ((1 - predicted_binary) * ret_aligned).sum(axis=1)
-    partial_daily = (
-        0.5 * predicted_binary * ret_aligned
-        + 0.5 * (1 - predicted_binary) * ret_aligned
-    ).sum(axis=1)
-
-    # Cumulative returns
     return {
         "follow_all": follow_all_daily.cumsum(),
-        "ignore_all": ignore_all_daily.cumsum(),
+        "avoid_bearish": avoid_bearish_daily.cumsum(),
         "partial_adherence": partial_daily.cumsum(),
     }

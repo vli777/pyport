@@ -1,3 +1,8 @@
+from typing import List, Tuple
+
+import pandas as pd
+
+
 def filter_symbols_with_signals(
     price_df, returns_df, generate_signals_fn, mean_reversion_fn, config
 ):
@@ -56,10 +61,10 @@ def filter_symbols_with_signals(
 
 
 def filter_signals_by_threshold(
-    weighted_signals,
-    buy_threshold=1.0,
-    sell_threshold=1.0,
-):
+    weighted_signals: pd.DataFrame,
+    buy_threshold: float = 1.0,
+    sell_threshold: float = 1.0,
+) -> Tuple[List[str], List[str]]:
     """
     Filters buy and sell signals based on thresholds, separately for bullish and bearish categories.
 
@@ -71,18 +76,22 @@ def filter_signals_by_threshold(
     Returns:
         tuple: (buy_signal_tickers, sell_signal_tickers)
     """
-    # Separate bullish and bearish signals
-    bullish_signals = weighted_signals.loc[:, "bullish"]
-    bearish_signals = weighted_signals.loc[:, "bearish"]
+    # Extract bullish and bearish signals
+    bullish_signals = weighted_signals.loc[:, ("bullish", slice(None))]
+    bearish_signals = weighted_signals.loc[:, ("bearish", slice(None))]
 
-    # Identify buy tickers: bullish signals above buy_threshold
-    buy_signal_tickers = bullish_signals.columns[
-        bullish_signals.max(axis=0) > buy_threshold
-    ].tolist()
+    # Identify buy tickers: max value of bullish signals > buy_threshold
+    buy_signal_tickers = (
+        bullish_signals.columns[bullish_signals.max(axis=0) > buy_threshold]
+        .get_level_values("Ticker")
+        .tolist()
+    )
 
-    # Identify sell tickers: bearish signals above sell_threshold
-    sell_signal_tickers = bearish_signals.columns[
-        bearish_signals.max(axis=0) > sell_threshold
-    ].tolist()
+    # Identify sell tickers: max value of bearish signals > sell_threshold
+    sell_signal_tickers = (
+        bearish_signals.columns[bearish_signals.max(axis=0) > sell_threshold]
+        .get_level_values("Ticker")
+        .tolist()
+    )
 
     return buy_signal_tickers, sell_signal_tickers
