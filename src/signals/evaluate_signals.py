@@ -1,3 +1,4 @@
+import sys
 from typing import Dict, List, Union
 import numpy as np
 import pandas as pd
@@ -71,25 +72,55 @@ def evaluate_signal_accuracy(
 ) -> Dict[str, float]:
     """
     Evaluate signal accuracy using precision, recall, and F1-score.
-
-    Args:
-        category_signals (pd.DataFrame): Signals for a specific category (date x ticker) with flat columns.
-        returns_df (pd.DataFrame): Actual stock returns (date x ticker).
-        threshold (float): Signal threshold for classification.
-
-    Returns:
-        dict: {"precision": float, "recall": float, "f1_score": float}
     """
+    # Assign the same index name to both DataFrames if not already set
+    if category_signals.index.name != "Date":
+        category_signals.index.name = "Date"
+        # print("Assigned 'Date' as the index name for category_signals.")
+
+    if returns_df.index.name != "Date":
+        returns_df.index.name = "Date"
+        # print("Assigned 'Date' as the index name for returns_df.")
+
+    # Ensure indices are datetime
+    if not pd.api.types.is_datetime64_any_dtype(category_signals.index):
+        category_signals.index = pd.to_datetime(category_signals.index)
+        # print("Converted category_signals index to datetime.")
+
+    if not pd.api.types.is_datetime64_any_dtype(returns_df.index):
+        returns_df.index = pd.to_datetime(returns_df.index)
+        # print("Converted returns_df index to datetime.")
+
+    # Debugging: Print index types
+    # print(f"Category Signals Index Type: {category_signals.index.dtype}")
+    # print(f"Returns DF Index Type: {returns_df.index.dtype}")
+
+    # Debugging: Check overlapping dates
+    # overlapping_dates = category_signals.index.intersection(returns_df.index)
+    # print(f"Number of overlapping dates: {len(overlapping_dates)}")
+    # if len(overlapping_dates) == 0:
+    #     print("No overlapping dates between category_signals and returns_df.")
+    #     raise ValueError("No overlapping dates between category_signals and returns_df.")
+    # else:
+    #     print(f"Sample overlapping dates:\n{overlapping_dates[:5]}")
+
     # Apply threshold to create binary signals
     binary_signals = (category_signals > threshold).astype(int)
 
+    # Flatten the MultiIndex columns to single-level (Ticker)
+    binary_signals.columns = binary_signals.columns.get_level_values("Ticker")
+
     # Align on dates (axis=0) and tickers (axis=1)
     binary_signals_aligned, ret_aligned = binary_signals.align(
-        returns_df, join="inner", axis=0  # Align on dates
+        returns_df, join="inner", axis=0  # Align on dates first
     )
     binary_signals_aligned, ret_aligned = binary_signals_aligned.align(
-        ret_aligned, join="inner", axis=1  # Align on tickers
+        ret_aligned, join="inner", axis=1  # Then align on tickers
     )
+
+    # Debugging: Print aligned DataFrame shapes
+    # print(f"Aligned Binary Signals Shape: {binary_signals_aligned.shape}")
+    # print(f"Aligned Returns Shape: {ret_aligned.shape}")
 
     # Handle NaNs by filling with 0
     binary_signals_aligned = binary_signals_aligned.fillna(0)
@@ -101,6 +132,9 @@ def evaluate_signal_accuracy(
 
     # Ensure consistent lengths
     if len(predicted) != len(actual):
+        print(
+            f"Predicted and actual signal lengths mismatch: {len(predicted)} vs {len(actual)}"
+        )
         raise ValueError(
             f"Predicted and actual signal lengths mismatch: {len(predicted)} vs {len(actual)}"
         )
@@ -109,6 +143,8 @@ def evaluate_signal_accuracy(
     precision = precision_score(actual, predicted, zero_division=0)
     recall = recall_score(actual, predicted, zero_division=0)
     f1 = f1_score(actual, predicted, zero_division=0)
+
+    # print(f"Signal Accuracy Metrics - Precision: {precision}, Recall: {recall}, F1-Score: {f1}")
 
     return {"precision": precision, "recall": recall, "f1_score": f1}
 
@@ -180,6 +216,9 @@ def analyze_thresholds(
     Returns:
         dict: Metrics {"F1-Score", "Precision", "Recall"} for each threshold.
     """
+    print(f"\nAnalyzing thresholds for category: '{category}'")
+    print(f"Total thresholds to evaluate: {len(thresholds)}")
+
     # Validate category exists in the DataFrame
     if category not in weighted_signals.columns.get_level_values(0):
         raise ValueError(f"Category '{category}' not found in weighted_signals.")
@@ -198,6 +237,9 @@ def analyze_thresholds(
             metrics["F1-Score"].append(accuracy_metrics["f1_score"])
             metrics["Precision"].append(accuracy_metrics["precision"])
             metrics["Recall"].append(accuracy_metrics["recall"])
+            print(
+                f"Threshold {threshold:.6f}: F1-Score={accuracy_metrics['f1_score']:.4f}, Precision={accuracy_metrics['precision']:.4f}, Recall={accuracy_metrics['recall']:.4f}"
+            )
         except Exception as e:
             print(f"Error at threshold {threshold}: {e}")
             metrics["F1-Score"].append(np.nan)

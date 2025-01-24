@@ -25,7 +25,14 @@ def plot_threshold_metrics(
             "Recall": metrics.get("Recall", []),
         }
     )
-    print(results_df.head(), results_df.shape)
+    print("\nMetrics DataFrame Head:\n", results_df.head())
+    print("Metrics DataFrame Shape:", results_df.shape)
+
+    # Drop rows where all metrics are NaN
+    results_df.dropna(
+        subset=["F1-Score", "Precision", "Recall"], how="all", inplace=True
+    )
+
     # Convert to long-form for Seaborn
     results_long = results_df.melt(
         id_vars=["threshold"],
@@ -33,6 +40,13 @@ def plot_threshold_metrics(
         var_name="Metric",
         value_name="Value",
     )
+
+    # Remove NaN values to prevent plotting issues
+    results_long.dropna(subset=["Value"], inplace=True)
+
+    if results_long.empty:
+        print("No data available to plot after removing NaN values.")
+        return
 
     # Plot with Seaborn
     sns.set(style="whitegrid")

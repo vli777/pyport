@@ -99,3 +99,34 @@ def verify_weighted_signals(weighted_signals: pd.DataFrame):
         )
     else:
         print("Verification Passed: 'weighted_signals' is free of NaNs.")
+
+
+def verify_ticker_consistency(weighted_signals: pd.DataFrame, returns_df: pd.DataFrame):
+    """
+    Verifies that tickers in weighted_signals match those in returns_df.
+
+    Args:
+        weighted_signals (pd.DataFrame): MultiIndex DataFrame (date x [Category, Ticker]).
+        returns_df (pd.DataFrame): Actual stock returns (date x ticker).
+
+    Raises:
+        ValueError: If there are mismatched tickers.
+    """
+    tickers_weighted = set(weighted_signals.columns.get_level_values("Ticker"))
+    tickers_returns = set(returns_df.columns)
+
+    missing_in_returns = tickers_weighted - tickers_returns
+    missing_in_weighted = tickers_returns - tickers_weighted
+
+    if missing_in_returns:
+        raise ValueError(
+            f"Tickers present in weighted_signals but missing in returns_df: {missing_in_returns}"
+        )
+    if missing_in_weighted:
+        print(
+            f"Warning: Tickers present in returns_df but missing in weighted_signals: {missing_in_weighted}"
+        )
+    else:
+        print(
+            "Ticker consistency verified: All tickers in weighted_signals are present in returns_df."
+        )

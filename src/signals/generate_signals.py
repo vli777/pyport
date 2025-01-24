@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 
 from signals.technicals import (
@@ -10,7 +11,11 @@ from signals.technicals import (
     generate_adx_signals,
     generate_convergence_signals,
 )
-from signals.weighted_signals import calculate_weighted_signals, verify_weighted_signals
+from signals.weighted_signals import (
+    calculate_weighted_signals,
+    verify_ticker_consistency,
+    verify_weighted_signals,
+)
 from filters.filter_with_signals import filter_signals_by_threshold
 from signals.tuner import run_optuna_optimization
 from signals.evaluate_signals import analyze_thresholds
@@ -57,8 +62,8 @@ def generate_signals(price_df, returns_df, plot=False):
     }
 
     # Set thresholds found from optuna plot
-    buy_threshold = 5.0
-    sell_threshold = 3.5
+    buy_threshold = 1.0
+    sell_threshold = 1.0
 
     # signals: dict of {signal_name: DataFrame}, each DataFrame is date x ticker
     # returns_df: DataFrame, date x ticker
@@ -90,6 +95,7 @@ def generate_signals(price_df, returns_df, plot=False):
 
     # Verify the integrity of weighted_signals
     verify_weighted_signals(final_weighted_signals)
+    verify_ticker_consistency(final_weighted_signals, returns_df)
 
     if plot:
         # Flatten all signal values
