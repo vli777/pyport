@@ -3,7 +3,6 @@
 from pathlib import Path
 import logging
 from typing import Any, Dict, List, Optional
-
 import pandas as pd
 
 from config import Config
@@ -12,10 +11,10 @@ from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
 from signals.reversion import apply_mean_reversion
-from signals.weighted_signals import generate_signals
-from utils.filter import filter_symbols_with_signals
-from utils.anomaly_detection import remove_anomalous_stocks
-from utils.decorrelation import filter_correlated_groups
+from filters.anomaly_detection import remove_anomalous_stocks
+from filters.decorrelation import filter_correlated_groups
+from filters.filter_with_signals import filter_symbols_with_signals
+from signals.generate_signals import generate_signals
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -104,6 +103,7 @@ def run_pipeline(
     # Filter overbought, oversold
     filtered_symbols = filter_symbols_with_signals(
         price_df=df_all,
+        returns_df=returns_df,
         generate_signals_fn=generate_signals,  # Function for technical indicators
         mean_reversion_fn=apply_mean_reversion,  # Function for mean reversion
         config=config,  # Configuration object
