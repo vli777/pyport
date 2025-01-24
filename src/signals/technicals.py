@@ -367,3 +367,37 @@ def generate_adx_signals(adx_df, adx_threshold=25):
     return adx_trending.astype(
         int
     )  # Convert boolean to integer (1 for True, 0 for False)
+
+
+def calculate_stoch_buy_persistence(stoch_buy_signal, x=None):
+    """
+    Calculate stoch_buy_persistence as a binary indicator.
+
+    Args:
+        stoch_buy_signal (pd.DataFrame): DataFrame of stochastic %K values for tickers.
+        x (int): Minimum consecutive days for persistence (default: empirical calculation).
+
+    Returns:
+        pd.DataFrame: Binary DataFrame indicating persistent oversold conditions.
+    """
+    # Determine default x if not provided
+    if x is None:
+        avg_persistence = (
+            (stoch_buy_signal < 20)
+            .astype(int)
+            .apply(lambda col: col.groupby((col == 0).cumsum()).sum().mean(), axis=0)
+            .mean()
+        )
+        x = int(round(avg_persistence))
+
+    # Calculate persistence column-wise
+    def compute_persistence(col):
+        rolling_persistence = (col < 20).astype(int).rolling(
+            window=x, min_periods=x
+        ).sum() == x
+        return rolling_persistence.astype(int)
+
+    # Apply persistence calculation to each column
+    stoch_buy_persistence = stoch_buy_signal.apply(compute_persistence, axis=0)
+
+    return stoch_buy_persistence
