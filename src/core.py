@@ -29,9 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_pipeline(
-    config: Config,
-    symbols_override: Optional[List[str]] = None,
-    run_local: bool = True
+    config: Config, symbols_override: Optional[List[str]] = None, run_local: bool = True
 ) -> Dict[str, Any]:
     """
     Orchestrates the data loading, optimization, and analysis pipeline.
@@ -54,13 +52,19 @@ def run_pipeline(
         if symbols_override:
             validate_symbols_override(symbols_override)
             return symbols_override
-        watchlist_paths = [Path(config.input_files_dir) / file for file in config.input_files]
+        watchlist_paths = [
+            Path(config.input_files_dir) / file for file in config.input_files
+        ]
         symbols = process_input_files(watchlist_paths)
         logger.info(f"Loaded symbols from watchlists: {symbols}")
         return symbols
 
-    def load_data(all_symbols: List[str], start_date: pd.Timestamp, end_date: pd.Timestamp) -> pd.DataFrame:
-        logger.debug(f"Loading data for symbols: {all_symbols} from {start_date} to {end_date}")
+    def load_data(
+        all_symbols: List[str], start_date: pd.Timestamp, end_date: pd.Timestamp
+    ) -> pd.DataFrame:
+        logger.debug(
+            f"Loading data for symbols: {all_symbols} from {start_date} to {end_date}"
+        )
         return process_symbols(
             symbols=all_symbols,
             start_date=start_date,
@@ -86,9 +90,13 @@ def run_pipeline(
         }
         average_weights = stacked_output(processed_stack)
         if not average_weights:
-            logger.warning("No valid averaged weights found. Skipping further processing.")
+            logger.warning(
+                "No valid averaged weights found. Skipping further processing."
+            )
             return {}
-        sorted_weights = dict(sorted(average_weights.items(), key=lambda item: item[1], reverse=True))
+        sorted_weights = dict(
+            sorted(average_weights.items(), key=lambda item: item[1], reverse=True)
+        )
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
         return normalized_weights
 
@@ -115,7 +123,9 @@ def run_pipeline(
     # Step 4: Load and preprocess data
     df_all = load_data(all_symbols, start_long, end_long)
     returns_df = preprocess_data(df_all)
-    performance_metrics = calculate_performance_metrics(returns_df, risk_free_rate=config.risk_free_rate)
+    performance_metrics = calculate_performance_metrics(
+        returns_df, risk_free_rate=config.risk_free_rate
+    )
 
     # Step 5: Filter symbols based on signals and performance
     filtered_symbols = filter_symbols_with_signals(
@@ -136,14 +146,22 @@ def run_pipeline(
     logger.info(f"Symbols selected for optimization: {filtered_decorrelated}")
 
     # Update dfs with relevant data
-    dfs.update({"data": df_all.xs("Adj Close", level=1, axis=1), "start": start_long, "end": end_long})
+    dfs.update(
+        {
+            "data": df_all.xs("Adj Close", level=1, axis=1),
+            "start": start_long,
+            "end": end_long,
+        }
+    )
 
     # Step 6: Iterate through each time period and perform optimization
     for period in sorted_time_periods:
         start, end = calculate_start_end_dates(period)
         logger.debug(f"Processing period: {period} from {start} to {end}")
 
-        df_period = returns_df.loc[start:end].copy()
+        # Slice price data for the period
+        df_period = df_all.loc[start:end].copy()
+         
         dfs["start"] = min(dfs["start"], start)
         dfs["end"] = max(dfs["end"], end)
 
@@ -151,16 +169,18 @@ def run_pipeline(
             df_period.to_csv("full_df.csv")
             visible_length = int(len(df_period) * config.test_data_visible_pct)
             df_period = df_period.head(visible_length)
-            logger.info(f"Test mode active: saved full_df.csv and limited data to {visible_length} records.")
+            logger.info(
+                f"Test mode active: saved full_df.csv and limited data to {visible_length} records."
+            )
 
         run_optimization_and_save(
-            df_adj=df_period,
+            df=df_period,
             config=config,
             start_date=start,
             end_date=end,
             symbols=filtered_decorrelated,
             stack=stack,
-            time_period=period,
+            years=period,
         )
 
     if not stack:
@@ -173,7 +193,9 @@ def run_pipeline(
         return {}
 
     # Step 8: Prepare output data
-    valid_models = [model for models in config.models.values() if models for model in models]
+    valid_models = [
+        model for models in config.models.values() if models for model in models
+    ]
     combined_models = ", ".join(sorted(set(valid_models)))
     combined_input_files = ", ".join(config.input_files)
 
@@ -193,7 +215,7 @@ def run_pipeline(
     sorted_symbols = sorted(
         daily_returns.columns,
         key=lambda symbol: normalized_avg_weights.get(symbol, 0),
-        reverse=True
+        reverse=True,
     )
 
     # Step 9: Optional plotting

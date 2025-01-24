@@ -123,23 +123,15 @@ def evaluate_signal_accuracy(
         target_aligned, join="inner", axis=1
     )
 
-    # Debugging: Print aligned DataFrame shapes
-    # print(f"Aligned Binary Signals Shape: {binary_signals_aligned.shape}")
-    # print(f"Aligned Returns Shape: {ret_aligned.shape}")
-
     # Handle NaNs by filling with 0
     binary_signals_aligned = binary_signals_aligned.fillna(0)
-    ret_aligned = ret_aligned.fillna(0)
-
+    target_aligned = target_aligned.fillna(0)
     # Flatten predicted vs. actual
     predicted = binary_signals_aligned.values.flatten()
-    actual = (ret_aligned > 0).astype(int).values.flatten()
+    actual = (target_aligned > 0).astype(int).values.flatten()
 
     # Ensure consistent lengths
     if len(predicted) != len(actual):
-        print(
-            f"Predicted and actual signal lengths mismatch: {len(predicted)} vs {len(actual)}"
-        )
         raise ValueError(
             f"Predicted and actual signal lengths mismatch: {len(predicted)} vs {len(actual)}"
         )
@@ -148,8 +140,6 @@ def evaluate_signal_accuracy(
     precision = precision_score(actual, predicted, zero_division=0)
     recall = recall_score(actual, predicted, zero_division=0)
     f1 = f1_score(actual, predicted, zero_division=0)
-
-    # print(f"Signal Accuracy Metrics - Precision: {precision}, Recall: {recall}, F1-Score: {f1}")
 
     return {"precision": precision, "recall": recall, "f1_score": f1}
 
