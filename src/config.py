@@ -18,8 +18,8 @@ class ModelConfig:
 
 @dataclass
 class Config:
-    folder: str
-    input_files_folder: str
+    data_dir: str
+    input_files_dir: str
     input_files: List[str]
     models: Dict[str, List[str]]
     download: bool
@@ -54,12 +54,17 @@ class Config:
         with open(config_file, "r") as f:
             config_dict = yaml.safe_load(f)
 
+        data_dir = config_dict["data_dir"]
+        input_files_dir = config_dict.get("input_files_dir", "watchlists")
+        os.makedirs(data_dir, exist_ok=True)
+        os.makedirs(input_files_dir, exist_ok=True)
+        
         # Parse model config
         model_config = ModelConfig(**config_dict.get("model_config", {}))
 
         return cls(
-            folder=config_dict["folder"],
-            input_files_folder=config_dict.get("input_files_folder", "watchlists"),
+            data_dir=config_dict["data_dir"],
+            input_files_dir=config_dict.get("input_files_dir", "watchlists"),
             input_files=config_dict["input_files"],
             models=config_dict["models"],
             download=config_dict.get("download", False),

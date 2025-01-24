@@ -1,5 +1,5 @@
-folder: str  # Path to the data folder
-input_files_folder: str  # Folder for input files
+data_dir: str  # Path to the data folder
+input_files_dir: str  # Folder for input files
 input_files:
   - str  # Name of the input file
   # - str  # Additional file names for switching
