@@ -109,8 +109,8 @@ def objective(
 
     # Combine returns with appropriate weights
     combined_returns = (
-        (final_return_follow_all + final_return_avoid_bearish + final_return_partial) / 3
-    )
+        final_return_follow_all + final_return_avoid_bearish + final_return_partial
+    ) / 3
 
     # Combine F1 and returns into a single score
     score = 0.7 * combined_f1 + 0.3 * combined_returns

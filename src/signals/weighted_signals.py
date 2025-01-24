@@ -94,6 +94,8 @@ def verify_weighted_signals(weighted_signals: pd.DataFrame):
     if weighted_signals.isnull().values.any():
         print("Error: 'weighted_signals' contains NaN values.")
         print(weighted_signals.isnull().sum())
-        raise ValueError("NaN values detected in 'weighted_signals'. Please check signal processing steps.")
+        raise ValueError(
+            "NaN values detected in 'weighted_signals'. Please check signal processing steps."
+        )
     else:
         print("Verification Passed: 'weighted_signals' is free of NaNs.")
