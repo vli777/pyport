@@ -85,20 +85,41 @@ def run_pipeline(
         )
 
     def perform_post_processing(stack_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Perform post-processing on the stack data to calculate normalized weights.
+
+        Args:
+            stack_data (Dict[str, Any]): The stack data containing optimization results.
+
+        Returns:
+            Dict[str, Any]: Normalized weights as a dictionary.
+        """
+        # Convert pd.Series to dictionaries if necessary
         processed_stack = {
             key: (value.to_dict() if isinstance(value, pd.Series) else value)
             for key, value in stack_data.items()
         }
+
+        # Compute averaged weights
         average_weights = stacked_output(processed_stack)
         if not average_weights:
             logger.warning(
                 "No valid averaged weights found. Skipping further processing."
             )
             return {}
+
+        # Sort weights in descending order
         sorted_weights = dict(
             sorted(average_weights.items(), key=lambda item: item[1], reverse=True)
         )
+
+        # Normalize weights and convert to a dictionary if necessary
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
+
+        # Ensure output is a dictionary
+        if isinstance(normalized_weights, pd.Series):
+            normalized_weights = normalized_weights.to_dict()
+
         return normalized_weights
 
     # Step 1: Load and validate symbols
@@ -198,11 +219,11 @@ def run_pipeline(
         logger.warning("No optimization results found.")
         return {}
 
-    # Step 7: Post-processing of optimization results
+    # Step 7: Post-processing of optimization results 
     normalized_avg_weights = perform_post_processing(stack)
     if not normalized_avg_weights:
         return {}
-
+   
     # Step 8: Prepare output data
     valid_models = [
         model for models in config.models.values() if models for model in models
