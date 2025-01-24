@@ -71,6 +71,9 @@ def generate_signals(price_df, returns_df, plot=False):
         sell_threshold=sell_threshold,
     )
 
+    print(f"\nbest weights: {best_signal_weights}")
+    print(f"best score {best_score}\n")
+
     # Use the best parameters to calculate final weighted signals
     optimal_signal_weights = {
         name.replace("weight_", ""): w

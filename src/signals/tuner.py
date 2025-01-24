@@ -1,4 +1,6 @@
+from typing import Dict
 import optuna
+import pandas as pd
 
 from signals.evaluate_signals import (
     evaluate_signal_accuracy,
@@ -8,14 +10,27 @@ from signals.evaluate_signals import (
 from signals.weighted_signals import calculate_weighted_signals
 
 
-def objective(trial, signals, returns_df, buy_threshold=0.0, sell_threshold=0.0):
+def objective(
+    trial,
+    signals: Dict[str, pd.DataFrame],
+    returns_df: pd.DataFrame,
+    buy_threshold: float = 5.0,
+    sell_threshold: float = 3.5,
+) -> float:
     """
-    The Optuna objective function for MultiIndex signals with bullish and bearish categories.
-    - Suggest weights and decay parameters.
-    - Process each category ('bullish', 'bearish') separately.
-    - Return a combined score (F1 + returns).
+    Optuna objective function to optimize signal weights.
+
+    Args:
+        trial: Optuna trial object.
+        signals (Dict[str, pd.DataFrame]): Dictionary of signal DataFrames.
+        returns_df (pd.DataFrame): DataFrame of actual stock returns.
+        buy_threshold (float, optional): Threshold for bullish signals.
+        sell_threshold (float, optional): Threshold for bearish signals.
+
+    Returns:
+        float: Combined score based on F1 and returns.
     """
-    # Suggest decay type (categorical: linear, exponential, or none)
+    # Suggest decay type
     decay = trial.suggest_categorical("decay", ["linear", "exponential", None])
 
     # Suggest weights for each signal
@@ -32,46 +47,72 @@ def objective(trial, signals, returns_df, buy_threshold=0.0, sell_threshold=0.0)
         weight_decay=decay,
     )
 
-    # Initialize scores for both categories
-    combined_f1 = 0.0
-    combined_returns = 0.0
+    # Process bullish signals
+    buy_signals = process_multiindex_signals(weighted_signals, "bullish", buy_threshold)
 
-    for category, threshold in [
-        ("bullish", buy_threshold),
-        ("bearish", sell_threshold),
-    ]:
-        # Process signals for the current category
-        category_signals = process_multiindex_signals(
-            weighted_signals, category, threshold
-        )
+    # Process bearish signals
+    sell_signals = process_multiindex_signals(
+        weighted_signals, "bearish", sell_threshold
+    )
 
-        # Evaluate F1 score for the category
-        accuracy_metrics = evaluate_signal_accuracy(
-            weighted_signals=category_signals,
+    # Check if there are any buy or sell signals
+    if buy_signals.empty and sell_signals.empty:
+        print("Warning: No buy or sell signals found.")
+        return 0.0  # Or another appropriate default score
+
+    # Evaluate metrics for bullish signals
+    if not buy_signals.empty:
+        bullish_metrics = evaluate_signal_accuracy(
+            category_signals=buy_signals,
             returns_df=returns_df,
-            threshold=threshold,
+            threshold=buy_threshold,
         )
-        f1 = accuracy_metrics["f1_score"]
+    else:
+        bullish_metrics = {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
 
-        # Simulate strategy returns for the category
-        strategy_perf = simulate_strategy_returns(
-            category_signals,
-            returns_df,
-            buy_threshold=buy_threshold,
-            sell_threshold=sell_threshold,
+    # Evaluate metrics for bearish signals
+    if not sell_signals.empty:
+        bearish_metrics = evaluate_signal_accuracy(
+            category_signals=sell_signals,
+            returns_df=returns_df,
+            threshold=sell_threshold,
         )
-        final_return = (
-            strategy_perf["follow_all"].iloc[-1]
-            if not strategy_perf["follow_all"].empty
-            else 0.0
-        )
+    else:
+        bearish_metrics = {"precision": 0.0, "recall": 0.0, "f1_score": 0.0}
 
-        # Combine scores
-        combined_f1 += 0.5 * f1
-        combined_returns += 0.5 * final_return
+    # Combine F1 scores
+    combined_f1 = 0.5 * bullish_metrics["f1_score"] + 0.5 * bearish_metrics["f1_score"]
+
+    # Simulate strategies
+    strategy_perf = simulate_strategy_returns(
+        buy_signals=buy_signals,
+        sell_signals=sell_signals,
+        returns_df=returns_df,
+    )
+
+    # Extract final cumulative returns
+    final_return_follow_all = (
+        strategy_perf["follow_all"].iloc[-1]
+        if not strategy_perf["follow_all"].empty
+        else 0.0
+    )
+    final_return_avoid_bearish = (
+        strategy_perf["avoid_bearish"].iloc[-1]
+        if not strategy_perf["avoid_bearish"].empty
+        else 0.0
+    )
+    final_return_partial = (
+        strategy_perf["partial_adherence"].iloc[-1]
+        if not strategy_perf["partial_adherence"].empty
+        else 0.0
+    )
+
+    # Combine returns (adjust weights as needed)
+    combined_returns = 0.5 * final_return_follow_all + 0.5 * final_return_avoid_bearish
 
     # Combine F1 and returns into a single score
     score = 0.7 * combined_f1 + 0.3 * combined_returns
+
     return score
 
 

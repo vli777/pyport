@@ -39,50 +39,127 @@ def process_multiindex_signals(
     Returns:
         pd.DataFrame: Binary signals (date x ticker) after threshold filtering.
     """
+    # Validate category
+    if category not in weighted_signals.columns.get_level_values(0):
+        raise ValueError(f"Category '{category}' not found in weighted_signals.")
+
+    # Extract category-specific columns
     category_signals = weighted_signals.loc[:, (category, slice(None))]
 
     if isinstance(threshold, dict):
+        # Apply ticker-specific thresholds
         filtered_signals = category_signals.copy()
         for ticker, ticker_threshold in threshold.items():
-            if ticker in category_signals.columns:
-                filtered_signals[ticker] = (
-                    category_signals[ticker] > ticker_threshold
+            if ticker in category_signals.columns.get_level_values(1):
+                filtered_signals.loc[:, (category, ticker)] = (
+                    category_signals.loc[:, (category, ticker)] > ticker_threshold
                 ).astype(int)
+            else:
+                print(f"Warning: Ticker '{ticker}' not found in category '{category}'.")
     else:
+        # Apply a single threshold across all tickers
         filtered_signals = (category_signals > threshold).astype(int)
 
-    return filtered_signals
+    # Remove the category level to flatten columns
+    filtered_signals_flat = filtered_signals.xs(key=category, axis=1, level="Category")
+
+    return filtered_signals_flat
 
 
 def evaluate_signal_accuracy(
-    weighted_signals: pd.DataFrame,
-    returns_df: pd.DataFrame,
-    category: str,
-    threshold: float,
+    category_signals: pd.DataFrame, returns_df: pd.DataFrame, threshold: float = 0.0
 ) -> Dict[str, float]:
     """
-    Evaluates precision, recall, and F1-score for a given category and threshold.
+    Evaluate signal accuracy using precision, recall, and F1-score.
 
     Args:
-        weighted_signals (pd.DataFrame): MultiIndex DataFrame (date x [Category, Ticker]).
+        category_signals (pd.DataFrame): Signals for a specific category (date x ticker) with flat columns.
         returns_df (pd.DataFrame): Actual stock returns (date x ticker).
-        category (str): 'bullish' or 'bearish'.
-        threshold (float): Threshold for binary classification.
+        threshold (float): Signal threshold for classification.
 
     Returns:
-        dict: Metrics {"precision", "recall", "f1_score"}.
+        dict: {"precision": float, "recall": float, "f1_score": float}
     """
-    category_signals = weighted_signals.loc[:, (category, slice(None))]
-    ws_aligned, ret_aligned = category_signals.align(returns_df, join="inner", axis=0)
+    # Apply threshold to create binary signals
+    binary_signals = (category_signals > threshold).astype(int)
 
-    predicted = (ws_aligned > threshold).astype(int).values.flatten()
+    # Align on dates (axis=0) and tickers (axis=1)
+    binary_signals_aligned, ret_aligned = binary_signals.align(
+        returns_df, join="inner", axis=0  # Align on dates
+    )
+    binary_signals_aligned, ret_aligned = binary_signals_aligned.align(
+        ret_aligned, join="inner", axis=1  # Align on tickers
+    )
+
+    # Handle NaNs by filling with 0
+    binary_signals_aligned = binary_signals_aligned.fillna(0)
+    ret_aligned = ret_aligned.fillna(0)
+
+    # Flatten predicted vs. actual
+    predicted = binary_signals_aligned.values.flatten()
     actual = (ret_aligned > 0).astype(int).values.flatten()
 
+    # Ensure consistent lengths
+    if len(predicted) != len(actual):
+        raise ValueError(
+            f"Predicted and actual signal lengths mismatch: {len(predicted)} vs {len(actual)}"
+        )
+
+    # Compute metrics
     precision = precision_score(actual, predicted, zero_division=0)
     recall = recall_score(actual, predicted, zero_division=0)
     f1 = f1_score(actual, predicted, zero_division=0)
 
     return {"precision": precision, "recall": recall, "f1_score": f1}
+
+
+def simulate_strategy_returns(
+    buy_signals: pd.DataFrame,
+    sell_signals: pd.DataFrame,
+    returns_df: pd.DataFrame,
+) -> Dict[str, pd.Series]:
+    """
+    Simulate strategy returns based on bullish and bearish signals.
+
+    Args:
+        buy_signals (pd.DataFrame): Binary buy signals (date x ticker).
+        sell_signals (pd.DataFrame): Binary sell signals (date x ticker).
+        returns_df (pd.DataFrame): Actual stock returns (date x ticker).
+
+    Returns:
+        dict: Cumulative returns for 'follow_all', 'avoid_bearish', and 'partial_adherence' strategies.
+    """
+    # Align buy_signals and sell_signals with returns_df on both dates and tickers
+    buy_signals_aligned, ret_aligned = buy_signals.align(
+        returns_df, join="inner", axis=0
+    )
+    buy_signals_aligned, ret_aligned = buy_signals_aligned.align(
+        ret_aligned, join="inner", axis=1
+    )
+    sell_signals_aligned, _ = sell_signals.align(returns_df, join="inner", axis=0)
+    sell_signals_aligned, _ = sell_signals_aligned.align(
+        ret_aligned, join="inner", axis=1
+    )
+
+    # Strategy 1: Follow all buy signals
+    follow_all_daily = (buy_signals_aligned * ret_aligned).sum(axis=1)
+
+    # Strategy 2: Avoid bearish signals
+    avoid_bearish_daily = (
+        (1 - sell_signals_aligned) * buy_signals_aligned * ret_aligned
+    ).sum(axis=1)
+
+    # Strategy 3: Partial adherence (50% reduction during bearish signals)
+    partial_daily = (
+        (1 - 0.5 * sell_signals_aligned) * buy_signals_aligned * ret_aligned
+    ).sum(axis=1)
+
+    # Cumulative returns
+    return {
+        "follow_all": follow_all_daily.cumsum(),
+        "avoid_bearish": avoid_bearish_daily.cumsum(),
+        "partial_adherence": partial_daily.cumsum(),
+    }
 
 
 def analyze_thresholds(
@@ -103,13 +180,20 @@ def analyze_thresholds(
     Returns:
         dict: Metrics {"F1-Score", "Precision", "Recall"} for each threshold.
     """
+    # Validate category exists in the DataFrame
+    if category not in weighted_signals.columns.get_level_values(0):
+        raise ValueError(f"Category '{category}' not found in weighted_signals.")
+
     metrics = {"F1-Score": [], "Precision": [], "Recall": []}
+
+    # Extract category-specific signals
     category_signals = weighted_signals.loc[:, (category, slice(None))]
 
     for threshold in thresholds:
         try:
+            # Evaluate accuracy metrics
             accuracy_metrics = evaluate_signal_accuracy(
-                category_signals, returns_df, category, threshold
+                category_signals, returns_df, threshold=threshold
             )
             metrics["F1-Score"].append(accuracy_metrics["f1_score"])
             metrics["Precision"].append(accuracy_metrics["precision"])
@@ -121,41 +205,3 @@ def analyze_thresholds(
             metrics["Recall"].append(np.nan)
 
     return metrics
-
-
-def simulate_strategy_returns(
-    weighted_signals: pd.DataFrame,
-    returns_df: pd.DataFrame,
-    buy_threshold: float = 0.0,
-    sell_threshold: float = 0.0,
-) -> Dict[str, pd.Series]:
-    """
-    Simulates strategy returns based on thresholds for bullish and bearish signals.
-
-    Args:
-        weighted_signals (pd.DataFrame): MultiIndex DataFrame (date x [Category, Ticker]).
-        returns_df (pd.DataFrame): Actual stock returns (date x ticker).
-        buy_threshold (float): Threshold for bullish signals.
-        sell_threshold (float): Threshold for bearish signals.
-
-    Returns:
-        dict: Strategies {"follow_all", "avoid_bearish", "partial_adherence"} with cumulative returns.
-    """
-    bullish_signals = weighted_signals.loc[:, ("bullish", slice(None))]
-    bearish_signals = weighted_signals.loc[:, ("bearish", slice(None))]
-
-    buy_signals = (bullish_signals > buy_threshold).astype(int)
-    sell_signals = (bearish_signals > sell_threshold).astype(int)
-
-    buy_signals, ret_aligned = buy_signals.align(returns_df, join="inner", axis=1)
-    sell_signals, _ = sell_signals.align(returns_df, join="inner", axis=1)
-
-    follow_all_daily = (buy_signals * ret_aligned).sum(axis=1)
-    avoid_bearish_daily = ((1 - sell_signals) * buy_signals * ret_aligned).sum(axis=1)
-    partial_daily = ((1 - 0.5 * sell_signals) * buy_signals * ret_aligned).sum(axis=1)
-
-    return {
-        "follow_all": follow_all_daily.cumsum(),
-        "avoid_bearish": avoid_bearish_daily.cumsum(),
-        "partial_adherence": partial_daily.cumsum(),
-    }
