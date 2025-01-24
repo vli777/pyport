@@ -71,9 +71,29 @@ def calculate_weighted_signals(
             rolling_sum.index = rolling_sum.index.astype(final_weighted.index.dtype)
             final_weighted.loc[:, ("bearish", slice(None))] += rolling_sum
         else:
-            print(f"Warning: Signal '{sig_name}' not classified as 'bullish' or 'bearish'.")
+            print(
+                f"Warning: Signal '{sig_name}' not classified as 'bullish' or 'bearish'."
+            )
 
     # Replace any remaining NaNs with 0
     final_weighted = final_weighted.fillna(0)
 
     return final_weighted
+
+
+def verify_weighted_signals(weighted_signals: pd.DataFrame):
+    """
+    Verifies that the weighted_signals DataFrame is correctly populated and free of NaNs.
+
+    Args:
+        weighted_signals (pd.DataFrame): MultiIndex DataFrame with ['Category', 'Ticker'] levels.
+
+    Raises:
+        ValueError: If any NaNs are found in the DataFrame.
+    """
+    if weighted_signals.isnull().values.any():
+        print("Error: 'weighted_signals' contains NaN values.")
+        print(weighted_signals.isnull().sum())
+        raise ValueError("NaN values detected in 'weighted_signals'. Please check signal processing steps.")
+    else:
+        print("Verification Passed: 'weighted_signals' is free of NaNs.")

@@ -67,7 +67,9 @@ def process_multiindex_signals(
 
 
 def evaluate_signal_accuracy(
-    category_signals: pd.DataFrame, returns_df: pd.DataFrame, threshold: float = 0.0
+    category_signals: pd.DataFrame, 
+    returns_df: pd.DataFrame, 
+    threshold: float = 0.0
 ) -> Dict[str, float]:
     """
     Evaluate signal accuracy using precision, recall, and F1-score.

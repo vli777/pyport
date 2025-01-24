@@ -10,7 +10,7 @@ from signals.technicals import (
     generate_adx_signals,
     generate_convergence_signals,
 )
-from signals.weighted_signals import calculate_weighted_signals
+from signals.weighted_signals import calculate_weighted_signals, verify_weighted_signals
 from filters.filter_with_signals import filter_signals_by_threshold
 from signals.tuner import run_optuna_optimization
 from signals.evaluate_signals import analyze_thresholds
@@ -87,6 +87,9 @@ def generate_signals(price_df, returns_df, plot=False):
         days=7,
         weight_decay="exponential",
     )
+
+    # Verify the integrity of weighted_signals
+    verify_weighted_signals(final_weighted_signals)
 
     if plot:
         # Flatten all signal values
