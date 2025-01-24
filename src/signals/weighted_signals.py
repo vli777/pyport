@@ -34,49 +34,62 @@ def calculate_weighted_signals(
             Each value represents the weighted signal strength for the given date,
             ticker, and category.
     """
+    # Combine all signals into a single MultiIndex DataFrame
     combined = pd.concat(signals, axis=1)
 
+    # Define decay weights
     if weight_decay == "linear":
-        w = np.linspace(1, 0.5, days)
+        decay_weights = np.linspace(1, 0.5, days)
     elif weight_decay == "exponential":
-        w = np.exp(-np.linspace(0, 1, days))
+        decay_weights = np.exp(-np.linspace(0, 1, days))
     else:
-        w = np.ones(days)
-    w /= w.max()
+        decay_weights = np.ones(days)
+    decay_weights /= decay_weights.sum()  # Normalize decay weights
 
+    # Define categories
     categories = ["bullish", "bearish"]
-    tickers = combined.columns.levels[1]
+    tickers = combined.columns.get_level_values(1).unique()
     final_weighted = pd.DataFrame(
-        0.0,  # Use 0.0 for float dtype
+        0.0,  # Initialize with zeros
         index=combined.index,
         columns=pd.MultiIndex.from_product(
             [categories, tickers], names=["Category", "Ticker"]
         ),
     )
 
+    # Process each signal
     for sig_name, wgt in signal_weights.items():
-        signal_df = combined[sig_name]
-        rolling_sum = pd.DataFrame(0, index=signal_df.index, columns=signal_df.columns)
+        if sig_name not in signals:
+            print(f"Warning: Signal '{sig_name}' not found in signals.")
+            continue
 
+        signal_df = signals[sig_name]
+        rolling_sum = pd.DataFrame(
+            0.0, index=signal_df.index, columns=signal_df.columns
+        )
+
+        # Apply rolling weighted sum
         for i in range(days):
-            shifted = signal_df.shift(i).fillna(0)
-            rolling_sum += shifted * w[i]
+            shifted = signal_df.shift(i).fillna(0)  # Shift signal for past days
+            rolling_sum += shifted * decay_weights[i]
 
+        # Apply signal weight
         rolling_sum *= wgt
 
+        # Assign to bullish or bearish category
         if sig_name in bullish_signals:
-            rolling_sum.index = rolling_sum.index.astype(final_weighted.index.dtype)
-            final_weighted.loc[:, ("bullish", slice(None))] += rolling_sum
+            for ticker in signal_df.columns:
+                final_weighted.loc[:, ("bullish", ticker)] += rolling_sum[ticker]
         elif sig_name in bearish_signals:
-            rolling_sum.index = rolling_sum.index.astype(final_weighted.index.dtype)
-            final_weighted.loc[:, ("bearish", slice(None))] += rolling_sum
+            for ticker in signal_df.columns:
+                final_weighted.loc[:, ("bearish", ticker)] += rolling_sum[ticker]
         else:
             print(
                 f"Warning: Signal '{sig_name}' not classified as 'bullish' or 'bearish'."
             )
 
-    # Replace any remaining NaNs with 0
-    final_weighted = final_weighted.fillna(0)
+    # Replace NaNs with zeros
+    final_weighted.fillna(0, inplace=True)
 
     return final_weighted
 

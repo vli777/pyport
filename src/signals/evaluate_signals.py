@@ -5,7 +5,7 @@ import pandas as pd
 from sklearn.metrics import precision_score, recall_score, f1_score
 
 
-def create_multiday_target(returns_df, window=3, threshold=0.0):
+def create_multiday_target(returns_df, window=7, threshold=0.0):
     """
     Create a multi-day target for signal evaluation.
 
@@ -19,7 +19,7 @@ def create_multiday_target(returns_df, window=3, threshold=0.0):
                       shape = (dates, tickers).
     """
     # Calculate rolling cumulative returns over the next `window` days
-    future_returns = returns_df.shift(-window + 1).rolling(window=window).sum()
+    future_returns = returns_df.rolling(window=window).sum().shift(-(window - 1))
     target = (future_returns > threshold).astype(int)
     return target
 
@@ -107,12 +107,13 @@ def evaluate_signal_accuracy(
     # Apply threshold to create binary signals
     binary_signals = (category_signals > threshold).astype(int)
 
-    # Flatten the MultiIndex columns to single-level (Ticker)
-    binary_signals.columns = binary_signals.columns.get_level_values("Ticker")
+    # Flatten MultiIndex columns if needed
+    if isinstance(binary_signals.columns, pd.MultiIndex):
+        binary_signals.columns = binary_signals.columns.get_level_values("Ticker")
 
     # Create multi-day targets based on cumulative returns
     multi_day_target = create_multiday_target(
-        returns_df=returns_df, window=7, threshold=0.01
+        returns_df=returns_df, window=3, threshold=0.01
     )
 
     # Align on dates (axis=0) and tickers (axis=1)
@@ -126,6 +127,7 @@ def evaluate_signal_accuracy(
     # Handle NaNs by filling with 0
     binary_signals_aligned = binary_signals_aligned.fillna(0)
     target_aligned = target_aligned.fillna(0)
+
     # Flatten predicted vs. actual
     predicted = binary_signals_aligned.values.flatten()
     actual = (target_aligned > 0).astype(int).values.flatten()
@@ -160,36 +162,41 @@ def simulate_strategy_returns(
     Returns:
         dict: Cumulative returns for 'follow_all', 'avoid_bearish', and 'partial_adherence' strategies.
     """
-    # Align buy_signals and sell_signals with returns_df on both dates and tickers
+    # 1) Align all DataFrames on date and ticker
     buy_signals_aligned, ret_aligned = buy_signals.align(
         returns_df, join="inner", axis=0
     )
     buy_signals_aligned, ret_aligned = buy_signals_aligned.align(
         ret_aligned, join="inner", axis=1
     )
+
     sell_signals_aligned, _ = sell_signals.align(returns_df, join="inner", axis=0)
     sell_signals_aligned, _ = sell_signals_aligned.align(
         ret_aligned, join="inner", axis=1
     )
 
-    # Strategy 1: Follow all buy signals
+    # 2) Strategy 1: Follow all buy signals for day t on day t
+    #    Summing across tickers -> daily P/L, then cumsum
     follow_all_daily = (buy_signals_aligned * ret_aligned).sum(axis=1)
+    follow_all_cumulative = follow_all_daily.cumsum()
 
-    # Strategy 2: Avoid bearish signals
+    # 3) Strategy 2: Avoid bearish signals
+    #    If sell_signals_aligned[t] == 1, do not buy that ticker on that day
     avoid_bearish_daily = (
         (1 - sell_signals_aligned) * buy_signals_aligned * ret_aligned
     ).sum(axis=1)
+    avoid_bearish_cumulative = avoid_bearish_daily.cumsum()
 
-    # Strategy 3: Partial adherence (50% reduction during bearish signals)
+    # 4) Strategy 3: Partial adherence (50% position if there's a bearish signal)
     partial_daily = (
         (1 - 0.5 * sell_signals_aligned) * buy_signals_aligned * ret_aligned
     ).sum(axis=1)
+    partial_cumulative = partial_daily.cumsum()
 
-    # Cumulative returns
     return {
-        "follow_all": follow_all_daily.cumsum(),
-        "avoid_bearish": avoid_bearish_daily.cumsum(),
-        "partial_adherence": partial_daily.cumsum(),
+        "follow_all": follow_all_cumulative,
+        "avoid_bearish": avoid_bearish_cumulative,
+        "partial_adherence": partial_cumulative,
     }
 
 

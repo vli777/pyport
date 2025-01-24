@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 from typing import Any, Callable, Dict
 import numpy as np
 import pandas as pd
@@ -68,7 +69,7 @@ def run_optimization_and_save(
             cov_daily = pd.DataFrame(
                 cov_daily, index=asset_returns.columns, columns=asset_returns.columns
             )
-
+  
             trading_days_per_year = 252
             mu_annual = mu_daily * trading_days_per_year
             cov_annual = cov_daily * trading_days_per_year
