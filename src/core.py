@@ -104,9 +104,9 @@ def run_pipeline(
     filtered_symbols = filter_symbols_with_signals(
         price_df=df_all,
         returns_df=returns_df,
-        generate_signals_fn=generate_signals,  # Function for technical indicators
-        mean_reversion_fn=apply_mean_reversion,  # Function for mean reversion
-        config=config,  # Configuration object
+        generate_signals_fn=generate_signals,
+        mean_reversion_fn=apply_mean_reversion,
+        config=config,
     )
 
     # Filter correlated groups based on performance metrics
