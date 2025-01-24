@@ -56,11 +56,19 @@ def generate_signals(price_df, returns_df, plot=False):
         "stoch_buy_persistence": stoch_buy_persistence,
     }
 
+    # Set thresholds found from optuna plot
+    buy_threshold = 5.0
+    sell_threshold = 3.5
+
     # signals: dict of {signal_name: DataFrame}, each DataFrame is date x ticker
     # returns_df: DataFrame, date x ticker
     # signal weight optimization
     best_signal_weights, best_score = run_optuna_optimization(
-        signals, returns_df, n_trials=50
+        signals,
+        returns_df,
+        n_trials=50,
+        buy_threshold=buy_threshold,
+        sell_threshold=sell_threshold,
     )
 
     # Use the best parameters to calculate final weighted signals
@@ -106,10 +114,6 @@ def generate_signals(price_df, returns_df, plot=False):
             thresholds=thresholds,
             metrics=bearish_metrics,
         )
-
-    # Define thresholds found from plot
-    buy_threshold = 5.0
-    sell_threshold = 3.5
 
     # Filter based on thresholds
     buy_signal_tickers, sell_signal_tickers = filter_signals_by_threshold(
