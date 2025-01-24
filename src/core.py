@@ -161,7 +161,7 @@ def run_pipeline(
 
         # Slice price data for the period
         df_period = df_all.loc[start:end].copy()
-         
+
         dfs["start"] = min(dfs["start"], start)
         dfs["end"] = max(dfs["end"], end)
 

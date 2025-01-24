@@ -1,3 +1,4 @@
+from pathlib import Path
 import sys
 import numpy as np
 
@@ -66,12 +67,17 @@ def generate_signals(
     # signals: dict of {signal_name: DataFrame}, each DataFrame is date x ticker
     # returns_df: DataFrame, date x ticker
     # signal weight optimization
+    root_dir = Path(__file__).resolve().parent
+    save_path = root_dir / "cache"
+    save_path.mkdir(parents=True, exist_ok=True)
+
     best_signal_weights, best_score = run_optuna_optimization(
         signals,
         returns_df,
         n_trials=50,
         buy_threshold=buy_threshold,
         sell_threshold=sell_threshold,
+        save_path=save_path,
     )
 
     print(f"\nbest weights: {best_signal_weights}")
