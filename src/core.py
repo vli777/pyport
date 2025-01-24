@@ -163,6 +163,16 @@ def run_pipeline(
         # Slice price data for the period
         df_period = df_all.loc[start:end].copy()
 
+        # Flatten df_period for optimization
+        if isinstance(
+            df_period.columns, pd.MultiIndex
+        ) and "Adj Close" in df_period.columns.get_level_values(1):
+            df_period = df_period.xs("Adj Close", level=1, axis=1)
+
+        # Ensure the DataFrame is flat with symbols as columns and dates as the index
+        df_period.columns.name = None  # Remove column name (Ticker)
+        df_period.index.name = "Date"  # Set index name for clarity
+
         dfs["start"] = min(dfs["start"], start)
         dfs["end"] = max(dfs["end"], end)
 

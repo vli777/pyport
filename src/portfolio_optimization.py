@@ -58,7 +58,6 @@ def run_optimization_and_save(
             final_weights = normalized_weights
             # Convert the Series to a dict before storing in stack
             stack[model + str(years)] = normalized_weights.to_dict()
-            # If needed, also save to cache as dict
             save_model_results_to_cache(cache_key, final_weights.to_dict())
         else:
             # 2) Not in cache => run optimization
@@ -69,7 +68,7 @@ def run_optimization_and_save(
             cov_daily = pd.DataFrame(
                 cov_daily, index=asset_returns.columns, columns=asset_returns.columns
             )
-  
+
             trading_days_per_year = 252
             mu_annual = mu_daily * trading_days_per_year
             cov_annual = cov_daily * trading_days_per_year
