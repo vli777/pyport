@@ -4,24 +4,7 @@ from joblib import Parallel, delayed
 import pandas as pd
 
 from utils import logger
-from signals.z_score_plot import plot_z_scores_grid
-
-
-def calculate_z_score(price_series, window):
-    """
-    Calculate the Z-Score for a given price series based on a rolling window.
-
-    Args:
-        price_series (pd.Series): Series of 'Adj Close' prices for a ticker.
-        window (int): Rolling window size.
-
-    Returns:
-        pd.Series: Z-Score series.
-    """
-    rolling_mean = price_series.rolling(window=window, min_periods=1).mean()
-    rolling_std = price_series.rolling(window=window, min_periods=1).std()
-    z_scores = (price_series - rolling_mean) / rolling_std
-    return z_scores
+from signals.z_score import calculate_z_score, plot_z_scores_grid
 
 
 def find_optimal_window(
