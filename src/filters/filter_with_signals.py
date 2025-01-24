@@ -41,8 +41,8 @@ def filter_symbols_with_signals(
         price_df,
         returns_df,
         plot=config.plot_signal_threshold,
-        buy_threshold=config.buy_threshold,
-        sell_threshold=config.sell_threshold,
+        buy_threshold=config.buy_signal_threshold,
+        sell_threshold=config.sell_signal_threshold,
     )
 
     # Remove tickers with sell signals
