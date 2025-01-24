@@ -3,6 +3,7 @@ import pandas as pd
 
 from signals.signal_categories import bullish_signals, bearish_signals
 
+
 def calculate_weighted_signals(signals, signal_weights, days=7, weight_decay=None):
     combined = pd.concat(signals, axis=1)
 
@@ -19,7 +20,9 @@ def calculate_weighted_signals(signals, signal_weights, days=7, weight_decay=Non
     final_weighted = pd.DataFrame(
         0.0,  # Use 0.0 for float dtype
         index=combined.index,
-        columns=pd.MultiIndex.from_product([categories, tickers], names=["Category", "Ticker"])
+        columns=pd.MultiIndex.from_product(
+            [categories, tickers], names=["Category", "Ticker"]
+        ),
     )
 
     for sig_name, wgt in signal_weights.items():

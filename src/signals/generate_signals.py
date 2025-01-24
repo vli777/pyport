@@ -110,7 +110,7 @@ def generate_signals(price_df, returns_df, plot=False):
     # Define thresholds found from plot
     buy_threshold = 5.0
     sell_threshold = 3.5
-    
+
     # Filter based on thresholds
     buy_signal_tickers, sell_signal_tickers = filter_signals_by_threshold(
         weighted_signals=final_weighted_signals,

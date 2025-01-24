@@ -126,13 +126,16 @@ def simulate_strategy_returns(weighted_signals, returns_df, threshold=0.0):
     predicted_binary = (ws_aligned > threshold).astype(int)
 
     # Align binary predictions and returns
-    predicted_binary, ret_aligned = predicted_binary.align(ret_aligned, join="inner", axis=1)
+    predicted_binary, ret_aligned = predicted_binary.align(
+        ret_aligned, join="inner", axis=1
+    )
 
     # Calculate strategy returns
     follow_all_daily = (predicted_binary * ret_aligned).sum(axis=1)
     ignore_all_daily = ((1 - predicted_binary) * ret_aligned).sum(axis=1)
     partial_daily = (
-        0.5 * predicted_binary * ret_aligned + 0.5 * (1 - predicted_binary) * ret_aligned
+        0.5 * predicted_binary * ret_aligned
+        + 0.5 * (1 - predicted_binary) * ret_aligned
     ).sum(axis=1)
 
     # Cumulative returns

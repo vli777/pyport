@@ -76,9 +76,13 @@ def filter_signals_by_threshold(
     bearish_signals = weighted_signals.loc[:, "bearish"]
 
     # Identify buy tickers: bullish signals above buy_threshold
-    buy_signal_tickers = bullish_signals.columns[bullish_signals.max(axis=0) > buy_threshold].tolist()
+    buy_signal_tickers = bullish_signals.columns[
+        bullish_signals.max(axis=0) > buy_threshold
+    ].tolist()
 
     # Identify sell tickers: bearish signals above sell_threshold
-    sell_signal_tickers = bearish_signals.columns[bearish_signals.max(axis=0) > sell_threshold].tolist()
+    sell_signal_tickers = bearish_signals.columns[
+        bearish_signals.max(axis=0) > sell_threshold
+    ].tolist()
 
     return buy_signal_tickers, sell_signal_tickers
