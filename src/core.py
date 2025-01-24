@@ -53,7 +53,7 @@ def run_pipeline(
     else:
         # Use the watchlists from config
         watchlist_files = [
-            Path(config.input_files_folder) / file for file in config.input_files
+            Path(config.input_files_dir) / file for file in config.input_files
         ]
         all_symbols = process_input_files(watchlist_files)
 
