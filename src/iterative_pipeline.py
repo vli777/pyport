@@ -50,7 +50,7 @@ def iterative_pipeline_runner(
         valid_symbols = [
             symbol
             for symbol in result["symbols"][:portfolio_max_size]
-            if symbol != "SIM_PORT"  # Replace "SIM_PORT" with the actual name
+            if symbol != "SIM_PORT"
         ]
 
         print(f"\nTop symbols from epoch {epoch + 1}: {valid_symbols}")

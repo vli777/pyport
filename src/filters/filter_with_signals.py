@@ -116,7 +116,7 @@ def filter_signals_by_threshold(
     # Ensure the Series has the 'Ticker' level name
     if buy_signal_tickers_series.index.name != "Ticker":
         buy_signal_tickers_series.index.name = "Ticker"
-        print("Assigned 'Ticker' as the index name for buy_signal_tickers_series.")
+        # print("Assigned 'Ticker' as the index name for buy_signal_tickers_series.")
 
     buy_signal_tickers = (
         buy_signal_tickers_series[buy_signal_tickers_series > buy_threshold]

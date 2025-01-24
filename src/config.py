@@ -58,7 +58,7 @@ class Config:
         input_files_dir = config_dict.get("input_files_dir", "watchlists")
         os.makedirs(data_dir, exist_ok=True)
         os.makedirs(input_files_dir, exist_ok=True)
-        
+
         # Parse model config
         model_config = ModelConfig(**config_dict.get("model_config", {}))
 

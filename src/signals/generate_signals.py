@@ -95,6 +95,8 @@ def generate_signals(
     verify_weighted_signals(final_weighted_signals)
     verify_ticker_consistency(final_weighted_signals, returns_df)
 
+    print(f"\nfinal weighted signals: {final_weighted_signals}")
+
     if plot:
         # Flatten all signal values
         all_values = final_weighted_signals.values.flatten()

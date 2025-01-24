@@ -110,12 +110,17 @@ def evaluate_signal_accuracy(
     # Flatten the MultiIndex columns to single-level (Ticker)
     binary_signals.columns = binary_signals.columns.get_level_values("Ticker")
 
-    # Align on dates (axis=0) and tickers (axis=1)
-    binary_signals_aligned, ret_aligned = binary_signals.align(
-        returns_df, join="inner", axis=0  # Align on dates first
+    # Create multi-day targets based on cumulative returns
+    multi_day_target = create_multiday_target(
+        returns_df=returns_df, window=7, threshold=0.01
     )
-    binary_signals_aligned, ret_aligned = binary_signals_aligned.align(
-        ret_aligned, join="inner", axis=1  # Then align on tickers
+
+    # Align on dates (axis=0) and tickers (axis=1)
+    binary_signals_aligned, target_aligned = binary_signals.align(
+        multi_day_target, join="inner", axis=0
+    )
+    binary_signals_aligned, target_aligned = binary_signals_aligned.align(
+        target_aligned, join="inner", axis=1
     )
 
     # Debugging: Print aligned DataFrame shapes
