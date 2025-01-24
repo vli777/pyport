@@ -33,6 +33,8 @@ class Config:
     sell_signal_threshold: float
     anomaly_detection_deviation_threshold: float
     correlation_threshold: float
+    use_reversion_filter: bool
+    use_signal_filter: bool
     expand_etfs: bool
     min_weight: float
     max_weight: float
@@ -80,6 +82,8 @@ class Config:
                 "anomaly_detection_deviation_threshold", 7.0
             ),
             correlation_threshold=config_dict.get("correlation_threshold", 0.8),
+            use_reversion_filter=config_dict.get("use_reversion_filter", True),
+            use_signal_filter=config_dict.get("use_signal_filter", True),
             expand_etfs=config_dict.get("expand_etfs", False),
             min_weight=config_dict["min_weight"],
             max_weight=config_dict["max_weight"],
