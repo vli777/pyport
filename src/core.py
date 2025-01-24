@@ -42,11 +42,6 @@ def run_pipeline(
     Returns:
         A dict (JSON-serializable) with final results or an empty dict if no data.
     """
-    # Set up output directories, etc.
-    CWD = Path.cwd()
-    PATH = CWD / config.folder
-    PATH.mkdir(parents=True, exist_ok=True)
-
     # Get ticker symbols
     if symbols_override:
         if not isinstance(symbols_override, list) or not all(
@@ -77,11 +72,11 @@ def run_pipeline(
 
     # Load data for the longest period using all symbols
     df_all = process_symbols(
-        all_symbols,
-        start_date_long,
-        end_date_long,
-        PATH,
-        config.download,
+        symbols=all_symbols,
+        start_date=start_date_long,
+        end_date=end_date_long,
+        data_path=Path(config.data_dir),
+        download=config.download,
     )
 
     # Calculate daily returns for the longest period
