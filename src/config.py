@@ -28,6 +28,7 @@ class Config:
     plot_clustering: bool
     plot_anomalies: bool
     plot_mean_reversion: bool
+    plot_signal_threshold: bool
     anomaly_detection_deviation_threshold: float
     correlation_threshold: float
     expand_etfs: bool
@@ -65,6 +66,7 @@ class Config:
             plot_clustering=config_dict.get("plot_clustering", False),
             plot_anomalies=config_dict.get("plot_anomalies", False),
             plot_mean_reversion=config_dict.get("plot_mean_reversion", False),
+            plot_signal_threshold=config_dict.get("plot_signal_threshold", False),
             anomaly_detection_deviation_threshold=config_dict.get(
                 "anomaly_detection_deviation_threshold", 7.0
             ),
