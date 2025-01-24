@@ -22,7 +22,9 @@ from signals.evaluate_signals import analyze_thresholds
 from signals.plot_threshold import plot_threshold_metrics
 
 
-def generate_signals(price_df, returns_df, plot=False):
+def generate_signals(
+    price_df, returns_df, plot=False, buy_threshold=1.0, sell_threshold=1.0
+):
     """
     Generate all technical signals and return a consolidated DataFrame.
     Only uses the latest date's signals without aggregation.
@@ -60,10 +62,6 @@ def generate_signals(price_df, returns_df, plot=False):
         "adx_support": adx_signals,
         "stoch_buy_persistence": stoch_buy_persistence,
     }
-
-    # Set thresholds found from optuna plot
-    buy_threshold = 1.0
-    sell_threshold = 1.0
 
     # signals: dict of {signal_name: DataFrame}, each DataFrame is date x ticker
     # returns_df: DataFrame, date x ticker
@@ -115,16 +113,13 @@ def generate_signals(price_df, returns_df, plot=False):
             final_weighted_signals, returns_df, thresholds, "bearish"
         )
 
-        # Plot for bullish signals
+        # Plot signal threshold metric
         plot_threshold_metrics(
             thresholds=thresholds,
-            metrics=bullish_metrics,
-        )
-
-        # Plot for bearish signals
-        plot_threshold_metrics(
-            thresholds=thresholds,
-            metrics=bearish_metrics,
+            bullish_metrics=bullish_metrics,
+            bearish_metrics=bearish_metrics,
+            buy_threshold=1.0,
+            sell_threshold=1.0,
         )
 
     # Filter based on thresholds

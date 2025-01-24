@@ -38,7 +38,11 @@ def filter_symbols_with_signals(
 
     # Generate signals DataFrame (date x (signal_name, ticker))
     buy_signal_tickers, sell_signal_tickers = generate_signals_fn(
-        price_df, returns_df, plot=config.plot_signal_threshold
+        price_df,
+        returns_df,
+        plot=config.plot_signal_threshold,
+        buy_threshold=config.buy_threshold,
+        sell_threshold=config.sell_threshold,
     )
 
     # Remove tickers with sell signals
