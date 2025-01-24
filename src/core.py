@@ -157,7 +157,17 @@ def run_pipeline(
         mean_reversion_fn=apply_mean_reversion,
         config=config,
     )
-    filtered_returns = returns_df[filtered_symbols]
+
+    # Ensure filtered_symbols are valid columns in returns_df
+    valid_symbols = [symbol for symbol in filtered_symbols if symbol in returns_df.columns]
+
+    if len(valid_symbols) < len(filtered_symbols):
+        missing_symbols = set(filtered_symbols) - set(valid_symbols)
+        logger.warning(f"Filtered symbols not in returns_df: {missing_symbols}")
+
+    # Proceed with valid symbols only
+    filtered_returns = returns_df[valid_symbols]
+
     filtered_decorrelated = filter_correlated_groups(
         returns_df=filtered_returns,
         performance_df=performance_metrics,
