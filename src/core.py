@@ -12,10 +12,10 @@ from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
 from signals.reversion_signal import apply_mean_reversion
+from signals.get_signal_recommendations import generate_signals
 from filters.anomaly_detection import remove_anomalous_stocks
 from filters.decorrelation import filter_correlated_groups
-from signals_filter import filter_symbols_with_signals
-from signals.generate_signals import generate_signals
+from integrate_recommendations import filter_symbols_with_signals
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates

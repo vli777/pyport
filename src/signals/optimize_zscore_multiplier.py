@@ -2,7 +2,7 @@ import numpy as np
 import optuna
 import pandas as pd
 
-from signals.dynamic_threshold import get_dynamic_thresholds
+from signals.signal_threshold import get_dynamic_thresholds
 from signals.z_score import calculate_z_score
 
 

@@ -1,9 +1,9 @@
 import pandas as pd
 
-from signals.reversion_window import manage_dynamic_windows
-from signals.dynamic_threshold import get_dynamic_thresholds
+from signals.optimize_reversion_window import manage_dynamic_windows
+from signals.signal_threshold import get_dynamic_thresholds
 from signals.z_score import plot_z_scores_grid
-from signals.optimize_multiplier import optimize_multiplier
+from signals.optimize_zscore_multiplier import optimize_multiplier
 from utils import logger
 
 

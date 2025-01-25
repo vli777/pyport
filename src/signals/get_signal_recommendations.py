@@ -1,4 +1,3 @@
-from pathlib import Path
 import sys
 import numpy as np
 
@@ -12,15 +11,14 @@ from signals.technicals import (
     generate_adx_signals,
     generate_convergence_signals,
 )
-from signals.weighted_signals import (
+from signals.calculate_weighted_signals import (
     calculate_weighted_signals,
     verify_ticker_consistency,
     verify_weighted_signals,
 )
-from signals_filter import filter_signals_by_threshold
-from signals.signal_weights_tuner import run_optuna_optimization
-from signals.signal_threshold import plot_threshold_metrics
-from signals.dynamic_threshold import analyze_thresholds
+from signals.signals_filter import filter_signals_by_threshold
+from signals.optimize_signal_weights import run_optuna_optimization
+from signals.signal_threshold import plot_threshold_metrics, analyze_thresholds
 
 
 def generate_signals(
@@ -67,17 +65,12 @@ def generate_signals(
     # signals: dict of {signal_name: DataFrame}, each DataFrame is date x ticker
     # returns_df: DataFrame, date x ticker
     # signal weight optimization
-    root_dir = Path(__file__).resolve().parent
-    save_path = root_dir / "cache"
-    save_path.mkdir(parents=True, exist_ok=True)
-
     best_signal_weights, best_score = run_optuna_optimization(
         signals,
         returns_df,
         n_trials=50,
         buy_threshold=buy_threshold,
         sell_threshold=sell_threshold,
-        save_path=save_path,
     )
 
     print(f"\nbest weights: {best_signal_weights}")

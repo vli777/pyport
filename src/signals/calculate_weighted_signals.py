@@ -2,8 +2,7 @@ import sys
 from typing import Dict, Optional
 import numpy as np
 import pandas as pd
-
-from signals.signal_categories import bullish_signals, bearish_signals
+import json
 
 
 def calculate_weighted_signals(
@@ -75,6 +74,11 @@ def calculate_weighted_signals(
 
         # Apply signal weight
         rolling_sum *= wgt
+
+        with open("signal_categories.json", "r") as f:
+            data = json.load(f)
+            bullish_signals = data["bullish_signals"]
+            bearish_signals = data["bearish_signals"]
 
         # Assign to bullish or bearish category
         if sig_name in bullish_signals:
