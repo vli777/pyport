@@ -10,6 +10,11 @@ def apply_kalman_filter(returns_series, threshold=7.0, epsilon=1e-6):
     if not isinstance(returns_series, pd.Series):
         raise ValueError("returns_series must be a Pandas Series.")
 
+    # Ensure the series is valid
+    if len(returns_series) < 2:
+        print(f"Insufficient data for Kalman filter. Length: {len(returns_series)}")
+        return pd.Series([False] * len(returns_series), index=returns_series.index)
+
     # Initialize the Kalman filter
     kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
 
@@ -69,7 +74,11 @@ def remove_anomalous_stocks(returns_df, threshold=7.0, plot=False):
     anomaly_flags_data = {}
 
     for stock in returns_df.columns:
-        returns_series = returns_df[stock]
+        returns_series = returns_df[stock].dropna()
+        if returns_series.empty:
+            print(f"Warning: No data for stock {stock}. Skipping.")
+            continue
+
         anomaly_flags = apply_kalman_filter(returns_series, threshold=threshold)
 
         # If anomalies found for the stock
@@ -203,7 +212,7 @@ def plot_anomalies(stocks, returns_data, anomaly_flags_data, stocks_per_page=36)
             ax.set_xticklabels(
                 [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")],
             )
-    
+
             # Customize each subplot
             ax.set_title(stock, fontsize=10)
             ax.set_xlabel("")
