@@ -300,12 +300,12 @@ def plot_cumulative_returns(
     sim_port_data = cumulative_returns.get("SIM_PORT")
 
     # Sort columns by final value if required
-    if config.sort_by_weights:
-        last_row = cumulative_returns.iloc[-1]  # final row (Series)
-        sorted_cols = last_row.sort_values(ascending=False).index
-        df_sorted = cumulative_returns[sorted_cols]
-    else:
-        df_sorted = cumulative_returns
+
+    # last_row = cumulative_returns.iloc[-1]  # final row (Series)
+    # sorted_cols = last_row.sort_values(ascending=False).index
+    # df_sorted = cumulative_returns[sorted_cols]
+
+    df_sorted = cumulative_returns
 
     for col in df_sorted.columns:
         is_sim_port = col == "SIM_PORT"

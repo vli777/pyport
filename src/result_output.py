@@ -71,11 +71,7 @@ def output(
     logger.info(f"Cumulative return: {cumulative_pct}%")
     logger.info(f"Portfolio allocation weights (min {minimum_weight:.2f}):")
 
-    # Sort by weight ascending or descending (based on config)
-    reverse_sort = getattr(config, "sort_by_weights", False)
-    sorted_weights = sorted(
-        clean_weights.items(), key=lambda kv: kv[1], reverse=reverse_sort
-    )
+    sorted_weights = sorted(clean_weights.items(), key=lambda kv: kv[1], reverse=True)
     for symbol, weight in sorted_weights:
         logger.info(f"{symbol} \t{weight:.3f}")
 

@@ -74,10 +74,9 @@ def run_optimization_and_save(
             cov_annual = cov_daily * trading_days_per_year
 
             max_weight = config.max_weight
-            allow_short = config.allow_short  # boolean value from config
 
             model_args = config.model_config[model]
-            model_args.update({"max_weight": max_weight, "allow_short": allow_short})
+            model_args.update({"max_weight": max_weight})
 
             try:
                 weights = run_optimization(
@@ -93,12 +92,8 @@ def run_optimization_and_save(
 
                 normalized_weights = normalize_weights(weights, config.min_weight)
 
-                target_sum = 1.0
-                if config.allow_short:
-                    target_sum += config.get("short_long_ratio", 0.3)
-
                 final_weights = limit_portfolio_size(
-                    normalized_weights, config.portfolio_max_size, target_sum=target_sum
+                    normalized_weights, config.portfolio_max_size, target_sum=1.0
                 )
 
                 # 3) Save new result to cache

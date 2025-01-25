@@ -10,25 +10,26 @@ models:
     # - str  # Other model names
 
 download: bool  # Whether to download data
-plot_daily_returns: bool  # Whether to plot daily returns
-plot_cumulative_returns: bool  # Whether to plot cumulative returns
-plot_clustering: bool # Where to plot hierarchical clustering dendrogram
-plot_anomalies: bool # Whether to plot anomalies detected by Kalman filter
-plot_mean_reversion: bool # Whether to plot mean reversion z scores
-plot_signal_threshold: bool # Whether to plot signal thresholds
-buy_signal_threshold: float # Signal threshold for including assets 
-sell_signal_threshold: float # Signal threshold for excluding assets 
-correlation_threshold: float # Correlation % threshold when filtering correlated assets
-use_reversion_filter: bool # Whether to use mean reversion asset filtering
-use_signal_filter: bool # Whether to use signal asset filtering
 expand_etfs: bool # Whether to include the top holdings of etf inputs
 min_weight: float  # Minimum weight for inclusion in final weights
 max_weight: float # Maximum weight allowed for any individual hodling
 portfolio_max_size: int  # Maximum number of assets in the portfolio
 risk_free_rate: float 
-allow_short: bool # Whether to include short positions
-short_long_ratio: bool # The ratio of short to long allowed
-sort_by_weights: bool  # Whether to sort weights in the output
+
+plot_daily_returns: bool  # Whether to plot daily returns
+plot_cumulative_returns: bool  # Whether to plot cumulative returns
+plot_clustering: bool # Where to plot hierarchical clustering dendrogram
+plot_anomalies: bool # Whether to plot anomalies detected by Kalman filter
+plot_mean_reversion: bool # Whether to plot mean reversion z scores
+
+plot_signal_threshold: bool # Whether to plot signal thresholds
+buy_signal_threshold: float # Signal threshold for including assets 
+sell_signal_threshold: float # Signal threshold for excluding assets 
+correlation_threshold: float # Correlation % threshold when filtering correlated assets
+
+use_reversion_filter: bool # Whether to use mean reversion asset filtering
+use_signal_filter: bool # Whether to use signal asset filtering
+
 test_mode: bool  # Whether to enable test mode
 test_data_visible_pct: float  # Percentage of test data to show
 
