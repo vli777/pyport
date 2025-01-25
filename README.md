@@ -13,14 +13,14 @@ Modern Portfolio Optimization
 Daily and Cumulative Returns Statistics
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
 
-Anomaly Detection
-![image](https://github.com/user-attachments/assets/c3c22208-2669-4687-8884-38106e1c9353)
+Anomaly Detection for Automatic Filtering
+![image](https://github.com/user-attachments/assets/f8048fe3-4d92-4424-8d40-68490d47374d)
 
 Hierarchical Clustering Dendrogram
 ![image](https://github.com/user-attachments/assets/ec4b9b05-e32e-4012-a49c-4446ef0ce603)
 
 Dynamic Z-score Thresholds for Mean Reversion
-![image](https://github.com/user-attachments/assets/c4ff9519-96bd-425d-92d8-8fcf04af3a7b)
+![image](https://github.com/user-attachments/assets/58b510e8-ccf6-4cba-8cf6-c4790f8c4aab)
 
 ## Instructions
 
@@ -96,4 +96,5 @@ curl -X POST "http://localhost:8000/inference" \
 - The API allows dynamic overrides for symbols and configurations without modifying the local `config.yaml`.
 - The symbol selection process will auto-remove highly correlated pairs within a group and select representatives based on sharpe ratio vs the group
 - SIM_PORT is the hypothetical portfolio with the allocation result over the same period (used for graphing daily and cumulative returns).
+
 
