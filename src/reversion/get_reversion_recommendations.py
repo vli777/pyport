@@ -1,9 +1,8 @@
 import pandas as pd
 
-from signals.optimize_reversion_window import manage_dynamic_windows
-from signals.signal_threshold import get_dynamic_thresholds
-from signals.z_score import plot_z_scores_grid
-from signals.optimize_zscore_multiplier import optimize_multiplier
+from reversion.reversion_window import manage_dynamic_windows
+from reversion.z_score import get_zscore_thresholds, plot_z_scores_grid
+from reversion.zscore_multiplier import optimize_multiplier
 from utils import logger
 
 
@@ -87,7 +86,7 @@ def apply_mean_reversion(
         f"Optimal multipliers determined: {overbought_multiplier}, {oversold_multiplier}"
     )
 
-    dynamic_thresholds = get_dynamic_thresholds(
+    dynamic_thresholds = get_zscore_thresholds(
         returns_df,
         window=20,
         overbought_multiplier=overbought_multiplier,

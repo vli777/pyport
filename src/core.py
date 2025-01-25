@@ -11,7 +11,7 @@ from plotly_graphs import plot_graphs
 from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
-from signals.reversion_signal import apply_mean_reversion
+from reversion.get_reversion_recommendations import apply_mean_reversion
 from signals.get_signal_recommendations import generate_signals
 from filters.anomaly_detection import remove_anomalous_stocks
 from filters.decorrelation import filter_correlated_groups

@@ -7,39 +7,6 @@ import matplotlib.pyplot as plt
 from signals.evaluate_signal_metrics import evaluate_signal_accuracy
 
 
-def get_dynamic_thresholds(
-    returns_df, window=20, overbought_multiplier=1.0, oversold_multiplier=1.0
-):
-    """
-    Calculate ticker-specific dynamic overbought and oversold thresholds with asymmetric multipliers.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame with tickers as columns and dates as index.
-        window (int): Rolling window size for Z-score calculation.
-        overbought_multiplier (float): Multiplier for overbought threshold.
-        oversold_multiplier (float): Multiplier for oversold threshold.
-
-    Returns:
-        dict: {ticker: (overbought_threshold, oversold_threshold)}
-    """
-    dynamic_thresholds = {}
-
-    for ticker in returns_df.columns:
-        # Calculate Z-scores for the given ticker
-        rolling_mean = returns_df[ticker].rolling(window).mean()
-        rolling_std = returns_df[ticker].rolling(window).std()
-        z_scores = (returns_df[ticker] - rolling_mean) / rolling_std
-
-        # Calculate thresholds using asymmetric multipliers
-        z_std = z_scores.std()  # Standard deviation of Z-scores
-        overbought_threshold = overbought_multiplier * z_std
-        oversold_threshold = -oversold_multiplier * z_std
-
-        dynamic_thresholds[ticker] = (overbought_threshold, oversold_threshold)
-
-    return dynamic_thresholds
-
-
 def analyze_thresholds(
     weighted_signals: pd.DataFrame,
     returns_df: pd.DataFrame,
