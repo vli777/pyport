@@ -28,7 +28,7 @@ def optimize_multiplier(returns_df, window=20, n_trials=50):
     best_multiplier = study.best_params["multiplier"]
     best_value = study.best_value
 
-    return {"multiplier": best_multiplier, "objective_value": best_value}
+    return best_multiplier
 
 
 def objective(trial, returns_df, window=20):
@@ -44,7 +44,7 @@ def objective(trial, returns_df, window=20):
     """
     # Suggest multiplier and rolling window size
     multiplier = trial.suggest_float("multiplier", 1.0, 3.0, step=0.1)
-    window = trial.suggest_int("window", 3, 30, step=3)
+    window = trial.suggest_int("window", 10, 30, step=5)
 
     # Calculate Z-scores
     z_scores_df = calculate_z_score(returns_df, window)
@@ -60,10 +60,15 @@ def objective(trial, returns_df, window=20):
     )
 
     # Incorporate Sharpe ratio into the objective
+    if strategy_returns.std() == 0 or np.isnan(strategy_returns.std()):
+        return float("-inf")  # Penalize invalid combinations
     sharpe_ratio = strategy_returns.mean() / strategy_returns.std()
     objective_value = (
         cumulative_return * sharpe_ratio
     )  # Weighted by risk-adjusted return
+
+    if np.isnan(cumulative_return) or cumulative_return <= 0:
+        return float("-inf")
 
     return objective_value
 
@@ -100,6 +105,6 @@ def simulate_strategy(returns_df, dynamic_thresholds, z_scores_df):
     strategy_returns = (positions.shift(1) * returns_df).sum(axis=1)
 
     # Calculate cumulative return
-    cumulative_return = np.exp(strategy_returns.cumsum())[-1]  # Final cumulative return
+    cumulative_return = np.exp(strategy_returns.cumsum().iloc[-1])
 
     return strategy_returns, cumulative_return

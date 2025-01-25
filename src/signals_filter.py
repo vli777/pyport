@@ -30,8 +30,7 @@ def filter_symbols_with_signals(
     if config.use_reversion_filter:
         # Generate mean reversion exclusions and inclusions
         mean_reversion_exclusions, mean_reversion_inclusions = mean_reversion_fn(
-            returns_df=returns_df,
-            plot=config.plot_mean_reversion
+            returns_df=returns_df, plot=config.plot_mean_reversion
         )
 
         # Convert exclusions and inclusions to sets for set operations

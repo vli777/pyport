@@ -80,9 +80,7 @@ def apply_mean_reversion(
 
     z_score_df = pd.DataFrame(z_scores_dict)
 
-    optimal_multiplier = optimize_multiplier(
-        returns_df=returns_df, window=20
-    ).multiplier
+    optimal_multiplier = optimize_multiplier(returns_df=returns_df, window=20)
     logger.info(f"Optimal multiplier determined: {optimal_multiplier}")
 
     dynamic_thresholds = get_dynamic_thresholds(
