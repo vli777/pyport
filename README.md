@@ -8,6 +8,8 @@ Modern Portfolio Optimization
 - Integrated Optuna to dynamically find optimal thresholds for maximizing performance metrics and returns
 - WIP: deep learning models e.g. RL, transformers to integrate forecasting 
 
+### Example plots (taken with various inputs to demo feature)
+
 Daily and Cumulative Returns Statistics
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
 
