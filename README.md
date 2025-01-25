@@ -10,7 +10,7 @@ Daily and Cumulative Returns Statistics
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
 
 Anomaly Detection
-![image](https://github.com/user-attachments/assets/0cc9c310-fbef-42b6-834f-38a17b8edc2b)
+![image](https://github.com/user-attachments/assets/c3c22208-2669-4687-8884-38106e1c9353)
 
 Hierarchical Clustering Dendrogram
 ![image](https://github.com/user-attachments/assets/c3136d02-b4af-4072-a05b-a04667e2f49e)
