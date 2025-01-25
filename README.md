@@ -20,7 +20,7 @@ Hierarchical Clustering Dendrogram
 ![image](https://github.com/user-attachments/assets/ec4b9b05-e32e-4012-a49c-4446ef0ce603)
 
 Dynamic Z-score Thresholds for Mean Reversion
-![image](https://github.com/user-attachments/assets/58b510e8-ccf6-4cba-8cf6-c4790f8c4aab)
+![image](https://github.com/user-attachments/assets/c4ff9519-96bd-425d-92d8-8fcf04af3a7b)
 
 ## Instructions
 
