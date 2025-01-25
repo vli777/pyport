@@ -33,7 +33,7 @@ class Config:
     plot_cumulative_returns: bool
     plot_clustering: bool
     plot_anomalies: bool
-    plot_mean_reversion: bool
+    plot_reversion_threshold: bool
     plot_signal_threshold: bool
 
     buy_signal_threshold: float
@@ -89,7 +89,7 @@ class Config:
             plot_cumulative_returns=config_dict.get("plot_cumulative_returns", False),
             plot_clustering=config_dict.get("plot_clustering", False),
             plot_anomalies=config_dict.get("plot_anomalies", False),
-            plot_mean_reversion=config_dict.get("plot_mean_reversion", False),
+            plot_reversion_threshold=config_dict.get("plot_reversion_threshold", False),
             plot_signal_threshold=config_dict.get("plot_signal_threshold", False),
             buy_signal_threshold=config_dict.get("buy_signal_threshold", 1.0),
             sell_signal_threshold=config_dict.get("sell_signal_threshold", 1.0),

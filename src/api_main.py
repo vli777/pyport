@@ -19,11 +19,19 @@ app = FastAPI(
 
 
 class PipelineRequest(BaseModel):
-    symbols: Optional[List[str]]
+    symbols: Optional[List[str]] = None
+    max_epochs: Optional[int] = None
+    min_weight: Optional[float] = None
+    portfolio_max_size: Optional[int] = None
 
     class Config:
-        json_schema_extra = {
-            "example": {"symbols": ["AAPL", "MSFT", "TSLA", "SPY", "TLT", "GLD"]}
+        schema_extra = {
+            "example": {
+                "symbols": ["AAPL", "MSFT", "TSLA", "SPY", "TLT", "GLD"],
+                "max_epochs": 15,
+                "min_weight": 0.02,
+                "portfolio_max_size": 20,
+            }
         }
 
 
@@ -36,9 +44,7 @@ def redirect_to_docs():
 @app.post("/inference")
 def inference(req: PipelineRequest):
     """
-    Run the pipeline without changing the loaded config object. Note that the default configured set of
-    symbol watchlists may cause the pipeline to run for awhile if it is the first run.
-    Only pass `symbols` to the pipeline if you want to specify which symbols to allocate.
+    Run the pipeline, optionally overriding config parameters.
     """
     # Load the default configuration
     default_config_path = "config.yaml"
@@ -56,7 +62,16 @@ def inference(req: PipelineRequest):
 
     try:
         result = iterative_pipeline_runner(
-            config=config_obj, initial_symbols=req.symbols, run_local=False
+            config=config_obj,
+            initial_symbols=req.symbols,
+            max_epochs=req.max_epochs,
+            min_weight=req.min_weight,
+            portfolio_max_size=req.portfolio_max_size,
+            run_local=False,
+        )
+    except TypeError as te:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid parameter type: {str(te)}"
         )
     except Exception as e:
         raise HTTPException(

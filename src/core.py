@@ -135,7 +135,7 @@ def run_pipeline(
 
         # Step 1: Apply mean reversion filter (if enabled)
         if config.use_reversion_filter:
-            filtered_symbols = filter_with_reversion(returns_df)
+            filtered_symbols = filter_with_reversion(returns_df, plot=config.plot_reversion_threshold)
         else:
             filtered_symbols = original_symbols
 
@@ -167,7 +167,7 @@ def run_pipeline(
                     returns_df=returns_df[valid_symbols],
                     performance_df=performance_metrics,
                     market_returns=market_returns,
-                    risk_free_rate=config.risk_free_rate,
+                    risk_free_rate=config.risk_free_rate,                    
                 )
 
                 # Filter decorrelated tickers
@@ -176,6 +176,7 @@ def run_pipeline(
                     performance_df=performance_metrics,
                     correlation_threshold=best_params["correlation_threshold"],
                     sharpe_threshold=0.005,
+                    plot=config.plot_clustering
                 )
 
                 valid_symbols = [

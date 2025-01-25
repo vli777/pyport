@@ -5,33 +5,50 @@ from plotly_graphs import plot_graphs
 
 
 def iterative_pipeline_runner(
-    config,
+    config: Config,
     initial_symbols: Optional[List[str]] = None,
-    max_epochs=10,
-    portfolio_max_size=5,
-    run_local=True,
+    max_epochs: Optional[int] = 10,
+    min_weight: Optional[float] = None,
+    portfolio_max_size: Optional[int] = None,
+    run_local: bool = True,
 ):
     """
-    Runs the pipeline iteratively, passing the top-performing symbols from each run to the next.
+    Runs the pipeline iteratively, updating config with provided arguments if valid.
 
     Parameters:
     ----------
-    config : object
+    config : Config
         The configuration object for the pipeline.
     initial_symbols : list, optional
         List of initial symbols to start the pipeline.
     max_epochs : int, optional
-        Maximum number of epochs, by default 10.
+        Maximum number of epochs.
+    min_weight : float, optional
+        Minimum asset allocation weight to be considered.
     portfolio_max_size : int, optional
-        Number of top symbols to select for the next epoch, by default 5.
+        Number of top symbols to select for the next epoch.
     run_local : bool, optional
-        Whether to run the pipeline locally, by default True.
+        Whether to run the pipeline locally.
 
     Returns:
     -------
     dict
         Results of the final pipeline run.
     """
+    # Update config with provided arguments if they are valid
+    if min_weight is not None:
+        if isinstance(min_weight, float):
+            config.min_weight = min_weight
+        else:
+            raise TypeError("min_weight must be a float")
+
+    if portfolio_max_size is not None:
+        if isinstance(portfolio_max_size, int):
+            config.portfolio_max_size = portfolio_max_size
+        else:
+            raise TypeError("portfolio_max_size must be an integer")
+
+    # initial_symbols and run_local are handled separately as they may not be part of config
     symbols = initial_symbols
     previous_top_symbols = set()
     final_result = None
@@ -49,7 +66,7 @@ def iterative_pipeline_runner(
         # Exclude the simulated portfolio symbol from the next epoch
         valid_symbols = [
             symbol
-            for symbol in result["symbols"][:portfolio_max_size]
+            for symbol in result["symbols"][:config.portfolio_max_size]
             if symbol != "SIM_PORT"
         ]
 
@@ -61,9 +78,9 @@ def iterative_pipeline_runner(
             final_result = result
             break
 
-        if len(valid_symbols) <= 10:
+        if len(valid_symbols) <= config.portfolio_max_size:
             print(
-                f"Stopping epochs as the number of valid symbols ({len(valid_symbols)}) is <= 10."
+                f"Stopping epochs as the number of valid symbols ({len(valid_symbols)}) is <= {config.portfolio_max_size}."
             )
             final_result = result
             break
@@ -84,18 +101,13 @@ def iterative_pipeline_runner(
 
     return final_result
 
-
 if __name__ == "__main__":
     config_file = "config.yaml"
     config = Config.from_yaml(config_file)
-    portfolio_max_size = config.portfolio_max_size
-    initial_symbols = None
 
     final_result = iterative_pipeline_runner(
         config=config,
-        initial_symbols=initial_symbols,
-        max_epochs=10,
-        portfolio_max_size=portfolio_max_size,
+        initial_symbols=None,  # Or provide initial symbols as needed
         run_local=True,
     )
 

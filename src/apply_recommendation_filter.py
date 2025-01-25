@@ -1,7 +1,7 @@
 from reversion.get_reversion_recommendations import apply_mean_reversion
 
 
-def filter_with_reversion(returns_df):
+def filter_with_reversion(returns_df, plot=False):
     """
     Filter tickers using mean reversion.
 
@@ -16,7 +16,7 @@ def filter_with_reversion(returns_df):
 
     # Generate mean reversion exclusions and inclusions
     mean_reversion_exclusions, mean_reversion_inclusions = apply_mean_reversion(
-        returns_df=returns_df, plot=False  # Adjust plot as needed
+        returns_df=returns_df, plot=plot
     )
 
     # Convert exclusions and inclusions to sets for set operations
