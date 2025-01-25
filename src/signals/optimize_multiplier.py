@@ -22,7 +22,7 @@ def optimize_multiplier(returns_df, window=20, n_trials=50):
     study.optimize(
         lambda trial: objective(trial, returns_df, window), n_trials=n_trials
     )
-    return study.best_params["multiplier"], study.best_value
+    return study.best_params["multiplier"]
 
 
 def objective(trial, returns_df, window=20):
