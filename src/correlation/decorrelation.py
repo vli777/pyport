@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Set
 import pandas as pd
 import numpy as np
 
-from correlation_utils import (
+from correlation.correlation_utils import (
     validate_matrix,
     calculate_condensed_distance_matrix,
     hierarchical_clustering,
