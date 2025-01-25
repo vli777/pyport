@@ -49,6 +49,55 @@ def apply_kalman_filter(returns_series, threshold=7.0, epsilon=1e-6):
     return anomaly_flags
 
 
+def remove_anomalous_stocks(returns_df, threshold=7.0, plot=False):
+    """
+    Removes stocks with anomalous returns based on the Kalman filter.
+    Optionally plots anomalies for all flagged stocks in a paginated 6x6 grid.
+
+    Args:
+        returns_df (pd.DataFrame): DataFrame of daily returns.
+        threshold (float): Number of standard deviations to flag anomalies.
+        plot (bool): If True, anomalies will be plotted in a paginated grid.
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame with anomalous stocks removed.
+    """
+    anomalous_cols = []
+
+    # Dictionaries to store data for plotting if needed
+    returns_data = {}
+    anomaly_flags_data = {}
+
+    for stock in returns_df.columns:
+        returns_series = returns_df[stock]
+        anomaly_flags = apply_kalman_filter(returns_series, threshold=threshold)
+
+        # If anomalies found for the stock
+        if anomaly_flags.any():
+            anomalous_cols.append(stock)
+            # Store data for plotting if plot is True
+            if plot:
+                returns_data[stock] = returns_series
+                anomaly_flags_data[stock] = anomaly_flags
+
+    print(
+        f"Removing {len(anomalous_cols)} stocks with Kalman anomalies: {anomalous_cols}"
+    )
+
+    # If plotting is requested and there are stocks with anomalies, plot them
+    if plot and returns_data:
+        # Use the list of anomalous stocks for plotting
+        plot_anomalies(
+            stocks=anomalous_cols,
+            returns_data=returns_data,
+            anomaly_flags_data=anomaly_flags_data,
+            stocks_per_page=36,
+        )
+
+    # Return the DataFrame with anomalous stocks removed
+    return returns_df.drop(columns=anomalous_cols)
+
+
 def plot_anomalies(stocks, returns_data, anomaly_flags_data, stocks_per_page=36):
     """
     Plots multiple stocks' return series in paginated 6x6 grids and highlights anomalies using Seaborn.
@@ -147,6 +196,14 @@ def plot_anomalies(stocks, returns_data, anomaly_flags_data, stocks_per_page=36)
                 label="Anomalies",
             )
 
+            # Simplify x-axis: Show only start and end dates
+            start_date = returns_series.index.min()
+            end_date = returns_series.index.max()
+            ax.set_xticks([start_date, end_date])
+            ax.set_xticklabels(
+                [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")],
+            )
+    
             # Customize each subplot
             ax.set_title(stock, fontsize=10)
             ax.set_xlabel("")
@@ -162,52 +219,3 @@ def plot_anomalies(stocks, returns_data, anomaly_flags_data, stocks_per_page=36)
         plt.tight_layout()
         plt.suptitle(f"Page {page + 1} of {num_pages}", fontsize=16)
         plt.show()
-
-
-def remove_anomalous_stocks(returns_df, threshold=7.0, plot=False):
-    """
-    Removes stocks with anomalous returns based on the Kalman filter.
-    Optionally plots anomalies for all flagged stocks in a paginated 6x6 grid.
-
-    Args:
-        returns_df (pd.DataFrame): DataFrame of daily returns.
-        threshold (float): Number of standard deviations to flag anomalies.
-        plot (bool): If True, anomalies will be plotted in a paginated grid.
-
-    Returns:
-        pd.DataFrame: Filtered DataFrame with anomalous stocks removed.
-    """
-    anomalous_cols = []
-
-    # Dictionaries to store data for plotting if needed
-    returns_data = {}
-    anomaly_flags_data = {}
-
-    for stock in returns_df.columns:
-        returns_series = returns_df[stock]
-        anomaly_flags = apply_kalman_filter(returns_series, threshold=threshold)
-
-        # If anomalies found for the stock
-        if anomaly_flags.any():
-            anomalous_cols.append(stock)
-            # Store data for plotting if plot is True
-            if plot:
-                returns_data[stock] = returns_series
-                anomaly_flags_data[stock] = anomaly_flags
-
-    print(
-        f"Removing {len(anomalous_cols)} stocks with Kalman anomalies: {anomalous_cols}"
-    )
-
-    # If plotting is requested and there are stocks with anomalies, plot them
-    if plot and returns_data:
-        # Use the list of anomalous stocks for plotting
-        plot_anomalies(
-            stocks=anomalous_cols,
-            returns_data=returns_data,
-            anomaly_flags_data=anomaly_flags_data,
-            stocks_per_page=36,
-        )
-
-    # Return the DataFrame with anomalous stocks removed
-    return returns_df.drop(columns=anomalous_cols)
