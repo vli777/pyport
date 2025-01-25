@@ -159,7 +159,9 @@ def run_pipeline(
     )
 
     # Ensure filtered_symbols are valid columns in returns_df
-    valid_symbols = [symbol for symbol in filtered_symbols if symbol in returns_df.columns]
+    valid_symbols = [
+        symbol for symbol in filtered_symbols if symbol in returns_df.columns
+    ]
 
     if len(valid_symbols) < len(filtered_symbols):
         missing_symbols = set(filtered_symbols) - set(valid_symbols)
@@ -229,11 +231,11 @@ def run_pipeline(
         logger.warning("No optimization results found.")
         return {}
 
-    # Step 7: Post-processing of optimization results 
+    # Step 7: Post-processing of optimization results
     normalized_avg_weights = perform_post_processing(stack)
     if not normalized_avg_weights:
         return {}
-   
+
     # Step 8: Prepare output data
     valid_models = [
         model for models in config.models.values() if models for model in models

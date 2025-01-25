@@ -20,6 +20,7 @@ buy_signal_threshold: float # Signal threshold for including assets
 sell_signal_threshold: float # Signal threshold for excluding assets 
 correlation_threshold: float # Correlation % threshold when filtering correlated assets
 use_reversion_filter: bool # Whether to use mean reversion asset filtering
+reversion_threshold_deviations: float # Number of standard deviations for reversion zscore threshold
 use_signal_filter: bool # Whether to use signal asset filtering
 expand_etfs: bool # Whether to include the top holdings of etf inputs
 min_weight: float  # Minimum weight for inclusion in final weights

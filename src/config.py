@@ -29,6 +29,7 @@ class Config:
     plot_anomalies: bool
     plot_mean_reversion: bool
     plot_signal_threshold: bool
+    reversion_threshold_deviations: float
     buy_signal_threshold: float
     sell_signal_threshold: float
     anomaly_detection_deviation_threshold: float
@@ -80,6 +81,9 @@ class Config:
             sell_signal_threshold=config_dict.get("sell_signal_threshold", 1.0),
             anomaly_detection_deviation_threshold=config_dict.get(
                 "anomaly_detection_deviation_threshold", 7.0
+            ),
+            reversion_threshold_deviations=config_dict.get(
+                "reversion_threshold_deviations", 2.0
             ),
             correlation_threshold=config_dict.get("correlation_threshold", 0.8),
             use_reversion_filter=config_dict.get("use_reversion_filter", True),
