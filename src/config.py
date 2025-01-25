@@ -40,10 +40,11 @@ class Config:
     buy_signal_threshold: float
     sell_signal_threshold: float
     anomaly_detection_deviation_threshold: float
-    
+
     use_reversion_filter: bool
     use_signal_filter: bool
     use_anomaly_filter: bool
+    use_correlation_filter: bool
 
     test_mode: bool
     test_data_visible_pct: float
@@ -86,10 +87,11 @@ class Config:
             sell_signal_threshold=config_dict.get("sell_signal_threshold", 1.0),
             anomaly_detection_deviation_threshold=config_dict.get(
                 "anomaly_detection_deviation_threshold", 7.0
-            ),            
+            ),
             use_reversion_filter=config_dict.get("use_reversion_filter", True),
             use_signal_filter=config_dict.get("use_signal_filter", True),
             use_anomaly_filter=config_dict.get("use_anomaly_filter", True),
+            use_correlation_filter=config_dict.get("use_correlation_filter", True),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
             model_config=model_config,
