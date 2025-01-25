@@ -20,4 +20,3 @@ venv/
 build/
 .vscode/
 other/
-src/models/
