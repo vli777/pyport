@@ -8,7 +8,7 @@ from signals.z_score import calculate_z_score
 
 def optimize_multiplier(returns_df, window=20, n_trials=50):
     """
-    Optimize the multiplier using Optuna to maximize cumulative return.
+    Optimize asymmetric multipliers for overbought and oversold thresholds using Optuna.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
@@ -16,19 +16,18 @@ def optimize_multiplier(returns_df, window=20, n_trials=50):
         n_trials (int): Number of optimization trials.
 
     Returns:
-        dict: A dictionary containing the best multiplier and associated statistics.
-              Example: {"multiplier": best_multiplier, "sharpe_ratio": best_sharpe, "cumulative_return": best_return}
+        dict: A dictionary containing the best parameters and associated statistics.
+              Example: {"overbought_multiplier": 1.2, "oversold_multiplier": 2.5, "objective_value": 1.25}
     """
     study = optuna.create_study(direction="maximize")
-    study.optimize(
-        lambda trial: objective(trial, returns_df, window), n_trials=n_trials
-    )
+    study.optimize(lambda trial: objective(trial, returns_df, window), n_trials=n_trials)
 
-    # Fetch best parameters and performance metrics
-    best_multiplier = study.best_params["multiplier"]
+    # Fetch best parameters and performance
+    best_params = study.best_params
     best_value = study.best_value
 
-    return best_multiplier
+    best_params["objective_value"] = best_value
+    return best_params
 
 
 def objective(trial, returns_df, window=20):
@@ -43,15 +42,21 @@ def objective(trial, returns_df, window=20):
         float: Objective value (e.g., risk-adjusted cumulative return).
     """
     # Suggest multiplier and rolling window size
-    multiplier = trial.suggest_float("multiplier", 1.0, 3.0, step=0.1)
-    window = trial.suggest_int("window", 10, 30, step=5)
+    overbought_multiplier = trial.suggest_float(
+        "overbought_multiplier", 1.0, 2.2, step=0.1
+    )
+    oversold_multiplier = trial.suggest_float("oversold_multiplier", 1.0, 2.2, step=0.1)
+    window = trial.suggest_int("window", 5, 30, step=5)
 
     # Calculate Z-scores
     z_scores_df = calculate_z_score(returns_df, window)
 
     # Calculate dynamic thresholds
     dynamic_thresholds = get_dynamic_thresholds(
-        returns_df, window=window, multiplier=multiplier
+        returns_df,
+        window=window,
+        overbought_multiplier=overbought_multiplier,
+        oversold_multiplier=oversold_multiplier,
     )
 
     # Simulate the strategy
@@ -59,16 +64,17 @@ def objective(trial, returns_df, window=20):
         returns_df, dynamic_thresholds, z_scores_df
     )
 
-    # Incorporate Sharpe ratio into the objective
-    if strategy_returns.std() == 0 or np.isnan(strategy_returns.std()):
-        return float("-inf")  # Penalize invalid combinations
-    sharpe_ratio = strategy_returns.mean() / strategy_returns.std()
-    objective_value = (
-        cumulative_return * sharpe_ratio
-    )  # Weighted by risk-adjusted return
+    # Check for invalid returns
+    if cumulative_return <= 0 or np.isnan(cumulative_return):
+        return float("-inf")  # Penalize invalid results
 
-    if np.isnan(cumulative_return) or cumulative_return <= 0:
-        return float("-inf")
+    # Calculate Sharpe ratio safely
+    if strategy_returns.std() == 0 or np.isnan(strategy_returns.std()):
+        return float("-inf")  # Penalize invalid Sharpe ratio
+
+    sharpe_ratio = strategy_returns.mean() / strategy_returns.std()
+
+    objective_value = sharpe_ratio * cumulative_return
 
     return objective_value
 

@@ -80,11 +80,20 @@ def apply_mean_reversion(
 
     z_score_df = pd.DataFrame(z_scores_dict)
 
-    optimal_multiplier = optimize_multiplier(returns_df=returns_df, window=20)
-    logger.info(f"Optimal multiplier determined: {optimal_multiplier}")
+    optimal_multipliers = optimize_multiplier(
+        returns_df=returns_df, window=20
+    )
+    overbought_multiplier = optimal_multipliers["overbought_multiplier"]
+    oversold_multiplier = optimal_multipliers["oversold_multiplier"]
+    logger.info(
+        f"Optimal multipliers determined: {overbought_multiplier}, {oversold_multiplier}"
+    )
 
     dynamic_thresholds = get_dynamic_thresholds(
-        returns_df, window=20, multiplier=optimal_multiplier
+        returns_df,
+        window=20,
+        overbought_multiplier=overbought_multiplier,
+        oversold_multiplier=oversold_multiplier,
     )
 
     # Generate signals
