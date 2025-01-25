@@ -44,6 +44,7 @@ class Config:
 
     use_reversion_filter: bool
     use_signal_filter: bool
+    use_anomaly_filter: bool
 
     test_mode: bool
     test_data_visible_pct: float
@@ -90,6 +91,7 @@ class Config:
             correlation_threshold=config_dict.get("correlation_threshold", 0.8),
             use_reversion_filter=config_dict.get("use_reversion_filter", True),
             use_signal_filter=config_dict.get("use_signal_filter", True),
+            use_anomaly_filter=config_dict.get("use_anomaly_filter", True),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict["test_data_visible_pct"],
             model_config=model_config,
