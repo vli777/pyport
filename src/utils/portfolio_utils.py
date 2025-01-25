@@ -4,6 +4,7 @@ from typing import Any, Dict, Tuple
 from collections import defaultdict
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import LinearRegression
 
 from .logger import logger
 
@@ -365,3 +366,54 @@ def limit_portfolio_size(
         limited_weights = limited_weights / current_sum * target_sum
 
     return limited_weights
+
+
+def calculate_portfolio_alpha(
+    filtered_returns: pd.DataFrame,
+    market_returns: pd.Series,
+    risk_free_rate: float = 0.0,
+) -> float:
+    """
+    Calculate the portfolio's alpha using the CAPM model.
+
+    Args:
+        filtered_returns (pd.DataFrame): DataFrame containing returns of filtered tickers.
+        market_returns (pd.Series): Series containing market returns.
+        risk_free_rate (float, optional): Risk-free rate. Defaults to 0.0.
+
+    Returns:
+        float: Calculated alpha of the portfolio.
+    """
+    if filtered_returns.empty or market_returns.empty:
+        logger.warning(
+            "Filtered returns or market returns are empty. Returning alpha=0.0"
+        )
+        return 0.0
+
+    # Calculate portfolio returns as the mean of filtered tickers
+    portfolio_returns = filtered_returns.mean(axis=1)
+
+    # Align market_returns with portfolio_returns
+    portfolio_returns = portfolio_returns.reindex(market_returns.index).dropna()
+    market_returns = market_returns.reindex(portfolio_returns.index)
+
+    if portfolio_returns.empty or market_returns.empty:
+        logger.warning(
+            "After alignment, portfolio returns or market returns are empty. Returning alpha=0.0"
+        )
+        return 0.0
+
+    # Calculate excess returns
+    excess_portfolio_returns = portfolio_returns - risk_free_rate
+    excess_market_returns = market_returns - risk_free_rate
+
+    # Fit CAPM model
+    model = LinearRegression()
+    model.fit(
+        excess_market_returns.values.reshape(-1, 1), excess_portfolio_returns.values
+    )
+    alpha = model.intercept_
+
+    logger.debug(f"Calculated alpha: {alpha}")
+
+    return alpha
