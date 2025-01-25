@@ -104,7 +104,8 @@ def remove_anomalous_stocks(returns_df, threshold=7.0, plot=False):
         )
 
     # Return the DataFrame with anomalous stocks removed
-    return returns_df.drop(columns=anomalous_cols)
+    filtered_df = returns_df.drop(columns=anomalous_cols)
+    return filtered_df, anomalous_cols
 
 
 def plot_anomalies(stocks, returns_data, anomaly_flags_data, stocks_per_page=36):
