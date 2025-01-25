@@ -5,7 +5,7 @@ import numpy as np
 import functools
 
 
-from correlation.decorrelation import filter_correlated_groups
+from correlation_utils import validate_matrix
 from utils.portfolio_utils import calculate_portfolio_alpha
 from utils import logger
 
@@ -37,8 +37,9 @@ def objective(
     # Suggest correlation threshold and lambda weight
     correlation_threshold = trial.suggest_float("correlation_threshold", 0.5, 0.9)
     lambda_weight = trial.suggest_float("lambda", 0.1, 1.0)  # Range for lambda tuning
-
+    
     # Apply the filter_correlated_groups function
+    from correlation.decorrelation import filter_correlated_groups
     filtered_tickers = filter_correlated_groups(
         returns_df=returns_df.copy(),
         performance_df=performance_df.copy(),

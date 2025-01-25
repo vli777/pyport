@@ -1,12 +1,12 @@
 from typing import Dict, List, Optional, Set
-import matplotlib.pyplot as plt
 import pandas as pd
-from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
-from scipy.spatial.distance import squareform
 import numpy as np
 
-
-from correlation.optimize_correlation import optimize_correlation_threshold
+from correlation_utils import (
+    validate_matrix,
+    calculate_condensed_distance_matrix,
+    hierarchical_clustering,
+)
 from utils import logger
 
 
@@ -37,107 +37,50 @@ def filter_correlated_groups(
         List[str]: List of filtered ticker symbols.
     """
     if not use_correlation_filter:
-        logger.info(
-            "Correlation filter is disabled. Returning original list of tickers."
-        )
+        logger.info("Correlation filter is disabled. Returning original list of tickers.")
         return returns_df.columns.tolist()
 
     if optimization_params is None:
         optimization_params = {}
-    # Extract optimization parameters with defaults
-    linkage_method = optimization_params.get("linkage_method", "average")
-    n_trials = optimization_params.get("n_trials", 50)
-    direction = optimization_params.get("direction", "maximize")
-    sampler = optimization_params.get("sampler", None)
-    pruner = optimization_params.get("pruner", None)
-    study_name = optimization_params.get("study_name", None)
-    storage = optimization_params.get("storage", None)
 
-    # Optimize correlation threshold
+    # Pass the optimization function as a parameter to avoid direct import
+    from correlation.optimize_correlation import optimize_correlation_threshold
+
     best_params, best_value = optimize_correlation_threshold(
         returns_df=returns_df,
         performance_df=performance_df,
         market_returns=market_returns,
         risk_free_rate=risk_free_rate,
         sharpe_threshold=sharpe_threshold,
-        linkage_method=linkage_method,
-        n_trials=n_trials,
-        direction=direction,
-        sampler=sampler,
-        pruner=pruner,
-        study_name=study_name,
-        storage=storage,
+        linkage_method=optimization_params.get("linkage_method", "average"),
+        n_trials=optimization_params.get("n_trials", 50),
+        direction=optimization_params.get("direction", "maximize"),
+        sampler=optimization_params.get("sampler", None),
+        pruner=optimization_params.get("pruner", None),
+        study_name=optimization_params.get("study_name", None),
+        storage=optimization_params.get("storage", None),
     )
 
     correlation_threshold = best_params.get("correlation_threshold", 0.8)
     logger.info(f"Optimized correlation_threshold: {correlation_threshold:.4f}")
 
-    total_excluded: Set[str] = set()
+    total_excluded: set = set()
     iteration = 1
 
     while True:
-        # Check if the number of tickers is less than 2
         if len(returns_df.columns) < 2:
             logger.info("Less than two tickers remain. Stopping iteration.")
             break
 
-        # Compute the correlation matrix and set diagonal to zero
         corr_matrix = returns_df.corr().abs()
         np.fill_diagonal(corr_matrix.values, 0)
+        validate_matrix(corr_matrix, "Correlation matrix")
 
-        # Validate correlation matrix
-        if corr_matrix.isnull().values.any():
-            raise ValueError("Correlation matrix contains NaN values.")
-        if np.isinf(corr_matrix.values).any():
-            raise ValueError("Correlation matrix contains infinite values.")
-
-        # Compute distance matrix
-        distance_matrix = 1 - corr_matrix
-
-        # Ensure the diagonal is zero
-        np.fill_diagonal(distance_matrix.values, 0)
-
-        # Validate distance matrix
-        if distance_matrix.isnull().values.any():
-            raise ValueError("Distance matrix contains NaN values.")
-        if np.isinf(distance_matrix.values).any():
-            raise ValueError("Distance matrix contains infinite values.")
-
-        # Convert to condensed distance matrix
-        try:
-            condensed_distance_matrix = squareform(distance_matrix)
-        except ValueError as e:
-            logger.error("Error during squareform conversion:", exc_info=True)
-            logger.error(f"Distance matrix:\n{distance_matrix}")
-            raise
-
-        # Ensure correlation_threshold is within [0,1]
-        if not (0 <= correlation_threshold <= 1):
-            raise ValueError(
-                f"correlation_threshold must be between 0 and 1, got {correlation_threshold}"
-            )
-
-        # Convert correlation threshold to distance threshold
+        condensed_distance_matrix = calculate_condensed_distance_matrix(corr_matrix)
         distance_threshold = 1 - correlation_threshold
-
-        # Perform hierarchical clustering
-        linked = linkage(condensed_distance_matrix, method=linkage_method)
-
-        # Form clusters based on the distance threshold
-        cluster_assignments = fcluster(
-            linked, t=distance_threshold, criterion="distance"
+        cluster_assignments = hierarchical_clustering(
+            corr_matrix=corr_matrix, condensed_distance_matrix=condensed_distance_matrix, distance_threshold=distance_threshold, linkage_method="average", plot=plot
         )
-
-        if plot:
-            plt.figure(figsize=(10, 7))
-            dendrogram(linked, labels=corr_matrix.index.tolist())
-            plt.axhline(
-                y=distance_threshold, color="r", linestyle="--"
-            )  # Visual cutoff line
-            plt.title("Hierarchical Clustering Dendrogram")
-            plt.xlabel("Ticker")
-            plt.ylabel("Distance (1 - Correlation)")
-            plt.show()
 
         # Output clusters
         clusters: Dict[int, List[str]] = {}
