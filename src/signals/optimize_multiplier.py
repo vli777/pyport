@@ -16,29 +16,35 @@ def optimize_multiplier(returns_df, window=20, n_trials=50):
         n_trials (int): Number of optimization trials.
 
     Returns:
-        float: Best multiplier value.
+        dict: A dictionary containing the best multiplier and associated statistics.
+              Example: {"multiplier": best_multiplier, "sharpe_ratio": best_sharpe, "cumulative_return": best_return}
     """
     study = optuna.create_study(direction="maximize")
     study.optimize(
         lambda trial: objective(trial, returns_df, window), n_trials=n_trials
     )
-    return study.best_params["multiplier"]
+
+    # Fetch best parameters and performance metrics
+    best_multiplier = study.best_params["multiplier"]
+    best_value = study.best_value
+
+    return {"multiplier": best_multiplier, "objective_value": best_value}
 
 
 def objective(trial, returns_df, window=20):
     """
-    Optuna objective function to find the optimal multiplier.
+    Optuna objective function to optimize thresholds and rolling window.
 
     Args:
         trial (optuna.trial.Trial): Optuna trial object.
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        window (int): Rolling window size for Z-score calculation.
+        returns_df (pd.DataFrame): Log returns DataFrame with tickers as columns.
 
     Returns:
-        float: Objective value (e.g., cumulative return).
+        float: Objective value (e.g., risk-adjusted cumulative return).
     """
-    # Suggest multiplier within a reasonable range
-    multiplier = trial.suggest_float("multiplier", 1.0, 2.0, step=0.1)
+    # Suggest multiplier and rolling window size
+    multiplier = trial.suggest_float("multiplier", 1.0, 3.0, step=0.1)
+    window = trial.suggest_int("window", 3, 30, step=3)
 
     # Calculate Z-scores
     z_scores_df = calculate_z_score(returns_df, window)
@@ -48,10 +54,18 @@ def objective(trial, returns_df, window=20):
         returns_df, window=window, multiplier=multiplier
     )
 
-    # Simulate the strategy and calculate performance
-    cumulative_return = simulate_strategy(returns_df, dynamic_thresholds, z_scores_df)
+    # Simulate the strategy
+    strategy_returns, cumulative_return = simulate_strategy(
+        returns_df, dynamic_thresholds, z_scores_df
+    )
 
-    return cumulative_return
+    # Incorporate Sharpe ratio into the objective
+    sharpe_ratio = strategy_returns.mean() / strategy_returns.std()
+    objective_value = (
+        cumulative_return * sharpe_ratio
+    )  # Weighted by risk-adjusted return
+
+    return objective_value
 
 
 def simulate_strategy(returns_df, dynamic_thresholds, z_scores_df):
@@ -64,7 +78,9 @@ def simulate_strategy(returns_df, dynamic_thresholds, z_scores_df):
         z_scores_df (pd.DataFrame): Precomputed Z-scores DataFrame.
 
     Returns:
-        float: Simulated cumulative return.
+        Tuple[pd.Series, float]: A tuple containing:
+            - strategy_returns (pd.Series): Daily returns of the strategy.
+            - cumulative_return (float): Final cumulative return of the strategy.
     """
     positions = pd.DataFrame(0, index=returns_df.index, columns=returns_df.columns)
 
@@ -80,8 +96,10 @@ def simulate_strategy(returns_df, dynamic_thresholds, z_scores_df):
             np.where(z_scores > overbought, -1, 0),  # Short position
         )
 
-    # Calculate daily returns from positions
+    # Calculate daily strategy returns
     strategy_returns = (positions.shift(1) * returns_df).sum(axis=1)
+
+    # Calculate cumulative return
     cumulative_return = np.exp(strategy_returns.cumsum())[-1]  # Final cumulative return
 
-    return cumulative_return
+    return strategy_returns, cumulative_return
