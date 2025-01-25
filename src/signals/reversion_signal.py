@@ -42,7 +42,6 @@ def generate_mean_reversion_signals(z_score_df, dynamic_thresholds):
 def apply_mean_reversion(
     returns_df,
     test_windows=range(10, 101, 10),  # Range of rolling windows to test
-    multiplier=1.0,
     plot=False,
     n_jobs=-1,  # Number of parallel jobs; -1 uses all available cores
 ):
