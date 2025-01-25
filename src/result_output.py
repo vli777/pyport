@@ -53,7 +53,7 @@ def output(
         portfolio_returns,
         portfolio_cumulative_returns,
         (all_daily_returns, all_cumulative_returns),
-    ) = calculate_portfolio_performance(data[clean_weights.keys()], clean_weights)
+    ) = calculate_portfolio_performance(data[list(clean_weights.keys())], clean_weights)
 
     try:
         sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)

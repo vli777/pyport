@@ -157,7 +157,9 @@ def run_pipeline(
 
                 # Load market returns
                 market_returns = calculate_returns(
-                    load_data(all_symbols=["SPY"], start_date=start_long, end_date=end_long)
+                    load_data(
+                        all_symbols=["SPY"], start_date=start_long, end_date=end_long
+                    )
                 )
 
                 # Optimize correlation threshold
@@ -191,11 +193,12 @@ def run_pipeline(
 
         # Step 4: Ensure a non-empty list of symbols is returned
         if not valid_symbols:
-            logger.warning("No valid symbols after filtering. Returning original symbols.")
+            logger.warning(
+                "No valid symbols after filtering. Returning original symbols."
+            )
             valid_symbols = original_symbols
 
         return valid_symbols
-
 
     def perform_post_processing(stack_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -254,6 +257,8 @@ def run_pipeline(
     # Step 3: Determine date range based on the longest period
     longest_period = sorted_time_periods[0]
     start_long, end_long = calculate_start_end_dates(longest_period)
+    dfs["start"] = start_long
+    dfs["end"] = end_long
 
     # Step 4: Load and preprocess data
     logger.info("Loading and preprocessing data...")
@@ -270,6 +275,13 @@ def run_pipeline(
         logger.warning("No valid symbols remain after filtering. Aborting pipeline.")
         return {}
     logger.info(f"Symbols selected for optimization: {valid_symbols}")
+
+    try:
+        dfs["data"] = df_all.xs("Adj Close", level=1, axis=1)[valid_symbols]
+        logger.debug(f"dfs['data'] shape: {dfs['data'].shape}")
+    except KeyError as e:
+        logger.error(f"Error slicing df_all with filtered_decorrelated: {e}")
+        raise
 
     # Step 6: Iterate through each time period and perform optimization
     logger.info("Running optimization...")
@@ -293,6 +305,7 @@ def run_pipeline(
         # Filter df_period to include only valid_symbols
         df_period = df_period[valid_symbols]
 
+        # Update dfs with the new start and end dates
         dfs["start"] = min(dfs["start"], start)
         dfs["end"] = max(dfs["end"], end)
 
@@ -332,6 +345,27 @@ def run_pipeline(
     combined_models = ", ".join(sorted(set(valid_models)))
     combined_input_files = ", ".join(config.input_files)
 
+    # Debugging: Log the normalized_avg_weights keys and dfs["data"] columns
+    logger.debug(
+        f"Normalized Average Weights Keys ({len(normalized_avg_weights)}): {list(normalized_avg_weights.keys())}"
+    )
+    logger.debug(
+        f"dfs['data'] Columns ({len(dfs['data'].columns)}): {list(dfs['data'].columns)}"
+    )
+
+    # Check for missing symbols
+    missing_symbols = [
+        symbol
+        for symbol in normalized_avg_weights.keys()
+        if symbol not in dfs["data"].columns
+    ]
+    if missing_symbols:
+        logger.error(
+            f"The following symbols are missing in dfs['data']: {missing_symbols}"
+        )
+        raise ValueError(f"Missing symbols in data: {missing_symbols}")
+
+    # Proceed to output
     daily_returns, cumulative_returns = output(
         data=dfs["data"],
         allocation_weights=normalized_avg_weights,

@@ -265,6 +265,18 @@ def calculate_portfolio_performance(
 
     # 2) Weighted returns and sum
     weights_vector = list(weights.values())
+    
+    logger.debug(f"Returns shape: {returns.shape}")
+    logger.debug(f"Weights vector length: {len(weights_vector)}")
+
+    if returns.shape[1] != len(weights_vector):
+        error_msg = (
+            f"Number of columns in returns ({returns.shape[1]}) does not match "
+            f"length of weights_vector ({len(weights_vector)})."
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
     weighted_returns = returns.mul(weights_vector, axis="columns")
     portfolio_returns = weighted_returns.sum(axis=1)
 
