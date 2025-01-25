@@ -71,14 +71,14 @@ def filter_correlated_groups(
             break
 
         total_excluded.update(excluded_tickers)
-        logger.info(f"Iteration {iteration}: Excluded tickers: {excluded_tickers}")
+        # logger.info(f"Iteration {iteration}: Excluded tickers: {excluded_tickers}")
 
         # Drop excluded tickers from the returns DataFrame
         returns_df = returns_df.drop(columns=excluded_tickers)
 
         iteration += 1
 
-    logger.info(f"Total excluded tickers: {total_excluded}")
+    logger.info(f"De-correlated tickers: {total_excluded}")
     return returns_df.columns.tolist()
 
 
@@ -104,10 +104,10 @@ def select_best_tickers(
         if len(group) < 2:
             continue
 
-        logger.info(f"Evaluating group of correlated tickers: {group}")
+        # logger.info(f"Evaluating group of correlated tickers: {group}")
         group_metrics = performance_df.loc[list(group)]
         max_sharpe = group_metrics["Sharpe Ratio"].max()
-        logger.info(f"Maximum Sharpe Ratio in group: {max_sharpe:.4f}")
+        # logger.info(f"Maximum Sharpe Ratio in group: {max_sharpe:.4f}")
 
         # Identify tickers within the Sharpe threshold of the max
         top_candidates = group_metrics[
@@ -123,7 +123,7 @@ def select_best_tickers(
 
         # Select top 'dynamic_n' based on Total Return among the candidates
         top_n = top_candidates.nlargest(dynamic_n, "Total Return").index.tolist()
-        logger.info(f"Selected top {dynamic_n} tickers: {top_n} from group {group}")
+        # logger.info(f"Selected top {dynamic_n} tickers: {top_n} from group {group}")
 
         # Exclude other tickers in the group
         to_keep = set(top_n)
