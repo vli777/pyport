@@ -1,7 +1,7 @@
 from reversion.get_reversion_recommendations import apply_mean_reversion
 
 
-def filter_symbols_with_mean_reversion(returns_df):
+def filter_with_reversion(returns_df):
     """
     Filter tickers using mean reversion.
 
@@ -29,3 +29,5 @@ def filter_symbols_with_mean_reversion(returns_df):
 
     # Return final filtered tickers as a list
     return list(filtered_set)
+
+

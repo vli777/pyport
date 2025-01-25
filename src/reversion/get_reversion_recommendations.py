@@ -105,8 +105,8 @@ def apply_mean_reversion(
         ticker for ticker, signal in signals.items() if signal["oversold"]
     ]
 
-    logger.info(f"MR Exclusions (Overbought): {tickers_to_exclude}")
-    logger.info(f"MR Inclusions (Oversold): {tickers_to_include}")
+    logger.info(f"Mean Reversion Overbought: {tickers_to_exclude}")
+    logger.info(f"Mean Reversion Oversold: {tickers_to_include}")
 
     # Optional: Plot Z-Scores
     if plot:
