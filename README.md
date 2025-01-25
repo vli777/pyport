@@ -4,8 +4,8 @@ Modern Portfolio Optimization
 # Latest Changes (January 2025)
 - Reworked implementation of Nested Clustering with vector ops => much faster!
 - https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961
-- Added anomaly detection with Kalman Filter with adjustable thresholds
-- Added mean reversion filtering with automatically optimized thresholds via Optuna
+- Added anomaly detection with Kalman Filter and mean reversion filters
+- Integrated Optuna to dynamically find optimal thresholds for maximizing performance metrics and returns
 - WIP: deep learning models e.g. RL, transformers to integrate forecasting 
 
 Daily and Cumulative Returns Statistics
