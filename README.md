@@ -15,6 +15,8 @@ Anomaly Detection
 Hierarchical Clustering Dendrogram
 ![image](https://github.com/user-attachments/assets/c3136d02-b4af-4072-a05b-a04667e2f49e)
 
+Dynamic Z-score Thresholds for Mean Reversion
+![image](https://github.com/user-attachments/assets/58b510e8-ccf6-4cba-8cf6-c4790f8c4aab)
 
 ## Instructions
 
