@@ -1,11 +1,11 @@
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Optional, Tuple
 import optuna
 import pandas as pd
 import numpy as np
 import functools
 
 
-from correlation_utils import validate_matrix
+from correlation.decorrelation import filter_correlated_groups
 from utils.portfolio_utils import calculate_portfolio_alpha
 from utils import logger
 
@@ -38,16 +38,13 @@ def objective(
     correlation_threshold = trial.suggest_float("correlation_threshold", 0.5, 0.9)
     lambda_weight = trial.suggest_float("lambda", 0.1, 1.0)  # Range for lambda tuning
 
-    # Apply the filter_correlated_groups function
-    from correlation.decorrelation import filter_correlated_groups
-
+    # Filter tickers based on the suggested correlation threshold
     filtered_tickers = filter_correlated_groups(
         returns_df=returns_df.copy(),
         performance_df=performance_df.copy(),
+        correlation_threshold=correlation_threshold,  
         sharpe_threshold=sharpe_threshold,
-        correlation_threshold=correlation_threshold,
         linkage_method=linkage_method,
-        plot=False,
     )
 
     # If no tickers are left after filtering, return a minimal value
@@ -83,10 +80,10 @@ def optimize_correlation_threshold(
     linkage_method: str = "average",
     n_trials: int = 50,
     direction: str = "maximize",
-    sampler: Callable = None,
-    pruner: Callable = None,
-    study_name: str = None,
-    storage: str = None,
+    sampler: Optional[Callable] = None,
+    pruner: Optional[Callable] = None,
+    study_name: Optional[str] = None,
+    storage: Optional[str] = None,
 ) -> Tuple[Dict[str, float], float]:
     """
     Optimize the correlation_threshold and lambda_weight to maximize the weighted objective using Optuna.

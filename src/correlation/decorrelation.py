@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Dict, List, Optional, Set
 import pandas as pd
 import numpy as np
@@ -13,59 +14,14 @@ from utils import logger
 def filter_correlated_groups(
     returns_df: pd.DataFrame,
     performance_df: pd.DataFrame,
-    market_returns: pd.Series,
-    risk_free_rate: float,
+    correlation_threshold: float = 0.8,
     sharpe_threshold: float = 0.005,
+    linkage_method: str = "average",
     plot: bool = False,
-    use_correlation_filter: bool = True,
-    optimization_params: Optional[Dict] = None,
 ) -> List[str]:
     """
-    Iteratively filter correlated tickers based on optimized correlation threshold and Sharpe Ratio.
-
-    Args:
-        returns_df (pd.DataFrame): DataFrame containing returns of tickers.
-        performance_df (pd.DataFrame): DataFrame containing performance metrics (e.g., Sharpe Ratio) indexed by ticker.
-        market_returns (pd.Series): Series containing market returns.
-        risk_free_rate (float): Risk-free rate for alpha calculation.
-        sharpe_threshold (float): Threshold to determine eligible tickers based on Sharpe Ratio.
-        plot (bool): Whether to plot the dendrogram.
-        use_correlation_filter (bool): Whether to perform correlation-based filtering.
-        optimization_params (Optional[Dict]): Parameters for optimizing correlation threshold.
-
-    Returns:
-        List[str]: List of filtered ticker symbols.
+    Iteratively filter correlated tickers based on a specified correlation threshold and Sharpe Ratio.
     """
-    if not use_correlation_filter:
-        logger.info(
-            "Correlation filter is disabled. Returning original list of tickers."
-        )
-        return returns_df.columns.tolist()
-
-    if optimization_params is None:
-        optimization_params = {}
-
-    # Pass the optimization function as a parameter to avoid direct import
-    from correlation.optimize_correlation import optimize_correlation_threshold
-
-    best_params, best_value = optimize_correlation_threshold(
-        returns_df=returns_df,
-        performance_df=performance_df,
-        market_returns=market_returns,
-        risk_free_rate=risk_free_rate,
-        sharpe_threshold=sharpe_threshold,
-        linkage_method=optimization_params.get("linkage_method", "average"),
-        n_trials=optimization_params.get("n_trials", 50),
-        direction=optimization_params.get("direction", "maximize"),
-        sampler=optimization_params.get("sampler", None),
-        pruner=optimization_params.get("pruner", None),
-        study_name=optimization_params.get("study_name", None),
-        storage=optimization_params.get("storage", None),
-    )
-
-    correlation_threshold = best_params.get("correlation_threshold", 0.8)
-    logger.info(f"Optimized correlation_threshold: {correlation_threshold:.4f}")
-
     total_excluded: set = set()
     iteration = 1
 
@@ -78,20 +34,21 @@ def filter_correlated_groups(
         np.fill_diagonal(corr_matrix.values, 0)
         validate_matrix(corr_matrix, "Correlation matrix")
 
+        # Convert correlation to distance
         condensed_distance_matrix = calculate_condensed_distance_matrix(corr_matrix)
         distance_threshold = 1 - correlation_threshold
         cluster_assignments = hierarchical_clustering(
             corr_matrix=corr_matrix,
             condensed_distance_matrix=condensed_distance_matrix,
             distance_threshold=distance_threshold,
-            linkage_method="average",
+            linkage_method=linkage_method,
             plot=plot,
         )
 
-        # Output clusters
-        clusters: Dict[int, List[str]] = {}
-        for stock, cluster_label in zip(returns_df.columns, cluster_assignments):
-            clusters.setdefault(cluster_label, []).append(stock)
+        # Group tickers
+        clusters = defaultdict(list)
+        for ticker, cluster_label in zip(returns_df.columns, cluster_assignments):
+            clusters[cluster_label].append(ticker)
 
         # Identify correlated groups (clusters with more than one ticker)
         correlated_groups = [
@@ -109,18 +66,11 @@ def filter_correlated_groups(
             sharpe_threshold=sharpe_threshold,
         )
 
-        logger.debug(
-            f"Excluded tickers (type {type(excluded_tickers)}): {excluded_tickers}"
-        )
-
-        # If no tickers are excluded this iteration, break to avoid infinite loop
         if not excluded_tickers:
             logger.info("No more tickers to exclude. Stopping iteration.")
             break
 
         total_excluded.update(excluded_tickers)
-
-        # Log tickers excluded in this iteration
         logger.info(f"Iteration {iteration}: Excluded tickers: {excluded_tickers}")
 
         # Drop excluded tickers from the returns DataFrame
@@ -128,7 +78,6 @@ def filter_correlated_groups(
 
         iteration += 1
 
-    # Log total excluded tickers
     logger.info(f"Total excluded tickers: {total_excluded}")
     return returns_df.columns.tolist()
 

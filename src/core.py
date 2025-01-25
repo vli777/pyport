@@ -3,7 +3,7 @@
 from pathlib import Path
 import logging
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 
 from config import Config
@@ -11,10 +11,11 @@ from plotly_graphs import plot_graphs
 from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
-import filter_symbols_with_signals
 from anomaly_detection import remove_anomalous_stocks
 
 from correlation.decorrelation import filter_correlated_groups
+from apply_recommendation_filter import filter_with_reversion
+from correlation.optimize_correlation import optimize_correlation_threshold
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -65,13 +66,20 @@ def run_pipeline(
         logger.debug(
             f"Loading data for symbols: {all_symbols} from {start_date} to {end_date}"
         )
-        return process_symbols(
-            symbols=all_symbols,
-            start_date=start_date,
-            end_date=end_date,
-            data_path=Path(config.data_dir),
-            download=config.download,
-        )
+        try:
+            data = process_symbols(
+                symbols=all_symbols,
+                start_date=start_date,
+                end_date=end_date,
+                data_path=Path(config.data_dir),
+                download=config.download,
+            )
+            if data.empty:
+                logger.warning("Loaded data is empty.")
+            return data
+        except Exception as e:
+            logger.error(f"Failed to load data: {e}")
+            raise
 
     def calculate_returns(df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -92,7 +100,7 @@ def run_pipeline(
             logger.error("Adjusted close prices not found in the DataFrame.")
             raise
 
-    def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
+    def preprocess_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         """
         Preprocess the input DataFrame to calculate returns and optionally remove anomalous stocks.
 
@@ -105,9 +113,10 @@ def run_pipeline(
         """
         returns = calculate_returns(df)
 
+        removed_symbols = []
         if config.use_anomaly_filter:
             logger.debug("Applying anomaly filter.")
-            returns = remove_anomalous_stocks(
+            returns, removed_symbols = remove_anomalous_stocks(
                 returns,
                 threshold=config.anomaly_detection_deviation_threshold,
                 plot=config.plot_anomalies,
@@ -115,7 +124,78 @@ def run_pipeline(
         else:
             logger.debug("Skipping anomaly filter.")
 
-        return returns
+        return returns, removed_symbols
+
+    def filter_symbols(returns_df: pd.DataFrame, config: Config) -> List[str]:
+        """
+        Apply mean reversion and decorrelation filters to return valid symbols.
+        Falls back to the original returns_df columns if filtering results in an empty list.
+        """
+        original_symbols = list(returns_df.columns)  # Preserve original symbols
+
+        # Step 1: Apply mean reversion filter (if enabled)
+        if config.use_reversion_filter:
+            filtered_symbols = filter_with_reversion(returns_df)
+        else:
+            filtered_symbols = original_symbols
+
+        # Step 2: Validate filtered symbols against returns_df columns
+        valid_symbols = [
+            symbol for symbol in filtered_symbols if symbol in original_symbols
+        ]
+        if len(valid_symbols) < len(filtered_symbols):
+            missing_symbols = set(filtered_symbols) - set(valid_symbols)
+            logger.warning(f"Filtered symbols not in returns_df: {missing_symbols}")
+
+        # Step 3: Apply correlation filter (if enabled)
+        if config.use_correlation_filter and valid_symbols:
+            try:
+                # Calculate performance metrics
+                performance_metrics = calculate_performance_metrics(
+                    returns_df[valid_symbols], config.risk_free_rate
+                )
+
+                # Load market returns
+                market_returns = calculate_returns(
+                    load_data(all_symbols=["SPY"], start_date=start_long, end_date=end_long)
+                )
+
+                # Optimize correlation threshold
+                best_params, best_value = optimize_correlation_threshold(
+                    returns_df=returns_df[valid_symbols],
+                    performance_df=performance_metrics,
+                    market_returns=market_returns,
+                    risk_free_rate=config.risk_free_rate,
+                )
+
+                # Filter decorrelated tickers
+                decorrelated_tickers = filter_correlated_groups(
+                    returns_df=returns_df[valid_symbols],
+                    performance_df=performance_metrics,
+                    correlation_threshold=best_params["correlation_threshold"],
+                    sharpe_threshold=0.005,
+                )
+
+                valid_symbols = [
+                    symbol for symbol in valid_symbols if symbol in decorrelated_tickers
+                ]
+
+                logger.info(
+                    f"Optimized correlation threshold: {best_params['correlation_threshold']:.4f}"
+                )
+
+            except Exception as e:
+                logger.error(f"Correlation threshold optimization failed: {e}")
+                # Fall back to original symbols if optimization fails
+                valid_symbols = original_symbols
+
+        # Step 4: Ensure a non-empty list of symbols is returned
+        if not valid_symbols:
+            logger.warning("No valid symbols after filtering. Returning original symbols.")
+            valid_symbols = original_symbols
+
+        return valid_symbols
+
 
     def perform_post_processing(stack_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -176,65 +256,23 @@ def run_pipeline(
     start_long, end_long = calculate_start_end_dates(longest_period)
 
     # Step 4: Load and preprocess data
+    logger.info("Loading and preprocessing data...")
     df_all = load_data(all_symbols, start_long, end_long)
-    returns_df = preprocess_data(df_all)
-    performance_metrics = calculate_performance_metrics(
-        returns_df, risk_free_rate=config.risk_free_rate
-    )
+    returns_df, removed_anomalous = preprocess_data(df_all)
+    # Log removed anomalous symbols
+    if removed_anomalous:
+        logger.info(f"Anomalous symbols removed: {removed_anomalous}")
 
     # Step 5: Filter symbols based on mean reversion only if required
-    if config.use_reversion_filter:
-        filtered_symbols = filter_symbols_with_signals(returns_df)
-    else:
-        filtered_symbols = list(returns_df.columns)  # Default to all tickers
-
-    # Ensure filtered_symbols are valid columns in returns_df
-    valid_symbols = [
-        symbol for symbol in filtered_symbols if symbol in returns_df.columns
-    ]
-
-    if len(valid_symbols) < len(filtered_symbols):
-        missing_symbols = set(filtered_symbols) - set(valid_symbols)
-        logger.warning(f"Filtered symbols not in returns_df: {missing_symbols}")
-
-    # Proceed with valid symbols only
-    filtered_returns = returns_df[valid_symbols]
-    market_returns = calculate_returns(
-        load_data(all_symbols=["SPY"], start_date=start_long, end_date=end_long)
-    )
-
-    # Filter decorrelated groups with optimized correlation threshold
-    filtered_decorrelated = filter_correlated_groups(
-        returns_df=filtered_returns,
-        performance_df=performance_metrics,
-        market_returns=market_returns,
-        risk_free_rate=config.risk_free_rate,
-        sharpe_threshold=0.005,
-        plot=config.plot_clustering,
-        use_correlation_filter=config.use_correlation_filter,
-        optimization_params={  # Additional parameters for optimization
-            "linkage_method": "average",
-            "n_trials": 100,
-            "direction": "maximize",
-            "sampler": None,
-            "pruner": None,
-            "study_name": "correlation_threshold_optimization",
-            "storage": None,  # Optional persistent storage
-        },
-    )
-
-    logger.info(f"Symbols selected for optimization: {filtered_decorrelated}")
-
-    # Update dfs with relevant data
-    dfs.update(
-        {
-            "data": df_all.xs("Adj Close", level=1, axis=1),
-            "start": start_long,
-            "end": end_long,
-        }
-    )
+    logger.info("Filtering symbols...")
+    valid_symbols = filter_symbols(returns_df, config)
+    if not valid_symbols:
+        logger.warning("No valid symbols remain after filtering. Aborting pipeline.")
+        return {}
+    logger.info(f"Symbols selected for optimization: {valid_symbols}")
 
     # Step 6: Iterate through each time period and perform optimization
+    logger.info("Running optimization...")
     for period in sorted_time_periods:
         start, end = calculate_start_end_dates(period)
         logger.debug(f"Processing period: {period} from {start} to {end}")
@@ -252,6 +290,9 @@ def run_pipeline(
         df_period.columns.name = None  # Remove column name (Ticker)
         df_period.index.name = "Date"  # Set index name for clarity
 
+        # Filter df_period to include only valid_symbols
+        df_period = df_period[valid_symbols]
+
         dfs["start"] = min(dfs["start"], start)
         dfs["end"] = max(dfs["end"], end)
 
@@ -268,10 +309,12 @@ def run_pipeline(
             config=config,
             start_date=start,
             end_date=end,
-            symbols=filtered_decorrelated,
+            symbols=valid_symbols,
             stack=stack,
             years=period,
         )
+
+    logger.info("Post-processing optimization results...")
 
     if not stack:
         logger.warning("No optimization results found.")
@@ -303,7 +346,7 @@ def run_pipeline(
     )
 
     sorted_symbols = sorted(
-        daily_returns.columns,
+        valid_symbols,
         key=lambda symbol: normalized_avg_weights.get(symbol, 0),
         reverse=True,
     )
