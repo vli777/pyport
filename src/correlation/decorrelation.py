@@ -1,35 +1,78 @@
+from typing import Dict, List, Optional, Set
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from scipy.spatial.distance import squareform
 import numpy as np
 
+
+from correlation.optimize_correlation import optimize_correlation_threshold
 from utils import logger
 
 
 def filter_correlated_groups(
     returns_df: pd.DataFrame,
     performance_df: pd.DataFrame,
+    market_returns: pd.Series,
+    risk_free_rate: float,
     sharpe_threshold: float = 0.005,
-    correlation_threshold: float = 0.8,
-    linkage_method: str = "average",
     plot: bool = False,
-) -> list:
+    use_correlation_filter: bool = True,
+    optimization_params: Optional[Dict] = None,
+) -> List[str]:
     """
-    Iteratively filter correlated tickers based on correlation and Sharpe Ratio.
+    Iteratively filter correlated tickers based on optimized correlation threshold and Sharpe Ratio.
 
     Args:
         returns_df (pd.DataFrame): DataFrame containing returns of tickers.
         performance_df (pd.DataFrame): DataFrame containing performance metrics (e.g., Sharpe Ratio) indexed by ticker.
+        market_returns (pd.Series): Series containing market returns.
+        risk_free_rate (float): Risk-free rate for alpha calculation.
         sharpe_threshold (float): Threshold to determine eligible tickers based on Sharpe Ratio.
-        correlation_threshold (float): Threshold to determine if tickers are highly correlated.
-        linkage_method (str): Method to use for hierarchical clustering.
         plot (bool): Whether to plot the dendrogram.
+        use_correlation_filter (bool): Whether to perform correlation-based filtering.
+        optimization_params (Optional[Dict]): Parameters for optimizing correlation threshold.
 
     Returns:
         List[str]: List of filtered ticker symbols.
     """
-    total_excluded = set()
+    if not use_correlation_filter:
+        logger.info(
+            "Correlation filter is disabled. Returning original list of tickers."
+        )
+        return returns_df.columns.tolist()
+
+    if optimization_params is None:
+        optimization_params = {}
+    # Extract optimization parameters with defaults
+    linkage_method = optimization_params.get("linkage_method", "average")
+    n_trials = optimization_params.get("n_trials", 50)
+    direction = optimization_params.get("direction", "maximize")
+    sampler = optimization_params.get("sampler", None)
+    pruner = optimization_params.get("pruner", None)
+    study_name = optimization_params.get("study_name", None)
+    storage = optimization_params.get("storage", None)
+
+    # Optimize correlation threshold
+    best_params, best_value = optimize_correlation_threshold(
+        returns_df=returns_df,
+        performance_df=performance_df,
+        market_returns=market_returns,
+        risk_free_rate=risk_free_rate,
+        sharpe_threshold=sharpe_threshold,
+        linkage_method=linkage_method,
+        n_trials=n_trials,
+        direction=direction,
+        sampler=sampler,
+        pruner=pruner,
+        study_name=study_name,
+        storage=storage,
+    )
+
+    correlation_threshold = best_params.get("correlation_threshold", 0.8)
+    logger.info(f"Optimized correlation_threshold: {correlation_threshold:.4f}")
+
+    total_excluded: Set[str] = set()
     iteration = 1
 
     while True:
@@ -42,7 +85,7 @@ def filter_correlated_groups(
         corr_matrix = returns_df.corr().abs()
         np.fill_diagonal(corr_matrix.values, 0)
 
-        # Check for NaN or infinite values in correlation matrix
+        # Validate correlation matrix
         if corr_matrix.isnull().values.any():
             raise ValueError("Correlation matrix contains NaN values.")
         if np.isinf(corr_matrix.values).any():
@@ -54,7 +97,7 @@ def filter_correlated_groups(
         # Ensure the diagonal is zero
         np.fill_diagonal(distance_matrix.values, 0)
 
-        # Check for NaN or infinite values in distance matrix
+        # Validate distance matrix
         if distance_matrix.isnull().values.any():
             raise ValueError("Distance matrix contains NaN values.")
         if np.isinf(distance_matrix.values).any():
@@ -92,12 +135,12 @@ def filter_correlated_groups(
                 y=distance_threshold, color="r", linestyle="--"
             )  # Visual cutoff line
             plt.title("Hierarchical Clustering Dendrogram")
-            plt.xlabel("Stock")
+            plt.xlabel("Ticker")
             plt.ylabel("Distance (1 - Correlation)")
             plt.show()
 
         # Output clusters
-        clusters = {}
+        clusters: Dict[int, List[str]] = {}
         for stock, cluster_label in zip(returns_df.columns, cluster_assignments):
             clusters.setdefault(cluster_label, []).append(stock)
 

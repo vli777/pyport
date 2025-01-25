@@ -4,7 +4,8 @@ import pandas as pd
 import numpy as np
 import functools
 
-from filters.decorrelation import filter_correlated_groups
+
+from correlation.decorrelation import filter_correlated_groups
 from utils.portfolio_utils import calculate_portfolio_alpha
 from utils import logger
 

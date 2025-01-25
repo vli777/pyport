@@ -11,12 +11,10 @@ from plotly_graphs import plot_graphs
 from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
-from reversion.get_reversion_recommendations import apply_mean_reversion
-from signals.get_signal_recommendations import generate_signals
-from filters.anomaly_detection import remove_anomalous_stocks
-from filters.decorrelation import filter_correlated_groups
-from integrate_recommendations import filter_symbols_with_signals
-from filters.optimize_correlation import optimize_correlation_threshold
+import filter_symbols_with_signals
+from anomaly_detection import remove_anomalous_stocks
+
+from correlation.decorrelation import filter_correlated_groups
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -184,14 +182,11 @@ def run_pipeline(
         returns_df, risk_free_rate=config.risk_free_rate
     )
 
-    # Step 5: Filter symbols based on signals and performance
-    filtered_symbols = filter_symbols_with_signals(
-        price_df=df_all,
-        returns_df=returns_df,
-        generate_signals_fn=generate_signals,
-        mean_reversion_fn=apply_mean_reversion,
-        config=config,
-    )
+    # Step 5: Filter symbols based on mean reversion only if required
+    if config.use_reversion_filter:
+        filtered_symbols = filter_symbols_with_signals(returns_df)
+    else:
+        filtered_symbols = list(returns_df.columns)  # Default to all tickers
 
     # Ensure filtered_symbols are valid columns in returns_df
     valid_symbols = [
@@ -207,32 +202,25 @@ def run_pipeline(
     market_returns = calculate_returns(
         load_data(all_symbols=["SPY"], start_date=start_long, end_date=end_long)
     )
-    # Optimize the correlation_threshold
-    best_params, best_alpha = optimize_correlation_threshold(
-        returns_df=returns_df,
+
+    # Filter decorrelated groups with optimized correlation threshold
+    filtered_decorrelated = filter_correlated_groups(
+        returns_df=filtered_returns,
         performance_df=performance_metrics,
         market_returns=market_returns,
         risk_free_rate=config.risk_free_rate,
         sharpe_threshold=0.005,
-        linkage_method="average",
-        n_trials=100,
-        direction="maximize",
-        sampler=None,  # You can specify a sampler like optuna.samplers.TPESampler()
-        pruner=None,  # You can specify a pruner like optuna.pruners.MedianPruner()
-        study_name="correlation_threshold_optimization",
-        storage=None,  # e.g., "sqlite:///optuna_study.db" for persistent storage
-    )
-
-    correlation_threshold = best_params["correlation_threshold"]
-    logger.info(f"Optimal correlation_threshold: {correlation_threshold}")
-    logger.info(f"Optimal portfolio alpha: {best_alpha}")
-
-    filtered_decorrelated = filter_correlated_groups(
-        returns_df=filtered_returns,
-        performance_df=performance_metrics,
-        sharpe_threshold=0.005,
-        correlation_threshold=correlation_threshold,
         plot=config.plot_clustering,
+        use_correlation_filter=config.use_correlation_filter,
+        optimization_params={  # Additional parameters for optimization
+            "linkage_method": "average",
+            "n_trials": 100,
+            "direction": "maximize",
+            "sampler": None,
+            "pruner": None,
+            "study_name": "correlation_threshold_optimization",
+            "storage": None,  # Optional persistent storage
+        },
     )
 
     logger.info(f"Symbols selected for optimization: {filtered_decorrelated}")
