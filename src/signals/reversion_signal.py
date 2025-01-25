@@ -80,9 +80,7 @@ def apply_mean_reversion(
 
     z_score_df = pd.DataFrame(z_scores_dict)
 
-    optimal_multipliers = optimize_multiplier(
-        returns_df=returns_df, window=20
-    )
+    optimal_multipliers = optimize_multiplier(returns_df=returns_df, window=20)
     overbought_multiplier = optimal_multipliers["overbought_multiplier"]
     oversold_multiplier = optimal_multipliers["oversold_multiplier"]
     logger.info(

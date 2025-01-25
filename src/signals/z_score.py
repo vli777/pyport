@@ -72,12 +72,14 @@ def plot_z_scores_grid(
             ax.set_title(f"{ticker} Z-Score")
             ax.legend()
             ax.grid(True)
-            
+
             # Simplify x-axis: Show only start and end dates
             start_date = z_scores.index.min()
             end_date = z_scores.index.max()
             ax.set_xticks([start_date, end_date])
-            ax.set_xticklabels([start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")])
+            ax.set_xticklabels(
+                [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
+            )
 
         # Hide any unused subplots
         for j in range(num_current, rows * cols):

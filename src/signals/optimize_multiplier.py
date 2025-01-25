@@ -20,7 +20,9 @@ def optimize_multiplier(returns_df, window=20, n_trials=50):
               Example: {"overbought_multiplier": 1.2, "oversold_multiplier": 2.5, "objective_value": 1.25}
     """
     study = optuna.create_study(direction="maximize")
-    study.optimize(lambda trial: objective(trial, returns_df, window), n_trials=n_trials)
+    study.optimize(
+        lambda trial: objective(trial, returns_df, window), n_trials=n_trials
+    )
 
     # Fetch best parameters and performance
     best_params = study.best_params
