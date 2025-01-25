@@ -4,9 +4,11 @@ Modern Portfolio Optimization
 # Latest Changes (January 2025)
 - Reworked implementation of Nested Clustering with vector ops => much faster!
 - https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961
-- Added anomaly detection with Kalman Filter with adjustable thresholds
-- Added mean reversion filtering with automatically optimized thresholds via Optuna
+- Added anomaly detection with Kalman Filter and mean reversion filters
+- Integrated Optuna to dynamically find optimal thresholds for maximizing performance metrics and returns
 - WIP: deep learning models e.g. RL, transformers to integrate forecasting 
+
+### Example plots (taken with various inputs to demo feature)
 
 Daily and Cumulative Returns Statistics
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
@@ -15,10 +17,10 @@ Anomaly Detection
 ![image](https://github.com/user-attachments/assets/c3c22208-2669-4687-8884-38106e1c9353)
 
 Hierarchical Clustering Dendrogram
-![image](https://github.com/user-attachments/assets/c3136d02-b4af-4072-a05b-a04667e2f49e)
+![image](https://github.com/user-attachments/assets/ec4b9b05-e32e-4012-a49c-4446ef0ce603)
 
 Dynamic Z-score Thresholds for Mean Reversion
-![image](https://github.com/user-attachments/assets/58b510e8-ccf6-4cba-8cf6-c4790f8c4aab)
+![image](https://github.com/user-attachments/assets/c4ff9519-96bd-425d-92d8-8fcf04af3a7b)
 
 ## Instructions
 
