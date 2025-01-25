@@ -37,7 +37,9 @@ def filter_correlated_groups(
         List[str]: List of filtered ticker symbols.
     """
     if not use_correlation_filter:
-        logger.info("Correlation filter is disabled. Returning original list of tickers.")
+        logger.info(
+            "Correlation filter is disabled. Returning original list of tickers."
+        )
         return returns_df.columns.tolist()
 
     if optimization_params is None:
@@ -79,7 +81,11 @@ def filter_correlated_groups(
         condensed_distance_matrix = calculate_condensed_distance_matrix(corr_matrix)
         distance_threshold = 1 - correlation_threshold
         cluster_assignments = hierarchical_clustering(
-            corr_matrix=corr_matrix, condensed_distance_matrix=condensed_distance_matrix, distance_threshold=distance_threshold, linkage_method="average", plot=plot
+            corr_matrix=corr_matrix,
+            condensed_distance_matrix=condensed_distance_matrix,
+            distance_threshold=distance_threshold,
+            linkage_method="average",
+            plot=plot,
         )
 
         # Output clusters

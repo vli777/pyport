@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+
 def validate_matrix(matrix, matrix_name: str):
     """
     Validate that a matrix does not contain NaN or infinite values.
@@ -37,7 +38,11 @@ def calculate_condensed_distance_matrix(corr_matrix):
 
 
 def hierarchical_clustering(
-    corr_matrix:pd.DataFrame, condensed_distance_matrix:np.ndarray, distance_threshold: float, linkage_method: str, plot:bool
+    corr_matrix: pd.DataFrame,
+    condensed_distance_matrix: np.ndarray,
+    distance_threshold: float,
+    linkage_method: str,
+    plot: bool,
 ) -> List[int]:
     """
     Perform hierarchical clustering and return cluster assignments.
@@ -53,7 +58,7 @@ def hierarchical_clustering(
         List[int]: Cluster assignments for each item.
     """
     linked = linkage(condensed_distance_matrix, method=linkage_method)
-    
+
     if plot:
         # Create a clustermap with Seaborn
         sns.clustermap(
@@ -76,5 +81,5 @@ def hierarchical_clustering(
         plt.legend(loc="upper right")
         plt.title("Hierarchical Clustering Dendrogram")
         plt.show()
-            
+
     return fcluster(linked, t=distance_threshold, criterion="distance")
