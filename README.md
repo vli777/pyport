@@ -101,7 +101,7 @@ curl -X POST "http://localhost:8000/inference" \
 
 - Ensure your `config.yaml` file is correctly configured for your use case.
 - The API allows dynamic overrides for symbols and configurations without modifying the local `config.yaml`.
-- The symbol selection process will auto-remove highly correlated pairs within a group and select representatives based on sharpe ratio vs the group
+- The symbol selection process will optionally filter out inputs based on a number of configurable methods prior to optimization so the result set may not contain all assets in the input list. Enabled by default.
 - SIM_PORT is the hypothetical portfolio with the allocation result over the same period (used for graphing daily and cumulative returns).
 
 
