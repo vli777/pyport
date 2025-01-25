@@ -231,7 +231,7 @@ def run_pipeline(
         returns_df=filtered_returns,
         performance_df=performance_metrics,
         sharpe_threshold=0.005,
-        correlation_threshold=config.correlation_threshold,
+        correlation_threshold=correlation_threshold,
         plot=config.plot_clustering,
     )
 

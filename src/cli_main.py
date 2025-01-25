@@ -44,7 +44,7 @@ def main():
     log_and_format_results(results, logger)
 
     # If ETF expansion is enabled
-    if config.expand_etfs:
+    if config.include_etf_top_holdings:
         expanded_symbols = set(results["symbols"])
 
         for etf_symbol in results["symbols"]:
