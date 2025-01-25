@@ -1,31 +1,5 @@
-import os
-import pickle
-from datetime import datetime, timedelta
-
 from joblib import Parallel, delayed
 import numpy as np
-
-from signals.z_score import calculate_z_score
-from utils import logger
-
-PICKLE_PATH = "reversion_windows.pkl"
-DEFAULT_VALIDITY_DAYS = 90  # 3 months
-
-
-def save_dynamic_windows(dynamic_windows, pickle_path=PICKLE_PATH):
-    """Save the dynamic windows dictionary to a pickle file."""
-    with open(pickle_path, "wb") as f:
-        pickle.dump(dynamic_windows, f)
-
-
-def load_dynamic_windows(pickle_path=PICKLE_PATH, validity_days=DEFAULT_VALIDITY_DAYS):
-    """Load dynamic windows if the pickle file is valid (not older than validity_days)."""
-    if os.path.exists(pickle_path):
-        last_modified = datetime.fromtimestamp(os.path.getmtime(pickle_path))
-        if datetime.now() - last_modified < timedelta(days=validity_days):
-            with open(pickle_path, "rb") as f:
-                return pickle.load(f)
-    return None
 
 
 def manage_dynamic_windows(
@@ -44,16 +18,13 @@ def manage_dynamic_windows(
     Returns:
         dict: {ticker: optimal_window}
     """
-    dynamic_windows = load_dynamic_windows()
-    if dynamic_windows is None:
-        dynamic_windows = find_dynamic_windows(
-            returns_df=returns_df,
-            test_windows=test_windows,
-            overbought_threshold=overbought_threshold,
-            oversold_threshold=oversold_threshold,
-            n_jobs=n_jobs,
-        )
-        save_dynamic_windows(dynamic_windows)
+    dynamic_windows = find_dynamic_windows(
+        returns_df=returns_df,
+        test_windows=test_windows,
+        overbought_threshold=overbought_threshold,
+        oversold_threshold=oversold_threshold,
+        n_jobs=n_jobs,
+    )
     return dynamic_windows
 
 
