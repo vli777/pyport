@@ -16,6 +16,7 @@ from signals.get_signal_recommendations import generate_signals
 from filters.anomaly_detection import remove_anomalous_stocks
 from filters.decorrelation import filter_correlated_groups
 from integrate_recommendations import filter_symbols_with_signals
+from filters.optimize_correlation import optimize_correlation_threshold
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -74,15 +75,49 @@ def run_pipeline(
             download=config.download,
         )
 
+    def calculate_returns(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate daily returns from a multiindex DataFrame with adjusted close prices.
+
+        Args:
+            df (pd.DataFrame): Multiindex DataFrame with adjusted close prices under the level "Adj Close".
+
+        Returns:
+            pd.DataFrame: DataFrame containing daily returns for each stock.
+        """
+        try:
+            adj_close = df.xs("Adj Close", level=1, axis=1)
+            returns = adj_close.pct_change().dropna()
+            logger.debug("Calculated daily returns.")
+            return returns
+        except KeyError:
+            logger.error("Adjusted close prices not found in the DataFrame.")
+            raise
+
     def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
-        adj_close = df.xs("Adj Close", level=1, axis=1)
-        returns = adj_close.pct_change().dropna()
-        logger.debug("Calculated daily returns.")
-        return remove_anomalous_stocks(
-            returns,
-            threshold=config.anomaly_detection_deviation_threshold,
-            plot=config.plot_anomalies,
-        )
+        """
+        Preprocess the input DataFrame to calculate returns and optionally remove anomalous stocks.
+
+        Args:
+            df (pd.DataFrame): Multiindex DataFrame with adjusted close prices.
+            config: Configuration object with settings like anomaly detection threshold and plotting options.
+
+        Returns:
+            pd.DataFrame: Processed DataFrame with daily returns and optional anomaly filtering applied.
+        """
+        returns = calculate_returns(df)
+
+        if config.use_anomaly_filter:
+            logger.debug("Applying anomaly filter.")
+            returns = remove_anomalous_stocks(
+                returns,
+                threshold=config.anomaly_detection_deviation_threshold,
+                plot=config.plot_anomalies,
+            )
+        else:
+            logger.debug("Skipping anomaly filter.")
+
+        return returns
 
     def perform_post_processing(stack_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -169,6 +204,28 @@ def run_pipeline(
 
     # Proceed with valid symbols only
     filtered_returns = returns_df[valid_symbols]
+    market_returns = calculate_returns(
+        load_data(all_symbols=["SPY"], start_date=start_long, end_date=end_long)
+    )
+    # Optimize the correlation_threshold
+    best_params, best_alpha = optimize_correlation_threshold(
+        returns_df=returns_df,
+        performance_df=performance_metrics,
+        market_returns=market_returns,
+        risk_free_rate=config.risk_free_rate,
+        sharpe_threshold=0.005,
+        linkage_method="average",
+        n_trials=100,
+        direction="maximize",
+        sampler=None,  # You can specify a sampler like optuna.samplers.TPESampler()
+        pruner=None,  # You can specify a pruner like optuna.pruners.MedianPruner()
+        study_name="correlation_threshold_optimization",
+        storage=None,  # e.g., "sqlite:///optuna_study.db" for persistent storage
+    )
+
+    correlation_threshold = best_params["correlation_threshold"]
+    logger.info(f"Optimal correlation_threshold: {correlation_threshold}")
+    logger.info(f"Optimal portfolio alpha: {best_alpha}")
 
     filtered_decorrelated = filter_correlated_groups(
         returns_df=filtered_returns,
@@ -177,6 +234,7 @@ def run_pipeline(
         correlation_threshold=config.correlation_threshold,
         plot=config.plot_clustering,
     )
+
     logger.info(f"Symbols selected for optimization: {filtered_decorrelated}")
 
     # Update dfs with relevant data

@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import pandas as pd
 from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from scipy.spatial.distance import squareform
 import numpy as np
@@ -7,13 +8,13 @@ from utils import logger
 
 
 def filter_correlated_groups(
-    returns_df,
-    performance_df,
-    sharpe_threshold=0.005,
-    correlation_threshold=0.8,
-    linkage_method="average",
-    plot=False,
-):
+    returns_df: pd.DataFrame,
+    performance_df: pd.DataFrame,
+    sharpe_threshold: float = 0.005,
+    correlation_threshold: float = 0.8,
+    linkage_method: str = "average",
+    plot: bool = False,
+) -> list:
     """
     Iteratively filter correlated tickers based on correlation and Sharpe Ratio.
 
@@ -34,16 +35,12 @@ def filter_correlated_groups(
     while True:
         # Check if the number of tickers is less than 2
         if len(returns_df.columns) < 2:
-            # print("Less than two tickers remain. Stopping iteration.")
+            logger.info("Less than two tickers remain. Stopping iteration.")
             break
 
         # Compute the correlation matrix and set diagonal to zero
         corr_matrix = returns_df.corr().abs()
         np.fill_diagonal(corr_matrix.values, 0)
-
-        # Debug: Verify that the diagonal is zero
-        diag = np.diag(corr_matrix)
-        # print(f"Iteration {iteration}: Diagonal of correlation matrix: {diag}")
 
         # Check for NaN or infinite values in correlation matrix
         if corr_matrix.isnull().values.any():
@@ -57,10 +54,6 @@ def filter_correlated_groups(
         # Ensure the diagonal is zero
         np.fill_diagonal(distance_matrix.values, 0)
 
-        # Debug: Verify that the distance matrix diagonal is zero
-        diag_dist = np.diag(distance_matrix)
-        # print(f"Iteration {iteration}: Diagonal of distance matrix: {diag_dist}")
-
         # Check for NaN or infinite values in distance matrix
         if distance_matrix.isnull().values.any():
             raise ValueError("Distance matrix contains NaN values.")
@@ -71,8 +64,8 @@ def filter_correlated_groups(
         try:
             condensed_distance_matrix = squareform(distance_matrix)
         except ValueError as e:
-            print("Error during squareform conversion:", e)
-            print("Distance matrix:\n", distance_matrix)
+            logger.error("Error during squareform conversion:", exc_info=True)
+            logger.error(f"Distance matrix:\n{distance_matrix}")
             raise
 
         # Ensure correlation_threshold is within [0,1]
@@ -103,7 +96,7 @@ def filter_correlated_groups(
             plt.ylabel("Distance (1 - Correlation)")
             plt.show()
 
-        # Debug: Output clusters
+        # Output clusters
         clusters = {}
         for stock, cluster_label in zip(returns_df.columns, cluster_assignments):
             clusters.setdefault(cluster_label, []).append(stock)
@@ -114,7 +107,7 @@ def filter_correlated_groups(
         ]
 
         if not correlated_groups:
-            # print("No correlated groups found. Stopping iteration.")
+            logger.info("No correlated groups found. Stopping iteration.")
             break
 
         # Select tickers to exclude based on Sharpe Ratio
@@ -124,18 +117,19 @@ def filter_correlated_groups(
             sharpe_threshold=sharpe_threshold,
         )
 
-        # Debug: Check type and contents of excluded_tickers
-        print(f"Excluded tickers (type {type(excluded_tickers)}): {excluded_tickers}")
+        logger.debug(
+            f"Excluded tickers (type {type(excluded_tickers)}): {excluded_tickers}"
+        )
 
         # If no tickers are excluded this iteration, break to avoid infinite loop
         if not excluded_tickers:
-            # print("No more tickers to exclude. Stopping iteration.")
+            logger.info("No more tickers to exclude. Stopping iteration.")
             break
 
         total_excluded.update(excluded_tickers)
 
         # Log tickers excluded in this iteration
-        print(f"Iteration {iteration}: Excluded tickers: {excluded_tickers}")
+        logger.info(f"Iteration {iteration}: Excluded tickers: {excluded_tickers}")
 
         # Drop excluded tickers from the returns DataFrame
         returns_df = returns_df.drop(columns=excluded_tickers)
@@ -143,11 +137,15 @@ def filter_correlated_groups(
         iteration += 1
 
     # Log total excluded tickers
-    print(f"Total excluded tickers: {total_excluded}")
+    logger.info(f"Total excluded tickers: {total_excluded}")
     return returns_df.columns.tolist()
 
 
-def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.005):
+def select_best_tickers(
+    performance_df: pd.DataFrame,
+    correlated_groups: list,
+    sharpe_threshold: float = 0.005,
+) -> set:
     """
     Select top N tickers from each correlated group based on Sharpe Ratio and Total Return.
 
@@ -168,7 +166,7 @@ def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.00
         logger.info(f"Evaluating group of correlated tickers: {group}")
         group_metrics = performance_df.loc[list(group)]
         max_sharpe = group_metrics["Sharpe Ratio"].max()
-        # logger.info(f"Maximum Sharpe Ratio in group: {max_sharpe:.4f}")
+        logger.info(f"Maximum Sharpe Ratio in group: {max_sharpe:.4f}")
 
         # Identify tickers within the Sharpe threshold of the max
         top_candidates = group_metrics[
@@ -184,7 +182,7 @@ def select_best_tickers(performance_df, correlated_groups, sharpe_threshold=0.00
 
         # Select top 'dynamic_n' based on Total Return among the candidates
         top_n = top_candidates.nlargest(dynamic_n, "Total Return").index.tolist()
-        # logger.info(f"Selected top {dynamic_n} tickers: {top_n} from group {group}")
+        logger.info(f"Selected top {dynamic_n} tickers: {top_n} from group {group}")
 
         # Exclude other tickers in the group
         to_keep = set(top_n)
