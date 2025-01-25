@@ -80,7 +80,7 @@ def convert_to_dict(weights: Any, asset_names: list) -> Dict[str, float]:
 def normalize_weights(weights, min_weight: float) -> pd.Series:
     """
     Normalize the weights by filtering out values below min_weight and scaling the remaining weights to sum to 1.
-    Additionally, rounds each weight to three decimal places.
+    If no weights meet the min_weight threshold, the original weights are returned, scaled to sum to 1.
 
     Args:
         weights (dict or pd.Series): The input weights.
@@ -97,34 +97,30 @@ def normalize_weights(weights, min_weight: float) -> pd.Series:
         weights = pd.Series(weights)
 
     # Filter out assets whose absolute weight is below min_weight
-    import numbers
+    filtered_weights = weights[weights.abs() >= min_weight]
 
-    filtered_weights = {
-        k: float(v)
-        for k, v in weights.items()
-        if isinstance(v, numbers.Number) and abs(v) >= min_weight
-    }
-    logger.debug(f"Filtered weights: {filtered_weights}")
+    if filtered_weights.empty:
+        logger.warning(
+            "No weights meet the minimum threshold. Returning scaled original weights."
+        )
+        filtered_weights = weights  # Retain original weights if all are below min_weight
 
-    total_weight = sum(filtered_weights.values())
+    # Normalize the weights so they sum to 1
+    total_weight = filtered_weights.sum()
     logger.debug(f"Total weight after filtering: {total_weight}")
 
     if total_weight == 0:
-        logger.error("No weights remain after filtering with the specified min_weight.")
-        raise ValueError(
-            "No weights remain after filtering with the specified min_weight."
-        )
+        logger.error("Total weight is zero after filtering. Cannot normalize weights.")
+        raise ValueError("Total weight is zero after filtering. Cannot normalize weights.")
 
-    # Normalize the weights so they sum to 1
-    normalized_weights = {k: v / total_weight for k, v in filtered_weights.items()}
+    normalized_weights = filtered_weights / total_weight
     logger.debug(f"Normalized weights before rounding: {normalized_weights}")
 
     # Round each weight to three decimal places
-    rounded_weights = {k: round(v, 3) for k, v in normalized_weights.items()}
+    rounded_weights = normalized_weights.round(3)
     logger.debug(f"Normalized weights after rounding: {rounded_weights}")
 
-    # Return a Pandas Series instead of a dict
-    return pd.Series(rounded_weights)
+    return rounded_weights
 
 
 def stacked_output(stack_dict: Dict[str, Dict[str, float]]) -> Dict[str, float]:

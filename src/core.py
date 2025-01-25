@@ -353,17 +353,15 @@ def run_pipeline(
         f"dfs['data'] Columns ({len(dfs['data'].columns)}): {list(dfs['data'].columns)}"
     )
 
-    # Check for missing symbols
-    missing_symbols = [
-        symbol
-        for symbol in normalized_avg_weights.keys()
-        if symbol not in dfs["data"].columns
-    ]
-    if missing_symbols:
-        logger.error(
-            f"The following symbols are missing in dfs['data']: {missing_symbols}"
-        )
-        raise ValueError(f"Missing symbols in data: {missing_symbols}")
+    # Align dfs["data"] with normalized_avg_weights dict
+    dfs["data"] = dfs["data"].filter(items=normalized_avg_weights.keys())
+    logger.debug(
+        f"Filtered symbols after trimming allocations below minimum weight {config.min_weight}: {dfs['data'].columns}"
+    )
+
+    # Check for empty DataFrame after filtering
+    if dfs["data"].empty:
+        logger.error("No valid symbols remain in the DataFrame after alignment.")
 
     # Proceed to output
     daily_returns, cumulative_returns = output(
@@ -380,7 +378,7 @@ def run_pipeline(
     )
 
     sorted_symbols = sorted(
-        valid_symbols,
+        normalized_avg_weights.keys(),
         key=lambda symbol: normalized_avg_weights.get(symbol, 0),
         reverse=True,
     )

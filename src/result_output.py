@@ -35,8 +35,15 @@ def output(
         else dict(allocation_weights)
     )
 
-    if config and getattr(config, "test_mode", False):
-        logger.info("Raw weights:", clean_weights)
+    # Validate that data contains all required symbols
+    missing_symbols = [symbol for symbol in clean_weights.keys() if symbol not in data.columns]
+    if missing_symbols:
+        logger.warning(
+            f"The following symbols are missing in the data and will be filled with zeros: {missing_symbols}"
+        )
+        # Add missing columns with zero values
+        for symbol in missing_symbols:
+            data[symbol] = 0
 
     # Trim if we have more assets than allowed
     if len(clean_weights) > max_size:
