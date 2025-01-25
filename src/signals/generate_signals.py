@@ -17,10 +17,10 @@ from signals.weighted_signals import (
     verify_ticker_consistency,
     verify_weighted_signals,
 )
-from filters.filter_with_signals import filter_signals_by_threshold
-from signals.tuner import run_optuna_optimization
-from signals.evaluate_signals import analyze_thresholds
-from signals.plot_threshold import plot_threshold_metrics
+from signals_filter import filter_signals_by_threshold
+from signals.signal_weights_tuner import run_optuna_optimization
+from signals.signal_threshold import plot_threshold_metrics
+from signals.dynamic_threshold import analyze_thresholds
 
 
 def generate_signals(

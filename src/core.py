@@ -14,7 +14,7 @@ from result_output import output
 from signals.reversion_signal import apply_mean_reversion
 from filters.anomaly_detection import remove_anomalous_stocks
 from filters.decorrelation import filter_correlated_groups
-from filters.filter_with_signals import filter_symbols_with_signals
+from signals_filter import filter_symbols_with_signals
 from signals.generate_signals import generate_signals
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
