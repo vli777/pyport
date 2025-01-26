@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 
 
 def run_pipeline(
-    config: Config, symbols_override: Optional[List[str]] = None, run_local: bool = True
+    config: Config,
+    symbols_override: Optional[List[str]] = None,
+    run_local: bool = False,
 ) -> Dict[str, Any]:
     """
     Orchestrates the data loading, optimization, and analysis pipeline.

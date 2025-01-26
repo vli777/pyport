@@ -13,7 +13,7 @@ def iterative_pipeline_runner(
     min_weight: Optional[float] = None,
     portfolio_max_size: Optional[int] = None,
     top_n_candidates: Optional[int] = None,
-    run_local: bool = True,
+    run_local: bool = False,
 ):
     """
     Runs the pipeline iteratively, updating config with provided arguments if valid.
@@ -69,7 +69,6 @@ def iterative_pipeline_runner(
         result = run_pipeline(
             config=config,
             symbols_override=symbols,
-            run_local=False,  # Only plot in the last epoch
         )
 
         # Exclude the simulated portfolio symbol from the next epoch
@@ -85,14 +84,30 @@ def iterative_pipeline_runner(
         # Check for convergence
         if set(valid_symbols) == previous_top_symbols:
             print("Convergence reached. Stopping epochs.")
-            final_result = result
+
+            # Trim to portfolio_max_size if needed
+            if len(valid_symbols) > config.portfolio_max_size:
+                print(
+                    f"Trimming symbols from {len(valid_symbols)} to {config.portfolio_max_size} for final portfolio."
+                )
+                final_result = run_pipeline(
+                    config=config,
+                    symbols_override=valid_symbols[: config.portfolio_max_size],
+                )
+            else:
+                final_result = result  # No trimming needed
+
             break
 
         if len(valid_symbols) <= config.portfolio_max_size:
             print(
-                f"Stopping epochs as the number of valid symbols ({len(valid_symbols)}) is <= {config.portfolio_max_size}."
+                f"Stopping epochs as the number of portfolio holdings ({len(valid_symbols)}) is <= the configured portfolio max size of {config.portfolio_max_size}."
             )
-            final_result = result
+            # Run the final pipeline trimmed to user-defined portfolio max-size
+            final_result = run_pipeline(
+                config=config,
+                symbols_override=valid_symbols[: config.portfolio_max_size],
+            )
             break
 
         # Update symbols for the next epoch
