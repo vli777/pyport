@@ -28,6 +28,7 @@ Dynamic Z-score Thresholds for Mean Reversion
 - In the `config.yaml` file, you can specify:
   - Input files containing ticker symbols.
   - Models and time periods to optimize against.
+  - Whether to use various filters like de-correlation.
 
 ### Preparing Input Files
 - Each input file (CSV format) should have a single column containing the ticker symbols to include in the optimization.
@@ -40,7 +41,7 @@ Dynamic Z-score Thresholds for Mean Reversion
     - file1.csv
     - file2.csv
 
-You can specify multiple models under models. The output will contain a simple average of all selected models.
+You can specify multiple models under models. The output will contain a simple average of all selected models and time periods.
 
 # Local Usage
 
