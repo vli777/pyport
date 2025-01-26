@@ -21,12 +21,9 @@ plot_cumulative_returns: bool  # Whether to plot cumulative returns
 plot_clustering: bool # Where to plot hierarchical clustering dendrogram
 plot_anomalies: bool # Whether to plot anomalies detected by Kalman filter
 plot_reversion_threshold: bool # Whether to plot mean reversion z scores
-plot_signal_threshold: bool # Whether to plot signal thresholds
 
-buy_signal_threshold: float # Signal threshold for including assets 
-sell_signal_threshold: float # Signal threshold for excluding assets 
 anomaly_detection_deviation_threshold: float # Kalman filter sd multiplier
-top_n_candidates: int # How many top candidates to keep per cluster when decorrelating
+top_n_candidates: int # Optional fixed number of top candidates to select from cluster groups
 
 use_reversion_filter: bool # Whether to use mean reversion asset filtering
 use_signal_filter: bool # Whether to use signal asset filtering
