@@ -114,4 +114,12 @@ def run_optimization_and_save(
             final_weights = pd.Series(dtype=float)  # Default empty Series
 
         # Output / Print / Plot results
-        output_results(df, final_weights, model, config, start_date, end_date, years)
+        output_results(
+            df=df,
+            weights=final_weights,
+            model_name=model,
+            start_date=start_date,
+            end_date=end_date,
+            years=years,
+            config=config,
+        )

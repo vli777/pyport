@@ -17,10 +17,8 @@ def output(
     start_date: Any,
     end_date: Any,
     inputs: Optional[str] = None,
-    max_size: int = 10,
     optimization_model: Optional[str] = None,
     time_period: float = 1.0,
-    minimum_weight: float = 0.01,
     config: Config = None,
 ):
     """
@@ -46,8 +44,8 @@ def output(
             data[symbol] = 0
 
     # Trim if we have more assets than allowed
-    if len(clean_weights) > max_size:
-        clean_weights = trim_weights(clean_weights, max_size)
+    if len(clean_weights) > config.portfolio_max_size:
+        clean_weights = trim_weights(clean_weights, config.portfolio_max_size)
 
     # If nothing left, can't proceed
     if len(clean_weights) == 0:
@@ -76,7 +74,7 @@ def output(
     logger.info(f"Optimization method: {optimization_model}")
     logger.info(f"Sharpe ratio: {round(sharpe, 2)}")
     logger.info(f"Cumulative return: {cumulative_pct}%")
-    logger.info(f"Portfolio allocation weights (min {minimum_weight:.2f}):")
+    logger.info(f"Portfolio allocation weights (min {config.min_weight:.2f}):")
 
     sorted_weights = sorted(clean_weights.items(), key=lambda kv: kv[1], reverse=True)
     for symbol, weight in sorted_weights:
@@ -85,16 +83,26 @@ def output(
     return all_daily_returns, all_cumulative_returns
 
 
-def output_results(df, weights, model_name, config, start_date, end_date, years):
+def output_results(
+    df: pd.DataFrame,
+    weights: Dict[str, float],
+    model_name: str,
+    start_date: Any,
+    end_date: Any,
+    years: float,
+    config: Config,
+) -> None:
+    """
+    Wrapper around `output` for portfolio optimization results.
+    Handles logging and reporting without returning performance data.
+    """
     output(
         data=df,
         allocation_weights=weights,
-        inputs=", ".join([str(i) for i in sorted(config.input_files)]),
+        inputs=model_name,
         start_date=start_date,
         end_date=end_date,
         optimization_model=model_name,
         time_period=years,
-        minimum_weight=config.min_weight,
-        max_size=getattr(config, "portfolio_max_size", 10),
         config=config,
     )

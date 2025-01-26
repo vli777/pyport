@@ -1,7 +1,9 @@
+import sys
 from typing import List, Optional
 from config import Config
 from core import run_pipeline
 from plotly_graphs import plot_graphs
+from utils import logger
 
 
 def iterative_pipeline_runner(
@@ -99,6 +101,31 @@ def iterative_pipeline_runner(
 
     # After the loop, filter the cumulative_returns and daily_returns
     if final_result:
+        # Extract the current valid_symbols
+        current_valid_symbols = set(valid_symbols)
+
+        # Find available symbols in daily_returns and cumulative_returns
+        available_daily_symbols = set(final_result["daily_returns"].columns)
+        available_cumulative_symbols = set(final_result["cumulative_returns"].columns)
+
+        # Determine symbols present in both DataFrames
+        available_symbols = current_valid_symbols & available_daily_symbols & available_cumulative_symbols
+
+        # Identify missing symbols
+        missing_symbols = current_valid_symbols - available_symbols
+
+        if missing_symbols:
+            logger.warning(f"The following symbols are missing in daily_returns or cumulative_returns and will be skipped: {missing_symbols}")
+
+        # Update valid_symbols to include only available symbols
+        valid_symbols = list(available_symbols)
+
+        # Check if there are still valid symbols left
+        if not valid_symbols:
+            logger.error("No valid symbols available after filtering out missing symbols. Exiting.")
+            sys.exit()
+
+        # Filter the DataFrames
         filtered_daily_returns = final_result["daily_returns"][valid_symbols]
         filtered_cumulative_returns = final_result["cumulative_returns"][valid_symbols]
         

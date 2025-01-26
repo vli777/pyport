@@ -5,8 +5,8 @@ input_files:
   # - str  # Additional file names for switching
 
 models:
-  float:  # Time period in years
-    - str  # Model name
+  float:  # Time period in years, default 1.0
+    - str  # Model name, default nested_clustering
     # - str  # Other model names
 
 download: bool  # Whether to download data
