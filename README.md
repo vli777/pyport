@@ -1,7 +1,7 @@
 # PyPort
 Modern Portfolio Optimization 
 
-# Latest Changes (January 2025)
+# Latest Changes (January 2025) ver 1.0.0
 - Reworked implementation of Nested Clustering (https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961) with vector ops => much faster!
 - Added anomaly detection with Kalman Filter and mean reversion filters
 - Integrated Optuna to dynamically find optimal thresholds for maximizing performance metrics and returns
@@ -28,6 +28,7 @@ Dynamic Z-score Thresholds for Mean Reversion
 - In the `config.yaml` file, you can specify:
   - Input files containing ticker symbols.
   - Models and time periods to optimize against.
+  - Whether to use various filters like de-correlation.
 
 ### Preparing Input Files
 - Each input file (CSV format) should have a single column containing the ticker symbols to include in the optimization.
@@ -40,7 +41,7 @@ Dynamic Z-score Thresholds for Mean Reversion
     - file1.csv
     - file2.csv
 
-You can specify multiple models under models. The output will contain a simple average of all selected models.
+You can specify multiple models under models. The output will contain a simple average of all selected models and time periods.
 
 # Local Usage
 
