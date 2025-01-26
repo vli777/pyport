@@ -15,7 +15,7 @@ Daily and Cumulative Returns Statistics
 Anomaly Detection for Automatic Filtering
 ![image](https://github.com/user-attachments/assets/f8048fe3-4d92-4424-8d40-68490d47374d)
 
-Hierarchical Clustering Dendrogram
+Hierarchical Clustering for De-correlation
 ![image](https://github.com/user-attachments/assets/ec4b9b05-e32e-4012-a49c-4446ef0ce603)
 
 Dynamic Z-score Thresholds for Mean Reversion
