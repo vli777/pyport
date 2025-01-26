@@ -97,14 +97,19 @@ def iterative_pipeline_runner(
         symbols = valid_symbols
         final_result = result
 
-    # Plot only the last result if `run_local` is enabled
-    if run_local and final_result:
-        plot_graphs(
-            final_result["daily_returns"],
-            final_result["cumulative_returns"],
-            config,
-            symbols=final_result["symbols"],
-        )
+    # After the loop, filter the cumulative_returns and daily_returns
+    if final_result:
+        filtered_daily_returns = final_result["daily_returns"][valid_symbols]
+        filtered_cumulative_returns = final_result["cumulative_returns"][valid_symbols]
+        
+        # Plot only the last result if `run_local` is enabled
+        if run_local:
+            plot_graphs(
+                daily_returns=filtered_daily_returns,
+                cumulative_returns=filtered_cumulative_returns,
+                config=config,
+                symbols=valid_symbols,
+            )
 
     return final_result
 
