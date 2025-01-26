@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Set
 import pandas as pd
 import numpy as np
+from sklearn.covariance import LedoitWolf
 
 from correlation.correlation_utils import (
     validate_matrix,
@@ -17,21 +18,43 @@ def filter_correlated_groups(
     correlation_threshold: float = 0.8,
     sharpe_threshold: float = 0.005,
     linkage_method: str = "average",
-    plot: bool = False,
+    top_n: int = 1,
+    plot: bool = False,    
 ) -> List[str]:
     """
     Iteratively filter correlated tickers based on a specified correlation threshold and Sharpe Ratio.
     """
     total_excluded: set = set()
     iteration = 1
-
+    
     while True:
         if len(returns_df.columns) < 2:
             logger.info("Less than two tickers remain. Stopping iteration.")
             break
-
-        corr_matrix = returns_df.corr().abs()
-        np.fill_diagonal(corr_matrix.values, 0)
+        
+        # Reduce noise via Ledoit-Wolf shrinkage if the number of assets is larger than 50
+        if len(returns_df.columns) > 50:        
+            lw = LedoitWolf()
+            # Compute covariance matrix with shrinkage
+            covariance_matrix = lw.fit(returns_df).covariance_            
+            
+            # Convert covariance matrix to correlation matrix
+            stddev = np.sqrt(np.diag(covariance_matrix))  # Standard deviations
+            corr_matrix = covariance_matrix / np.outer(stddev, stddev)  # Normalize
+            np.fill_diagonal(corr_matrix, 0)  # Set diagonal to 0
+            
+            # Convert back to DataFrame to maintain compatibility
+            corr_matrix = pd.DataFrame(
+                corr_matrix,
+                index=returns_df.columns,
+                columns=returns_df.columns
+            )
+        else:          
+            # Use standard correlation matrix for fewer assets
+            corr_matrix = returns_df.corr().abs()
+            np.fill_diagonal(corr_matrix.values, 0)  # Ensure diagonal is 0
+        
+        # Validate the corr matrix
         validate_matrix(corr_matrix, "Correlation matrix")
 
         # Convert correlation to distance
@@ -64,6 +87,7 @@ def filter_correlated_groups(
             performance_df=performance_df,
             correlated_groups=correlated_groups,
             sharpe_threshold=sharpe_threshold,
+            top_n=max(1, top_n)
         )
 
         if not excluded_tickers:
@@ -78,14 +102,19 @@ def filter_correlated_groups(
 
         iteration += 1
 
-    logger.info(f"De-correlated tickers: {total_excluded}")
+    filtered_symbols = returns_df.columns.tolist()
+    
+    logger.info(f"{len(total_excluded)} tickers excluded")
+    logger.info(f"{len(filtered_symbols)} De-correlated tickers: {filtered_symbols}")
+    
     return returns_df.columns.tolist()
 
 
 def select_best_tickers(
     performance_df: pd.DataFrame,
-    correlated_groups: list,
+    correlated_groups: list,    
     sharpe_threshold: float = 0.005,
+    top_n: Optional[int] = 1,
 ) -> set:
     """
     Select top N tickers from each correlated group based on Sharpe Ratio and Total Return.
@@ -114,19 +143,19 @@ def select_best_tickers(
             group_metrics["Sharpe Ratio"] >= (max_sharpe - sharpe_threshold)
         ]
 
-        # Dynamically determine how many tickers to select: top 10% of the group
-        group_size = len(group)
-        dynamic_n = max(1, int(group_size * 0.1))
-
-        # Adjust dynamic_n based on available candidates
-        dynamic_n = min(dynamic_n, len(top_candidates))
+        if not top_n:
+            # Dynamically determine how many tickers to select: top 10% of the group
+            group_size = len(group)
+            dynamic_n = max(1, int(group_size * 0.1))
+            # Adjust dynamic_n based on available candidates
+            top_n = min(dynamic_n, len(top_candidates))
 
         # Select top 'dynamic_n' based on Total Return among the candidates
-        top_n = top_candidates.nlargest(dynamic_n, "Total Return").index.tolist()
+        top_n_candidates = top_candidates.nlargest(top_n, "Total Return").index.tolist()
         # logger.info(f"Selected top {dynamic_n} tickers: {top_n} from group {group}")
 
         # Exclude other tickers in the group
-        to_keep = set(top_n)
+        to_keep = set(top_n_candidates)
         to_exclude = group - to_keep
         tickers_to_exclude.update(to_exclude)
 
