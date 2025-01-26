@@ -73,13 +73,14 @@ def iterative_pipeline_runner(
         )
 
         # Exclude the simulated portfolio symbol from the next epoch
-        valid_symbols = [
-            symbol
-            for symbol in result["symbols"][: config.portfolio_max_size]
-            if symbol != "SIM_PORT"
-        ]
+        valid_symbols = [symbol for symbol in result["symbols"] if symbol != "SIM_PORT"]
 
         print(f"\nTop symbols from epoch {epoch + 1}: {valid_symbols}")
+
+        # Log the number of symbols
+        logger.info(
+            f"Epoch {epoch + 1}: Selected {len(valid_symbols)} symbols for the next iteration."
+        )
 
         # Check for convergence
         if set(valid_symbols) == previous_top_symbols:
@@ -99,44 +100,14 @@ def iterative_pipeline_runner(
         symbols = valid_symbols
         final_result = result
 
-    # After the loop, filter the cumulative_returns and daily_returns
-    if final_result:
-        # Extract the current valid_symbols
-        current_valid_symbols = set(valid_symbols)
-
-        # Find available symbols in daily_returns and cumulative_returns
-        available_daily_symbols = set(final_result["daily_returns"].columns)
-        available_cumulative_symbols = set(final_result["cumulative_returns"].columns)
-
-        # Determine symbols present in both DataFrames
-        available_symbols = current_valid_symbols & available_daily_symbols & available_cumulative_symbols
-
-        # Identify missing symbols
-        missing_symbols = current_valid_symbols - available_symbols
-
-        if missing_symbols:
-            logger.warning(f"The following symbols are missing in daily_returns or cumulative_returns and will be skipped: {missing_symbols}")
-
-        # Update valid_symbols to include only available symbols
-        valid_symbols = list(available_symbols)
-
-        # Check if there are still valid symbols left
-        if not valid_symbols:
-            logger.error("No valid symbols available after filtering out missing symbols. Exiting.")
-            sys.exit()
-
-        # Filter the DataFrames
-        filtered_daily_returns = final_result["daily_returns"][valid_symbols]
-        filtered_cumulative_returns = final_result["cumulative_returns"][valid_symbols]
-        
-        # Plot only the last result if `run_local` is enabled
-        if run_local:
-            plot_graphs(
-                daily_returns=filtered_daily_returns,
-                cumulative_returns=filtered_cumulative_returns,
-                config=config,
-                symbols=valid_symbols,
-            )
+    # Plot only the last result if `run_local` is enabled
+    if run_local:
+        plot_graphs(
+            daily_returns=final_result["daily_returns"],
+            cumulative_returns=final_result["cumulative_returns"],
+            config=config,
+            symbols=final_result["symbols"],
+        )
 
     return final_result
 
