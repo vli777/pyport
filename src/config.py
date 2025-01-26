@@ -39,7 +39,8 @@ class Config:
     buy_signal_threshold: float
     sell_signal_threshold: float
     anomaly_detection_deviation_threshold: float
-
+    top_n_candidates: int
+    
     use_reversion_filter: bool
     use_signal_filter: bool
     use_anomaly_filter: bool
@@ -96,6 +97,7 @@ class Config:
             anomaly_detection_deviation_threshold=config_dict.get(
                 "anomaly_detection_deviation_threshold", 7.0
             ),
+            top_n_candidates=config_dict.get("top_n_candidates", 1),
             use_reversion_filter=config_dict.get("use_reversion_filter", True),
             use_signal_filter=config_dict.get("use_signal_filter", True),
             use_anomaly_filter=config_dict.get("use_anomaly_filter", True),

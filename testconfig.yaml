@@ -26,6 +26,7 @@ plot_signal_threshold: bool # Whether to plot signal thresholds
 buy_signal_threshold: float # Signal threshold for including assets 
 sell_signal_threshold: float # Signal threshold for excluding assets 
 anomaly_detection_deviation_threshold: float # Kalman filter sd multiplier
+top_n_candidates: int # How many top candidates to keep per cluster when decorrelating
 
 use_reversion_filter: bool # Whether to use mean reversion asset filtering
 use_signal_filter: bool # Whether to use signal asset filtering

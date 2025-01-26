@@ -10,6 +10,7 @@ def iterative_pipeline_runner(
     max_epochs: Optional[int] = 10,
     min_weight: Optional[float] = None,
     portfolio_max_size: Optional[int] = None,
+    top_n_candidates: Optional[int] = None,
     run_local: bool = True,
 ):
     """
@@ -48,6 +49,12 @@ def iterative_pipeline_runner(
         else:
             raise TypeError("portfolio_max_size must be an integer")
 
+    if top_n_candidates is not None:
+        if isinstance(top_n_candidates, int):
+            config.top_n_candidates = top_n_candidates
+        else:
+            raise TypeError("top_n_candidates must be an integer")
+
     # initial_symbols and run_local are handled separately as they may not be part of config
     symbols = initial_symbols
     previous_top_symbols = set()
@@ -66,7 +73,7 @@ def iterative_pipeline_runner(
         # Exclude the simulated portfolio symbol from the next epoch
         valid_symbols = [
             symbol
-            for symbol in result["symbols"][:config.portfolio_max_size]
+            for symbol in result["symbols"][: config.portfolio_max_size]
             if symbol != "SIM_PORT"
         ]
 
@@ -100,6 +107,7 @@ def iterative_pipeline_runner(
         )
 
     return final_result
+
 
 if __name__ == "__main__":
     config_file = "config.yaml"

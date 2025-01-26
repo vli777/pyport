@@ -176,7 +176,8 @@ def run_pipeline(
                     performance_df=performance_metrics,
                     correlation_threshold=best_params["correlation_threshold"],
                     sharpe_threshold=0.005,
-                    plot=config.plot_clustering
+                    plot=config.plot_clustering,
+                    top_n=config.top_n_candidates,
                 )
 
                 valid_symbols = [
