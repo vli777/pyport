@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
 from typing import Dict, List, Optional, Tuple
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -80,6 +80,16 @@ def hierarchical_clustering(
         )
         plt.legend(loc="upper right")
         plt.title("Hierarchical Clustering Dendrogram")
+        plt.show()
+
+        plt.figure(figsize=(10, 7))
+        dendrogram(linked, labels=corr_matrix.index.tolist())
+        plt.axhline(
+            y=distance_threshold, color="r", linestyle="--"
+        )  # Visual cutoff line
+        plt.title("Hierarchical Clustering Dendrogram")
+        plt.xlabel("Ticker")
+        plt.ylabel("Distance (1 - Correlation)")
         plt.show()
 
     return fcluster(linked, t=distance_threshold, criterion="distance")
