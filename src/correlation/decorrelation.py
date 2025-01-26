@@ -18,7 +18,7 @@ def filter_correlated_groups(
     correlation_threshold: float = 0.8,
     sharpe_threshold: float = 0.005,
     linkage_method: str = "average",
-    top_n: int = 1,
+    top_n: int = None,
     plot: bool = False,
 ) -> List[str]:
     """
@@ -81,7 +81,7 @@ def filter_correlated_groups(
             performance_df=performance_df,
             correlated_groups=correlated_groups,
             sharpe_threshold=sharpe_threshold,
-            top_n=max(1, top_n),
+            top_n=top_n,
         )
 
         if not excluded_tickers:
@@ -108,7 +108,7 @@ def select_best_tickers(
     performance_df: pd.DataFrame,
     correlated_groups: list,
     sharpe_threshold: float = 0.005,
-    top_n: Optional[int] = 1,
+    top_n: Optional[int] = None,
 ) -> set:
     """
     Select top N tickers from each correlated group based on Sharpe Ratio and Total Return.
@@ -137,15 +137,16 @@ def select_best_tickers(
             group_metrics["Sharpe Ratio"] >= (max_sharpe - sharpe_threshold)
         ]
 
-        if not top_n:
-            # Dynamically determine how many tickers to select: top 10% of the group
+        # Determine the number of tickers to keep
+        if top_n is None:
             group_size = len(group)
             dynamic_n = max(1, int(group_size * 0.1))
-            # Adjust dynamic_n based on available candidates
-            top_n = min(dynamic_n, len(top_candidates))
+            current_top_n = min(dynamic_n, len(top_candidates))
+        else:
+            current_top_n = min(top_n, len(top_candidates))
 
-        # Select top 'dynamic_n' based on Total Return among the candidates
-        top_n_candidates = top_candidates.nlargest(top_n, "Total Return").index.tolist()
+        # Select top tickers based on Total Return
+        top_n_candidates = top_candidates.nlargest(current_top_n, "Total Return").index.tolist()
         # logger.info(f"Selected top {dynamic_n} tickers: {top_n} from group {group}")
 
         # Exclude other tickers in the group
