@@ -55,7 +55,7 @@ def objective(trial, returns_df, window=20):
     # Calculate dynamic thresholds
     dynamic_thresholds = get_zscore_thresholds_ticker(
         returns_df,
-        dynamic_windows=window,
+        window=window,
         overbought_multiplier=overbought_multiplier,
         oversold_multiplier=oversold_multiplier,
     )
