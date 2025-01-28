@@ -2,7 +2,7 @@ import numpy as np
 import optuna
 import pandas as pd
 
-from reversion.z_score import calculate_z_score, get_zscore_thresholds
+from reversion.z_score import calculate_z_score, get_zscore_thresholds_ticker
 
 
 def optimize_multiplier(returns_df, window=20, n_trials=50):
@@ -53,9 +53,9 @@ def objective(trial, returns_df, window=20):
     z_scores_df = calculate_z_score(returns_df, window)
 
     # Calculate dynamic thresholds
-    dynamic_thresholds = get_zscore_thresholds(
+    dynamic_thresholds = get_zscore_thresholds_ticker(
         returns_df,
-        window=window,
+        dynamic_windows=window,
         overbought_multiplier=overbought_multiplier,
         oversold_multiplier=oversold_multiplier,
     )

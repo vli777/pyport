@@ -1,10 +1,11 @@
 from typing import Dict, List, Tuple
+import numpy as np
 import pandas as pd
 from sqlalchemy import Float
 
 
 from reversion.reversion_window import manage_dynamic_windows
-from reversion.z_score import get_zscore_thresholds, plot_z_scores_grid
+from reversion.z_score import get_zscore_thresholds_ticker, plot_z_scores_grid
 from reversion.zscore_multiplier import optimize_multiplier
 from utils.portfolio_utils import resample_returns
 from utils import logger
@@ -75,20 +76,9 @@ def apply_mean_reversion(
     )
     logger.info("Optimal rolling windows discovered.")
 
-    # Calculate Z-scores and dynamic thresholds
-    z_scores_dict = {}
-    for ticker in returns_df.columns:
-        window = dynamic_windows.get(
-            ticker, test_windows.start
-        )  # Default to the first window if not found
-        rolling_mean = returns_df[ticker].rolling(window).mean()
-        rolling_std = returns_df[ticker].rolling(window).std()
-        z_scores_dict[ticker] = (returns_df[ticker] - rolling_mean) / rolling_std
-
-    z_score_df = pd.DataFrame(z_scores_dict)
-
+    # Optimize multipliers using the initial window (could iterate per ticker if needed)
     optimal_multipliers = optimize_multiplier(
-        returns_df=returns_df, window=test_windows.start
+        returns_df=returns_df, window=test_windows.start, n_trials=50
     )
     overbought_multiplier = optimal_multipliers["overbought_multiplier"]
     oversold_multiplier = optimal_multipliers["oversold_multiplier"]
@@ -96,12 +86,26 @@ def apply_mean_reversion(
         f"Optimal multipliers determined: {overbought_multiplier}, {oversold_multiplier}"
     )
 
-    dynamic_thresholds = get_zscore_thresholds(
+    # Calculate Z-score thresholds using optimized multipliers and window
+    # For multiplier optimization, use a single window per ticker if dynamic_windows allows
+    dynamic_thresholds = get_zscore_thresholds_ticker(
         returns_df,
-        window=test_windows.start,  # Ensure consistency
+        window=test_windows.start,  # Assuming window is a single int here
         overbought_multiplier=overbought_multiplier,
         oversold_multiplier=oversold_multiplier,
     )
+
+    # Calculate Z-scores
+    z_scores_dict = {}
+    for ticker in returns_df.columns:
+        window = test_windows.start  # Using the optimized window
+        rolling_mean = returns_df[ticker].rolling(window=window, min_periods=1).mean()
+        rolling_std = returns_df[ticker].rolling(window=window, min_periods=1).std()
+        z_scores_dict[ticker] = (
+            returns_df[ticker] - rolling_mean
+        ) / rolling_std.replace(0, np.nan)
+
+    z_score_df = pd.DataFrame(z_scores_dict)
 
     # Generate signals
     signals = generate_mean_reversion_signals(z_score_df, dynamic_thresholds)
@@ -168,6 +172,7 @@ def apply_mean_reversion_multiscale(
     """
     resampled = resample_returns(returns_df)
     signals = {}
+    windows = {}
 
     # Apply on daily data
     recommendations_daily, optimal_windows_daily = apply_mean_reversion(
