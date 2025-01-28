@@ -16,6 +16,7 @@ from anomaly_detection import remove_anomalous_stocks
 from correlation.decorrelation import filter_correlated_groups
 from apply_recommendation_filter import filter_with_reversion
 from correlation.optimize_correlation import optimize_correlation_threshold
+from reversion.get_reversion_recommendations import apply_mean_reversion_multiscale
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -137,10 +138,28 @@ def run_pipeline(
 
         # Step 1: Apply mean reversion filter (if enabled)
         if config.use_reversion_filter:
+            reversion_signals, dynamic_windows = apply_mean_reversion_multiscale(
+                returns_df=returns_df,
+                plot=config.plot_reversion_threshold,
+                test_windows=range(
+                    10, 101, 10
+                ),  # Ensure test_windows are correctly passed
+                n_jobs=-1,
+            )
+
+            # Step 2: Optimize weights and threshold, then filter tickers
             filtered_symbols = filter_with_reversion(
-                returns_df, plot=config.plot_reversion_threshold
+                signals=reversion_signals,
+                windows=dynamic_windows,
+                symbols=original_symbols,
+                returns_df=returns_df,
+                # n_trials=config.optimization_trials
             )
         else:
+            filtered_symbols = original_symbols
+
+        # Fallback to original symbols if filtering results in an empty list
+        if not filtered_symbols:
             filtered_symbols = original_symbols
 
         # Step 2: Validate filtered symbols against returns_df columns
