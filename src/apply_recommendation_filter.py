@@ -41,7 +41,7 @@ def filter_with_reversion(
         weights: Dict[str, Dict[str, float]],
         inclusion_threshold: float,
         exclusion_threshold: float,
-    ) -> Dict[str, List[str]]:
+    ) -> List[str]:
         """
         Filter tickers based on weighted signals and inclusion/exclusion thresholds.
 
@@ -114,7 +114,9 @@ def filter_with_reversion(
                 index=returns_df.index, columns=filtered_tickers
             )
             for ticker in filtered_tickers:
-                window = windows[period].get(ticker, 20)  # Default to 20 if not found
+                window = windows.get(period, {}).get(
+                    ticker, 20
+                )  # Default to 20 if not found
                 rolling_mean = (
                     returns_df[ticker].rolling(window=window, min_periods=1).mean()
                 )
@@ -148,14 +150,17 @@ def filter_with_reversion(
                 # Handle cases where z_std is zero or NaN
                 if np.isnan(z_std) or z_std == 0:
                     z_std = 1.0  # Default to 1 to avoid zero thresholds
-                overbought_threshold = weights[period] * z_std
-                oversold_threshold = -weights[period] * z_std
+                # Access specific weights for 'exclude' and 'include'
+                exclude_weight = weights.get(period, {}).get("exclude", 0.0)
+                include_weight = weights.get(period, {}).get("include", 0.0)
+                overbought_threshold = exclude_weight * z_std
+                oversold_threshold = -include_weight * z_std
                 thresholds[period][ticker] = (overbought_threshold, oversold_threshold)
         return thresholds
 
     def objective(trial) -> float:
         """
-        Optuna objective function to optimize inclusion weights and threshold.
+        Optuna objective function to optimize inclusion and exclusion weights and thresholds.
 
         Args:
             trial (optuna.trial.Trial): Optuna trial object.
@@ -179,7 +184,7 @@ def filter_with_reversion(
             },
         }
 
-        # Step 2: Suggest inclusion threshold
+        # Step 2: Suggest inclusion and exclusion thresholds
         inclusion_threshold = trial.suggest_float(
             "inclusion_threshold", 0.1, 2.0, step=0.05
         )
