@@ -1,6 +1,8 @@
 from joblib import Parallel, delayed
 import numpy as np
 
+from utils import logger
+
 
 def manage_dynamic_windows(
     returns_df, test_windows, overbought_threshold, oversold_threshold, n_jobs=-1
@@ -34,25 +36,25 @@ def find_optimal_window(
     overbought_threshold=1.0,
     oversold_threshold=-1.0,
 ):
-    """
-    Find the optimal mean reversion window for a single asset based on returns data using vectorized operations.
-
-    Args:
-        returns_series (pd.Series): Returns series of the asset (log returns).
-        test_windows (iterable): List of rolling windows to test.
-        overbought_threshold (float): Z-Score threshold for overbought condition.
-        oversold_threshold (float): Z-Score threshold for oversold condition.
-
-    Returns:
-        int: Optimal rolling window size for the asset.
-    """
     best_window = None
     best_reversion_score = -np.inf  # Initialize with a very low score
 
     for window in test_windows:
+        if len(returns_series) < window:
+            # Not enough data for this window
+            logger.warning(f"Insufficient data for window {window} in series.")
+            continue  # Skip to the next window
+
         # Calculate Z-scores for the current window
         rolling_mean = returns_series.rolling(window).mean()
         rolling_std = returns_series.rolling(window).std()
+
+        # Drop NaN values resulting from insufficient data
+        valid = rolling_std.notna()
+        if not valid.any():
+            logger.warning(f"All Z-scores are NaN for window {window}. Skipping.")
+            continue
+
         z_scores = (returns_series - rolling_mean) / rolling_std
 
         # Detect breaches
@@ -60,7 +62,7 @@ def find_optimal_window(
         oversold = z_scores < oversold_threshold
         breach = overbought | oversold
 
-        # Detect reversion by shifting the signals by one day
+        # Detect reversion by shifting the signals by one period
         reversion = (overbought & (z_scores.shift(-1) < overbought_threshold)) | (
             oversold & (z_scores.shift(-1) > oversold_threshold)
         )
@@ -89,18 +91,7 @@ def find_dynamic_windows(
 ):
     """
     Find optimal mean reversion windows for each ticker using returns data and parallel processing.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame with tickers as columns and dates as index.
-        test_windows (iterable): Possible rolling windows to test.
-        overbought_threshold (float): Fixed threshold for overbought detection during testing.
-        oversold_threshold (float): Fixed threshold for oversold detection during testing.
-        n_jobs (int): Number of jobs to run in parallel. -1 means using all processors.
-
-    Returns:
-        dict: {ticker: optimal_window}
     """
-
     def process_ticker(ticker):
         optimal_window = find_optimal_window(
             returns_series=returns_df[ticker],

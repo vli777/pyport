@@ -1,13 +1,18 @@
+from typing import Dict, List, Tuple
 import pandas as pd
+from sqlalchemy import Float
 
 
 from reversion.reversion_window import manage_dynamic_windows
 from reversion.z_score import get_zscore_thresholds, plot_z_scores_grid
 from reversion.zscore_multiplier import optimize_multiplier
+from utils.portfolio_utils import resample_returns
 from utils import logger
 
 
-def generate_mean_reversion_signals(z_score_df, dynamic_thresholds):
+def generate_mean_reversion_signals(
+    z_score_df: pd.DataFrame, dynamic_thresholds: Dict[str, Tuple[Float, Float]]
+) -> Dict[str, Dict[str, bool]]:
     """
     Generate mean reversion signals based on Z-Score and dynamic thresholds.
 
@@ -40,25 +45,25 @@ def generate_mean_reversion_signals(z_score_df, dynamic_thresholds):
 
 
 def apply_mean_reversion(
-    returns_df,
-    test_windows=range(10, 101, 10),  # Range of rolling windows to test
-    plot=False,
-    n_jobs=-1,  # Number of parallel jobs; -1 uses all available cores
-):
+    returns_df: pd.DataFrame,
+    test_windows: range = range(10, 101, 10),
+    plot: bool = False,
+    n_jobs: int = -1,
+) -> Tuple[List[str], List[str]]:
     """
-    Apply mean reversion strategy with dynamic windows and thresholds based on log returns.
+    Apply mean reversion strategy with dynamic rolling windows based on log returns.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame with tickers as columns and dates as index.
-        test_windows (iterable, optional): Range of rolling windows to test during discovery.
-        multiplier (float): Multiplier for threshold adjustment.
+        test_windows (range, optional): Rolling windows to test during discovery.
         plot (bool): Whether to plot Z-Scores for visualization.
         n_jobs (int): Number of parallel jobs to run. -1 utilizes all available CPU cores.
 
     Returns:
-        Tuple[List[str], List[str]]:
-            - List of ticker symbols to exclude (overbought).
-            - List of ticker symbols to include (oversold).
+        Tuple[Dict[str, List[str]], Dict[str, int]]:
+            - Signals structured by time scale.
+            - Dynamic rolling windows per ticker.
+
     """
     logger.info("Discovering optimal rolling windows for each ticker...")
     dynamic_windows = manage_dynamic_windows(
@@ -73,14 +78,18 @@ def apply_mean_reversion(
     # Calculate Z-scores and dynamic thresholds
     z_scores_dict = {}
     for ticker in returns_df.columns:
-        window = dynamic_windows.get(ticker, 20)
+        window = dynamic_windows.get(
+            ticker, test_windows.start
+        )  # Default to the first window if not found
         rolling_mean = returns_df[ticker].rolling(window).mean()
         rolling_std = returns_df[ticker].rolling(window).std()
         z_scores_dict[ticker] = (returns_df[ticker] - rolling_mean) / rolling_std
 
     z_score_df = pd.DataFrame(z_scores_dict)
 
-    optimal_multipliers = optimize_multiplier(returns_df=returns_df, window=20)
+    optimal_multipliers = optimize_multiplier(
+        returns_df=returns_df, window=test_windows.start
+    )
     overbought_multiplier = optimal_multipliers["overbought_multiplier"]
     oversold_multiplier = optimal_multipliers["oversold_multiplier"]
     logger.info(
@@ -89,7 +98,7 @@ def apply_mean_reversion(
 
     dynamic_thresholds = get_zscore_thresholds(
         returns_df,
-        window=20,
+        window=test_windows.start,  # Ensure consistency
         overbought_multiplier=overbought_multiplier,
         oversold_multiplier=oversold_multiplier,
     )
@@ -122,4 +131,71 @@ def apply_mean_reversion(
             figsize=(24, 24),
         )
 
-    return tickers_to_exclude, tickers_to_include
+    return (
+        {
+            "daily": {
+                "exclude": tickers_to_exclude,  # Adjust if separate for daily
+                "include": tickers_to_include,  # Adjust if separate for daily
+            },
+            "weekly": {
+                "exclude": tickers_to_exclude,  # Adjust if separate for weekly
+                "include": tickers_to_include,  # Adjust if separate for weekly
+            },
+        },
+        dynamic_windows,  # Return dynamic_windows
+    )
+
+
+def apply_mean_reversion_multiscale(
+    returns_df: pd.DataFrame,
+    test_windows: range = range(10, 101, 10),
+    plot: bool = False,
+    n_jobs: int = -1,
+) -> Tuple[Dict[str, Dict[str, List[str]]], Dict[str, Dict[str, int]]]:
+    """
+    Apply mean reversion strategy across multiple time scales with dynamic rolling windows.
+
+    Args:
+        returns_df (pd.DataFrame): Daily log returns DataFrame.
+        test_windows (range, optional): Rolling windows to test.
+        plot (bool): Whether to plot Z-Scores.
+        n_jobs (int): Number of parallel jobs.
+
+    Returns:
+        Tuple[Dict[str, Dict[str, List[str]]], Dict[str, Dict[str, int]]]:
+            - Signals structured by time scale.
+            - Dynamic rolling windows per time scale and ticker.
+    """
+    resampled = resample_returns(returns_df)
+    signals = {}
+
+    # Apply on daily data
+    recommendations_daily, optimal_windows_daily = apply_mean_reversion(
+        returns_df=returns_df,
+        test_windows=test_windows,
+        plot=plot,
+        n_jobs=n_jobs,
+    )
+
+    # Apply on weekly data
+    recommendations_weekly, optimal_windows_weekly = apply_mean_reversion(
+        returns_df=resampled["weekly"],
+        test_windows=test_windows,
+        plot=plot,
+        n_jobs=n_jobs,
+    )
+
+    signals = {
+        "daily": {
+            "exclude": recommendations_daily["exclude"],
+            "include": recommendations_daily["include"],
+        },
+        "weekly": {
+            "exclude": recommendations_weekly["exclude"],
+            "include": recommendations_weekly["include"],
+        },
+    }
+
+    windows = {"daily": optimal_windows_daily, "weekly": optimal_windows_weekly}
+
+    return signals, windows
