@@ -1,3 +1,5 @@
+import os
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -5,26 +7,26 @@ import optuna
 
 from anomaly.plot_anomalies import plot_anomalies
 from anomaly.kalman_filter import apply_kalman_filter
-from utils.optuna_caching import load_cached_thresholds, save_cached_thresholds
 
 
 def optimize_kalman_threshold(
     returns_df: pd.DataFrame,
     n_trials: int = 50,
     weight_dict: Optional[Dict[str, float]] = None,
-    cache_dir: str = "cache/kalman_thresholds",
-    cache_file: str = "kalman_thresholds",
+    cache_dir: str = "optuna_cache/kalman_thresholds",
+    cache_file: str = "kalman_study.db",
 ) -> float:
     """
     Optimize the Kalman filter threshold using a multi-objective approach.
-    Loads cached results if available.
+    Uses Optuna's SQLite cache to store results and avoid redundant optimizations.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
         n_trials (int): Number of Optuna trials.
-        weight_dict (dict, optional): Dictionary with weight settings (e.g., {'sortino': 0.8, 'stability': 0.2}).
-        cache_dir (str): Directory for caching results.
-        cache_file (str): Cache filename.
+        weight_dict (dict, optional): Dictionary with weight settings
+            (e.g., {'sortino': 0.8, 'stability': 0.2}).
+        cache_dir (str): Directory for caching Optuna studies.
+        cache_file (str): Cache database filename.
 
     Returns:
         float: Best threshold value.
@@ -32,26 +34,29 @@ def optimize_kalman_threshold(
     if weight_dict is None:
         weight_dict = {"sortino": 0.8, "stability": 0.2}
 
-    # Check cache first
-    cached_results = load_cached_thresholds(cache_dir, cache_file)
-    if cached_results:
-        print(f"Loaded cached Kalman threshold: {cached_results['threshold']}")
-        return cached_results["threshold"]
+    # Ensure cache directory exists
+    Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
-    # Run optimization
-    study = optuna.create_study(direction="maximize")
+    # SQLite storage path
+    storage_path = f"sqlite:///{os.path.join(cache_dir, cache_file)}"
+    study_name = "kalman_threshold_optimization"
+
+    # Load or create the study
+    study = optuna.create_study(
+        study_name=study_name,
+        storage=storage_path,
+        direction="maximize",
+        load_if_exists=True,
+    )
+
+    # Optimize
     study.optimize(
-        lambda trial: objective(trial, returns_df, weight_dict),
-        n_trials=n_trials,
-        n_jobs=-1,
+        lambda trial: objective(trial, returns_df, weight_dict), n_trials=n_trials
     )
 
     best_threshold = study.best_trial.params["threshold"]
-
-    # Save results to cache
-    save_cached_thresholds(cache_dir, cache_file, {"threshold": best_threshold})
-
     print(f"Best Kalman threshold found: {best_threshold} with weights {weight_dict}")
+
     return best_threshold
 
 

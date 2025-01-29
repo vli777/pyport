@@ -4,11 +4,12 @@ import pandas as pd
 import numpy as np
 import functools
 import copy
+from pathlib import Path
+import os
 
 from correlation.decorrelation import filter_correlated_groups
 from utils.performance_metrics import calculate_portfolio_alpha
 from utils.logger import logger
-from utils.optuna_caching import load_cached_thresholds, save_cached_thresholds
 
 
 def optimize_correlation_threshold(
@@ -22,54 +23,90 @@ def optimize_correlation_threshold(
     direction: str = "maximize",
     sampler: Optional[Callable] = None,
     pruner: Optional[Callable] = None,
-    study_name: Optional[str] = None,
-    storage: Optional[str] = None,
-    cache_dir: str = "cache/correlation_thresholds",  # Allow configurable cache path
-    cache_file: str = "optuna_study",
+    cache_dir: str = "optuna_cache/correlation_thresholds",
+    cache_file: str = "correlation_study.db",
 ) -> Tuple[Dict[str, float], float]:
     """
     Optimize the correlation_threshold and lambda_weight using Optuna.
-    Caches results to avoid redundant optimizations.
+    Caches results in an Optuna SQLite database to avoid redundant optimizations.
+
+    Args:
+        returns_df (pd.DataFrame): DataFrame containing returns of tickers.
+        performance_df (pd.DataFrame): DataFrame containing performance metrics.
+        market_returns (pd.Series): Series containing market returns.
+        risk_free_rate (float): Risk-free rate for alpha calculation.
+        sharpe_threshold (float, optional): Threshold for Sharpe Ratio filtering.
+        linkage_method (str, optional): Method for hierarchical clustering.
+        n_trials (int, optional): Number of Optuna trials. Defaults to 50.
+        direction (str, optional): Optimization direction ("maximize" or "minimize").
+        sampler (Callable, optional): Optuna sampler.
+        pruner (Callable, optional): Optuna pruner.
+        cache_dir (str): Directory for caching Optuna studies.
+        cache_file (str): Cache database filename.
+
+    Returns:
+        Tuple[Dict[str, float], float]: Best parameters and best objective value.
     """
-    # Check for cached thresholds
-    cached_results = load_cached_thresholds(cache_dir, cache_file)
-    if cached_results is not None:
-        print(f"Loaded cached optimization results for {cache_file}.")
-        return cached_results, None
+    # Ensure cache directory exists
+    cache_dir_path = Path(cache_dir)
+    cache_dir_path.mkdir(parents=True, exist_ok=True)
 
-    # Create objective function
-    returns_copy = copy.deepcopy(returns_df)
-    objective_func = functools.partial(
-        objective,
-        returns_df=returns_copy,
-        performance_df=performance_df,
-        market_returns=market_returns,
-        risk_free_rate=risk_free_rate,
-        sharpe_threshold=sharpe_threshold,
-        linkage_method=linkage_method,
+    # Define full storage path with SQLite URL format
+    storage_url = f"sqlite:///{os.path.abspath(os.path.join(cache_dir, cache_file))}"
+
+    study_name = "correlation_threshold_optimization"
+
+    # Load or create the study
+    study = optuna.create_study(
+        study_name=study_name,
+        storage=storage_url,
+        direction=direction,
+        sampler=sampler,
+        pruner=pruner,
+        load_if_exists=True,
     )
+    logger.info(f"Study '{study_name}' loaded from {storage_url}.")
 
-    # Create or load an Optuna study
-    if storage and study_name:
-        study = optuna.create_study(
-            direction=direction,
-            sampler=sampler,
-            pruner=pruner,
-            study_name=study_name,
-            storage=storage,
-            load_if_exists=True,
+    # Calculate remaining trials
+    remaining_trials = n_trials - len(study.trials)
+    if remaining_trials <= 0:
+        logger.info(
+            f"Already completed {len(study.trials)} trials. No additional trials needed."
         )
     else:
-        study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
+        logger.info(f"Starting optimization with {remaining_trials} new trials...")
+        # Create a copy of returns_df to prevent side effects
+        returns_copy = copy.deepcopy(returns_df)
 
-    # Optimize
-    study.optimize(objective_func, n_trials=n_trials)
+        # Define the objective function
+        objective_func = functools.partial(
+            objective,
+            returns_df=returns_copy,
+            performance_df=performance_df,
+            market_returns=market_returns,
+            risk_free_rate=risk_free_rate,
+            sharpe_threshold=sharpe_threshold,
+            linkage_method=linkage_method,
+        )
 
-    # Cache results
-    save_cached_thresholds(cache_dir, cache_file, study.best_params)
+        study.optimize(
+            objective_func,
+            n_trials=remaining_trials,
+            n_jobs=1,  # Set to 1 to avoid SQLite locking issues
+            timeout=None,  # Optional: set a timeout if needed
+        )
 
-    print(f"Optimization completed. Cached results saved to {cache_dir}/{cache_file}.")
-    return study.best_params, study.best_value
+    if study.best_trial:
+        best_params = study.best_trial.params
+        best_value = study.best_trial.value
+        logger.info(f"Best parameters: {best_params}")
+        logger.info(f"Best objective value: {best_value}")
+    else:
+        logger.warning("No trials have been completed yet.")
+        best_params = {}
+        best_value = None
+
+    return best_params, best_value
 
 
 def objective(

@@ -1,56 +1,80 @@
+import os
+from pathlib import Path
 from typing import Dict, List, Tuple
 import optuna
 import pandas as pd
 
-
-from utils.optuna_caching import load_cached_thresholds, save_cached_thresholds
+from utils import logger
 
 
 def find_optimal_inclusion_pct(
     final_signals: pd.DataFrame,
     returns_df: pd.DataFrame,
     n_trials: int = 50,
-    cache_dir: str = "cache/inclusion_thresholds",
-    cache_file: str = "optimal_thresholds",
+    storage_path: str = "optuna_cache/inclusion_thresholds.db",
+    study_name: str = "inclusion_thresholds",
 ) -> Dict[str, float]:
     """
-    Uses Optuna to optimize the inclusion/exclusion percentiles with caching.
+    Uses Optuna to optimize the inclusion/exclusion percentiles with persistent caching.
 
     Args:
         final_signals (pd.DataFrame): Weighted signal scores per ticker.
         returns_df (pd.DataFrame): Log returns DataFrame.
         n_trials (int, optional): Number of trials for Optuna optimization. Defaults to 50.
-        cache_dir (str): Directory for caching results.
-        cache_file (str): Cache filename.
+        storage_path (str): SQLite storage path for caching.
+        study_name (str): Name of the Optuna study.
 
     Returns:
         Dict[str, float]: A dictionary containing the best inclusion/exclusion percentiles.
     """
-    # Try loading cached results
-    cached_results = load_cached_thresholds(cache_dir, cache_file)
-    if cached_results:
-        print(f"Loaded cached optimal thresholds: {cached_results}")
-        return cached_results
+    # Ensure cache directory exists
+    cache_dir = Path(storage_path).parent
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # Run optimization if no cache exists
-    study = optuna.create_study(direction="maximize")
-    study.optimize(
-        lambda trial: objective(trial, final_signals, returns_df), n_trials=n_trials
+    # Define full storage path with SQLite URL format
+    storage_url = f"sqlite:///{os.path.abspath(storage_path)}"
+
+    # Load or create the study
+    study = optuna.create_study(
+        study_name=study_name,
+        storage=storage_url,
+        direction="maximize",
+        load_if_exists=True,
     )
+    logger.info(f"Study '{study_name}' loaded from {storage_url}.")
 
-    # Get the best thresholds
-    best_include_pct = study.best_params["include_threshold_pct"]
-    best_exclude_pct = study.best_params["exclude_threshold_pct"]
+    # Calculate remaining trials
+    remaining_trials = n_trials - len(study.trials)
+    if remaining_trials <= 0:
+        logger.info(
+            f"Already completed {len(study.trials)} trials. No additional trials needed."
+        )
+    else:
+        logger.info(f"Starting optimization with {remaining_trials} new trials...")
+        study.optimize(
+            lambda trial: objective(trial, final_signals, returns_df),
+            n_trials=remaining_trials,
+            n_jobs=1,  # Set to 1 to avoid SQLite locking issues
+            timeout=None,  # Optional: set a timeout if needed
+        )
 
-    optimal_thresholds = {
-        "include_threshold_pct": best_include_pct,
-        "exclude_threshold_pct": best_exclude_pct,
-    }
+    # Retrieve the best parameters from the study
+    if study.best_trial:
+        best_include_pct = study.best_trial.params.get("include_threshold_pct", None)
+        best_exclude_pct = study.best_trial.params.get("exclude_threshold_pct", None)
 
-    # Save results to cache
-    save_cached_thresholds(cache_dir, cache_file, optimal_thresholds)
+        optimal_thresholds = {
+            "include_threshold_pct": best_include_pct,
+            "exclude_threshold_pct": best_exclude_pct,
+        }
 
-    print(f"ptimal thresholds found and saved: {optimal_thresholds}")
+        logger.info(f"Optimal thresholds found and saved: {optimal_thresholds}")
+    else:
+        logger.warning("No trials have been completed yet.")
+        optimal_thresholds = {
+            "include_threshold_pct": None,
+            "exclude_threshold_pct": None,
+        }
 
     return optimal_thresholds
 

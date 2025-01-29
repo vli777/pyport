@@ -1,64 +1,71 @@
+from pathlib import Path
 from typing import Dict, List, Tuple
 import numpy as np
 import optuna
 import pandas as pd
-
-from utils.optuna_caching import load_cached_thresholds, save_cached_thresholds
 
 
 def optimize_mean_reversion(
     returns_df: pd.DataFrame,
     window_range=range(5, 31, 5),
     n_trials: int = 100,
-    n_jobs: int = -1,
+    n_jobs: int = 1,  # Set to 1 to avoid SQLite locking issues, to-do: switch to psql
+    storage_path: str = "optuna_cache/mean_reversion.db",
+    study_name: str = "mean_reversion_thresholds",
 ) -> dict:
     """
     Optimize mean reversion strategy using Optuna and cache results.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
+        window_range (range): Range of window sizes.
         n_trials (int, optional): Number of optimization trials. Defaults to 100.
+        n_jobs (int, optional): Number of parallel jobs. Defaults to 1.
+        storage_path (str, optional): Path to Optuna SQLite cache.
+            Defaults to "optuna_cache/mean_reversion.db".
+        study_name (str, optional): Name of the Optuna study.
 
     Returns:
         dict: Optimized thresholds for each ticker.
     """
-    # Load cache if available
-    cached_thresholds = load_cached_thresholds()
-    if cached_thresholds:
-        return cached_thresholds
+    # Ensure the cache directory exists
+    cache_dir = Path(storage_path).parent
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # If no valid cache, proceed with optimization
-    study = optuna.create_study(direction="maximize")
-    study.optimize(
-        lambda trial: objective(trial, window_range, returns_df),
-        n_trials=n_trials,
-        n_jobs=n_jobs,
+    # Load or create an Optuna study with SQLite storage
+    study = optuna.create_study(
+        study_name=study_name,
+        storage=f"sqlite:///{storage_path}",  # Use SQLite for persistence
+        direction="maximize",
+        load_if_exists=True,  # Load existing study instead of restarting
     )
 
-    # Extract optimal thresholds
+    # Determine the number of additional trials needed
+    remaining_trials = n_trials - len(study.trials)
+    if remaining_trials > 0:
+        study.optimize(
+            lambda trial: objective(trial, window_range, returns_df),
+            n_trials=remaining_trials,  # Avoid redundant runs
+            n_jobs=n_jobs,
+        )
+
+    # Extract best parameters
     best_params = study.best_params
     window = best_params["window"]
     overbought_multiplier = best_params["overbought_multiplier"]
     oversold_multiplier = best_params["oversold_multiplier"]
 
-    # Compute rolling mean and standard deviation
-    rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
-    rolling_std = returns_df.rolling(window=window, min_periods=1).std().replace(0, np.nan)  
+    # Compute new dynamic thresholds for each stock
+    rolling_std = returns_df.rolling(window=window, min_periods=1).std()
+    rolling_std = rolling_std.replace(0, np.nan)  # Avoid division by zero
 
-    # Compute Z-scores
-    z_scores = (returns_df - rolling_mean) / rolling_std  
-
-    # Define dynamic thresholds using Z-score standard deviations
     dynamic_thresholds = {
         ticker: (
-            overbought_multiplier * z_scores[ticker].std(skipna=True),
-            oversold_multiplier * z_scores[ticker].std(skipna=True),
+            overbought_multiplier * rolling_std[ticker].std(skipna=True),
+            oversold_multiplier * rolling_std[ticker].std(skipna=True),
         )
         for ticker in returns_df.columns
     }
-
-    # Save to cache
-    save_cached_thresholds(dynamic_thresholds)
 
     return dynamic_thresholds
 
