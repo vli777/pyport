@@ -64,20 +64,24 @@ def apply_mean_reversion_multiscale(
 
 
 def calculate_z_scores(returns_df: pd.DataFrame, window: int) -> pd.DataFrame:
-    """Calculate rolling Z-scores for given return data and window size."""
+    """Calculate rolling Z-scores while handling different stock histories."""
     rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
     rolling_std = returns_df.rolling(window=window, min_periods=1).std()
-    return (returns_df - rolling_mean) / rolling_std.replace(0, np.nan)
+
+    # Replace zero standard deviation to prevent division errors
+    rolling_std.replace(0, np.nan, inplace=True)
+
+    return (returns_df - rolling_mean) / rolling_std
 
 
 def get_dynamic_thresholds(
     z_score_df: pd.DataFrame, overbought_multiplier: float, oversold_multiplier: float
 ) -> Dict[str, Tuple[float, float]]:
-    """Compute dynamic overbought/oversold thresholds for each ticker."""
+    """Compute dynamic overbought/oversold thresholds per stock."""
     return {
         ticker: (
-            overbought_multiplier * z_score_df[ticker].std(),
-            oversold_multiplier * z_score_df[ticker].std(),
+            overbought_multiplier * z_score_df[ticker].std(skipna=True),
+            oversold_multiplier * z_score_df[ticker].std(skipna=True),
         )
         for ticker in z_score_df.columns
     }
@@ -99,9 +103,16 @@ def reversion_signals_filter(
     signals = {}
 
     for ticker in z_score_df.columns:
+        overbought, oversold = dynamic_thresholds.get(ticker, (2.0, -2.0))
+
+        # Generate buy/sell signals while preserving stock history
         signals[ticker] = (
-            (z_score_df[ticker] < dynamic_thresholds[ticker][1]).astype(int)  # Buy
-            - (z_score_df[ticker] > dynamic_thresholds[ticker][0]).astype(int)  # Sell
-        ).to_dict()  # Convert to dict with date as key
+            (
+                (z_score_df[ticker] < oversold).astype(int)  # Buy
+                - (z_score_df[ticker] > overbought).astype(int)  # Sell
+            )
+            .dropna()
+            .to_dict()
+        )  # Convert to dict with date as key
 
     return signals

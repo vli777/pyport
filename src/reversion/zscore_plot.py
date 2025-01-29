@@ -35,30 +35,24 @@ def plot_z_scores_grid(
         end_idx = start_idx + grid_shape[0] * grid_shape[1]
         current_tickers = tickers[start_idx:end_idx]
 
-        num_current = len(current_tickers)
-        rows, cols = grid_shape
-        fig, axes = plt.subplots(rows, cols, figsize=figsize)
+        fig, axes = plt.subplots(*grid_shape, figsize=figsize)
         axes = axes.flatten()  # Flatten to 1D for easy iteration
 
         for i, ticker in enumerate(current_tickers):
             ax = axes[i]
             z_scores = z_scores_df[ticker]
 
-            # Retrieve dynamic thresholds safely
-            overbought, oversold = dynamic_thresholds.get(ticker, (1.0, -1.0))
+            # Retrieve dynamic thresholds
+            overbought, oversold = dynamic_thresholds.get(ticker, (2.0, -2.0))
 
             ax.plot(z_scores.index, z_scores, label=f"{ticker} Z-Score", color="blue")
-            ax.axhline(
-                y=overbought, color="r", linestyle="--", label="Overbought Threshold"
-            )
-            ax.axhline(
-                y=oversold, color="g", linestyle="--", label="Oversold Threshold"
-            )
-            ax.set_title(f"{ticker} Z-Score")
+            ax.axhline(y=overbought, color="r", linestyle="--", label="Overbought")
+            ax.axhline(y=oversold, color="g", linestyle="--", label="Oversold")
+            ax.set_title(f"{ticker}")
             ax.legend()
             ax.grid(True)
 
-            # Simplify x-axis: Show only start and end dates
+            # Set only start and end date ticks
             start_date = z_scores.index.min()
             end_date = z_scores.index.max()
             ax.set_xticks([start_date, end_date])
@@ -67,7 +61,7 @@ def plot_z_scores_grid(
             )
 
         # Hide any unused subplots
-        for j in range(num_current, rows * cols):
+        for j in range(len(current_tickers), len(axes)):
             fig.delaxes(axes[j])
 
         plt.tight_layout()
