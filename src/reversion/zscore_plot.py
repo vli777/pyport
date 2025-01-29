@@ -1,11 +1,14 @@
+from typing import Dict, Tuple
 import matplotlib.pyplot as plt
 import math
+import pandas as pd
 
 
 def plot_z_scores_grid(
-    z_scores_df,
-    overbought_thresholds,
-    oversold_thresholds,
+    z_scores_df: pd.DataFrame,
+    dynamic_thresholds: Dict[
+        str, Tuple[float, float]
+    ],  # Directly use the dict from get_dynamic_thresholds
     grid_shape=(6, 6),
     figsize=(20, 20),
 ):
@@ -15,10 +18,8 @@ def plot_z_scores_grid(
     Args:
         z_scores_df (pd.DataFrame): DataFrame containing Z-Scores for all tickers.
                                      Columns are tickers, index are dates.
-        overbought_thresholds (pd.Series): Series containing overbought thresholds for each ticker.
-                                           Index should match z_scores_df columns.
-        oversold_thresholds (pd.Series): Series containing oversold thresholds for each ticker.
-                                         Index should match z_scores_df columns.
+        dynamic_thresholds (Dict[str, Tuple[float, float]]): Dictionary of overbought/oversold thresholds.
+                                                             Keys should match z_scores_df columns.
         grid_shape (tuple, optional): Tuple indicating the grid size (rows, cols) per page. Default is (6, 6).
         figsize (tuple, optional): Size of each figure. Default is (20, 20).
 
@@ -42,10 +43,11 @@ def plot_z_scores_grid(
         for i, ticker in enumerate(current_tickers):
             ax = axes[i]
             z_scores = z_scores_df[ticker]
-            overbought = overbought_thresholds.get(ticker, 1.0)
-            oversold = oversold_thresholds.get(ticker, -1.0)
 
-            ax.plot(z_scores.index, z_scores, label=f"{ticker} Z-Score")
+            # Retrieve dynamic thresholds safely
+            overbought, oversold = dynamic_thresholds.get(ticker, (1.0, -1.0))
+
+            ax.plot(z_scores.index, z_scores, label=f"{ticker} Z-Score", color="blue")
             ax.axhline(
                 y=overbought, color="r", linestyle="--", label="Overbought Threshold"
             )

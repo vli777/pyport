@@ -14,9 +14,11 @@ from result_output import output
 from anomaly_detection import remove_anomalous_stocks
 
 from correlation.decorrelation import filter_correlated_groups
-from apply_recommendation_filter import filter_with_reversion
 from correlation.optimize_correlation import optimize_correlation_threshold
-from reversion.get_reversion_recommendations import apply_mean_reversion_multiscale
+from reversion.multiscale_reversion import apply_mean_reversion_multiscale
+from reversion.optimize_timescale_weights import find_optimal_weights
+from reversion.recommendation import generate_reversion_recommendations
+from reversion.optimize_inclusion import find_optimal_inclusion_pct
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -136,25 +138,76 @@ def run_pipeline(
         """
         original_symbols = list(returns_df.columns)  # Preserve original symbols
 
-        # Step 1: Apply mean reversion filter (if enabled)
+        # Step 1: Optimize mean reversion signals
         if config.use_reversion_filter:
-            reversion_signals, dynamic_windows = apply_mean_reversion_multiscale(
-                returns_df=returns_df,
-                plot=config.plot_reversion_threshold,
-                test_windows=range(
-                    10, 101, 10
-                ),  # Ensure test_windows are correctly passed
-                n_jobs=-1,
+            # Step 1: Generate Reversion Signals
+            reversion_signals = apply_mean_reversion_multiscale(
+                returns_df, n_trials=50, n_jobs=-1, plot=config.plot_reversion_threshold
+            )
+            print("Reversion Signals Generated.")
+
+            # Step 2: Optimize Weights
+            optimal_weights = find_optimal_weights(
+                reversion_signals, returns_df, n_trials=50
+            )
+            print(f"Optimal Weights: {optimal_weights}")
+
+            # Step 3: Generate Final Recommendations based on initial thresholds
+            final_recommendations = generate_reversion_recommendations(
+                reversion_signals, optimal_weights, include_pct=0.2, exclude_pct=0.2
+            )
+            print("Initial Tickers to include:", final_recommendations["include"])
+            print("Initial Tickers to exclude:", final_recommendations["exclude"])
+
+            # Step 4: Optimize Inclusion/Exclusion Thresholds
+            # Compute final_signals
+            daily_signals = pd.DataFrame.from_dict(
+                reversion_signals["daily"], orient="index"
+            ).T
+            weekly_signals = pd.DataFrame.from_dict(
+                reversion_signals["weekly"], orient="index"
+            ).T
+
+            # Ensure both DataFrames have the same index (dates)
+            combined_dates = daily_signals.index.union(weekly_signals.index)
+            daily_signals = daily_signals.reindex(combined_dates).fillna(0)
+            weekly_signals = weekly_signals.reindex(combined_dates).fillna(0)
+
+            # Compute weighted signal strength
+            weight_daily = optimal_weights.get("weight_daily", 0.5)
+            weight_weekly = 1.0 - weight_daily
+            final_signals = (
+                weight_daily * daily_signals + weight_weekly * weekly_signals
+            ).mean()
+
+            # Optimize inclusion/exclusion thresholds
+            optimal_inclusion_thresholds = find_optimal_inclusion_pct(
+                final_signals, returns_df, n_trials=50
+            )
+            print(f"✅ Optimal Inclusion Thresholds: {optimal_inclusion_thresholds}")
+
+            # Step 5: Generate Final Recommendations with optimized thresholds
+            reversion_recommendations = generate_reversion_recommendations(
+                reversion_signals,
+                optimal_weights,
+                include_pct=optimal_inclusion_thresholds.get(
+                    "include_threshold_pct", 0.2
+                ),
+                exclude_pct=optimal_inclusion_thresholds.get(
+                    "exclude_threshold_pct", 0.2
+                ),
             )
 
-            # Step 2: Optimize weights and threshold, then filter tickers
-            filtered_symbols = filter_with_reversion(
-                signals=reversion_signals,
-                windows=dynamic_windows,
-                symbols=original_symbols,
-                returns_df=returns_df,
-                # n_trials=config.optimization_trials
-            )
+            # Step 6: Modify Trading Universe
+            include_tickers = set(reversion_recommendations["include"])
+            exclude_tickers = set(reversion_recommendations["exclude"])
+
+            # Ensure exclusions are applied and inclusions are added
+            filtered_symbols = (
+                set(original_symbols) - exclude_tickers
+            ) | include_tickers
+            filtered_symbols = sorted(filtered_symbols)  # Ensure consistency
+
         else:
             filtered_symbols = original_symbols
 
