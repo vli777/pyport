@@ -1,60 +1,10 @@
 from typing import Dict, Optional, Tuple
-from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
-from pykalman import KalmanFilter
-import seaborn as sns
+import optuna
 
-from anomaly.optimize_threshold import optimize_kalman_threshold
-
-
-def apply_kalman_filter(returns_series, threshold=7.0, epsilon=1e-6):
-    # Ensure returns_series is 1-dimensional
-    if not isinstance(returns_series, pd.Series):
-        raise ValueError("returns_series must be a Pandas Series.")
-
-    # Ensure the series is valid
-    if len(returns_series) < 2:
-        print(f"Insufficient data for Kalman filter. Length: {len(returns_series)}")
-        return pd.Series([False] * len(returns_series), index=returns_series.index)
-
-    # Initialize the Kalman filter
-    kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
-
-    # Increase process noise for smoother estimates
-    kf.transition_covariance = np.eye(1) * 0.1
-
-    # Reshape the input to 2D array (T x 1)
-    values = returns_series.values.reshape(-1, 1)
-
-    # Train the Kalman filter
-    kf = kf.em(values, n_iter=3)
-
-    # Get smoothed state means
-    smoothed_state_means, _ = kf.smooth(values)
-
-    # Calculate residuals
-    residuals = values - smoothed_state_means
-
-    # Calculate the median of residuals
-    median_res = np.median(residuals)
-
-    # Compute the Median Absolute Deviation (MAD)
-    mad = np.median(np.abs(residuals - median_res))
-
-    # Avoid division by zero or very small MAD
-    mad = max(mad, epsilon)
-
-    # Define a modified Z-score using MAD
-    modified_z_scores = 0.6745 * (residuals - median_res) / mad
-
-    # Identify anomalies based on a threshold on the modified Z-score
-    anomaly_flags = np.abs(modified_z_scores) > threshold
-
-    # Squeeze anomaly_flags to convert from 2D to 1D
-    anomaly_flags = anomaly_flags.squeeze()
-
-    return anomaly_flags
+from anomaly.plot_anomalies import plot_anomalies
+from anomaly.kalman_filter import apply_kalman_filter
 
 
 def remove_anomalous_stocks(
@@ -117,124 +67,95 @@ def remove_anomalous_stocks(
     return filtered_df, anomalous_cols
 
 
-def plot_anomalies(stocks, returns_data, anomaly_flags_data, stocks_per_page=36):
+def objective(trial, returns_df: pd.DataFrame, weight_dict: dict = None) -> float:
     """
-    Plots multiple stocks' return series in paginated 6x6 grids and highlights anomalies using Seaborn.
+    Optimize Kalman filter threshold using a combined objective function.
+
+    Balances:
+    - Sortino Ratio (risk-adjusted return)
+    - Stability Penalty (rolling volatility to avoid meme stocks)
 
     Args:
-        stocks (list): List of stock names.
-        returns_data (dict): Dictionary of daily returns for each stock, keyed by stock name.
-        anomaly_flags_data (dict): Dictionary of anomaly flags (np.array) for each stock, keyed by stock name.
-        stocks_per_page (int): Maximum number of stocks to display per page (default is 36).
+        trial (optuna.trial.Trial): Optuna trial object.
+        returns_df (pd.DataFrame): DataFrame of daily returns.
+        weight_dict (dict): Dictionary with weight settings. Defaults to {'sortino': 0.8, 'stability': 0.2}.
+
+    Returns:
+        float: Composite score (higher is better).
     """
-    grid_rows, grid_cols = 6, 6  # Fixed grid dimensions
-    total_plots = grid_rows * grid_cols
-    num_pages = (
-        len(stocks) + stocks_per_page - 1
-    ) // stocks_per_page  # Calculate pages
+    # Default weights if not provided
+    if weight_dict is None:
+        weight_dict = {"sortino": 0.8, "stability": 0.2}
 
-    for page in range(num_pages):
-        # Determine the range of stocks for this page
-        start_idx = page * stocks_per_page
-        end_idx = min(start_idx + stocks_per_page, len(stocks))
-        stocks_to_plot = stocks[start_idx:end_idx]
+    # Ensure both weights sum to 1 (normalize if necessary)
+    total_weight = sum(weight_dict.values())
+    weight_sortino = weight_dict.get("sortino", 0.8) / total_weight
+    weight_stability = weight_dict.get("stability", 0.2) / total_weight
 
-        # Create a figure for this page
-        fig, axes = plt.subplots(
-            grid_rows, grid_cols, figsize=(18, 18), sharex=False, sharey=False
-        )
-        axes = axes.flatten()  # Flatten for easier indexing
+    threshold = trial.suggest_float("threshold", 5.0, 10.0, step=0.5)
 
-        for i, stock in enumerate(stocks_to_plot):
-            ax = axes[i]
+    # Remove anomalous stocks
+    filtered_df, _ = remove_anomalous_stocks(
+        returns_df, threshold=threshold, plot=False
+    )
 
-            # Extract data for this stock using dictionary keys
-            if stock in returns_data:
-                returns_series = returns_data[stock]
-            else:
-                print(f"Warning: {stock} not found in returns_data.")
-                continue  # Skip this stock if data is missing
+    if filtered_df.empty:
+        return -np.inf  # Penalize empty selections
 
-            anomaly_flags = anomaly_flags_data[stock]
+    # Portfolio return
+    portfolio_return = filtered_df.mean(axis=1).mean()
 
-            # Convert anomaly_flags to a Pandas Series aligned with returns_series
-            anomaly_flags_series = pd.Series(anomaly_flags, index=returns_series.index)
+    # Calculate downside deviation (only negative returns)
+    negative_returns = filtered_df.mean(axis=1)[filtered_df.mean(axis=1) < 0]
+    downside_risk = negative_returns.std()
 
-            # Initialize Kalman filter and perform smoothing
-            kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
-            values = returns_series.values.reshape(-1, 1)
-            kf = kf.em(values, n_iter=10)
-            smoothed_state_means, smoothed_state_covariances = kf.smooth(values)
+    # Avoid division by zero
+    if downside_risk == 0:
+        return -np.inf  # Penalize cases where no downside risk is captured
 
-            # Calculate 95% confidence intervals
-            mean = smoothed_state_means.squeeze()
-            std_dev = np.sqrt(smoothed_state_covariances.squeeze())
-            lower_bounds = mean - 1.96 * std_dev
-            upper_bounds = mean + 1.96 * std_dev
+    # Sortino Ratio (risk-adjusted return)
+    sortino_ratio = portfolio_return / downside_risk
 
-            # Create a DataFrame for easier plotting
-            plot_df = pd.DataFrame(
-                {
-                    "Date": returns_series.index,
-                    "Returns": returns_series.values,
-                    "Anomaly": anomaly_flags_series,
-                }
-            )
+    # Stability Penalty (rolling volatility)
+    rolling_volatility = filtered_df.mean(axis=1).rolling(window=30).std().mean()
 
-            # Plot the observed returns
-            sns.lineplot(
-                ax=ax,
-                data=plot_df,
-                x="Date",
-                y="Returns",
-                color="blue",
-                label="Observed Returns",
-            )
+    # Avoid division by zero
+    if rolling_volatility == 0:
+        rolling_volatility = 1e-6  # Prevent divide by zero
 
-            # Overlay the Kalman smoothed mean
-            ax.plot(plot_df["Date"], mean, color="green", label="Kalman Smoothed Mean")
+    stability_penalty = (
+        -rolling_volatility * 0.1
+    )  # Reduce weight of excessive volatility
 
-            # Fill between the confidence intervals
-            ax.fill_between(
-                plot_df["Date"],
-                lower_bounds,
-                upper_bounds,
-                color="gray",
-                alpha=0.3,
-                label="95% Confidence Interval",
-            )
+    # Weighted sum of Sortino Ratio and Stability Penalty
+    composite_score = (weight_sortino * sortino_ratio) + (
+        weight_stability * stability_penalty
+    )
 
-            # Highlight anomalies
-            sns.scatterplot(
-                ax=ax,
-                data=plot_df[plot_df["Anomaly"]],
-                x="Date",
-                y="Returns",
-                color="red",
-                s=20,
-                label="Anomalies",
-            )
+    return composite_score
 
-            # Simplify x-axis: Show only start and end dates
-            start_date = returns_series.index.min()
-            end_date = returns_series.index.max()
-            ax.set_xticks([start_date, end_date])
-            ax.set_xticklabels(
-                [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")],
-            )
 
-            # Customize each subplot
-            ax.set_title(stock, fontsize=10)
-            ax.set_xlabel("")
-            ax.set_ylabel("")
-            ax.legend(fontsize=8)
-            ax.grid(True)
+def optimize_kalman_threshold(
+    returns_df: pd.DataFrame, n_trials: int = 50, weight_dict: dict = None
+):
+    """
+    Optimize the Kalman filter threshold using a multi-objective approach.
 
-        # Remove unused subplots
-        for j in range(len(stocks_to_plot), total_plots):
-            fig.delaxes(axes[j])
+    Args:
+        returns_df (pd.DataFrame): Log returns DataFrame.
+        n_trials (int): Number of Optuna trials.
+        weight_dict (dict): Dictionary with weight settings (e.g., {'sortino': 0.8, 'stability': 0.2}).
 
-        # Adjust layout
-        plt.tight_layout()
-        plt.suptitle(f"Page {page + 1} of {num_pages}", fontsize=16)
-        plt.show()
+    Returns:
+        float: Best threshold value.
+    """
+    study = optuna.create_study(direction="maximize")
+    study.optimize(
+        lambda trial: objective(trial, returns_df, weight_dict),
+        n_trials=n_trials,
+        n_jobs=-1,
+    )
+
+    best_threshold = study.best_trial.params["threshold"]
+    print(f"Best Kalman threshold found: {best_threshold} with weights {weight_dict}")
+    return best_threshold
