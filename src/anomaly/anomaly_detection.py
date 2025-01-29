@@ -10,6 +10,7 @@ from anomaly.kalman_filter import apply_kalman_filter
 def remove_anomalous_stocks(
     returns_df: pd.DataFrame,
     weight_dict: Optional[Dict[str, float]] = None,
+    threshold: float = None,
     plot: bool = False,
 ) -> Tuple[pd.DataFrame, list[str]]:
     """
@@ -18,20 +19,24 @@ def remove_anomalous_stocks(
 
     Args:
         returns_df (pd.DataFrame): DataFrame of daily returns.
-        weight_dict (dict): Dictionary with optional objective weights, e.g. { sortino: 0.8, stability 0.2 }
+        weight_dict (dict, optional): Dictionary with optional objective weights,
+                                      e.g. {'sortino': 0.8, 'stability': 0.2}. Defaults to None.
+        threshold (float, optional): Predefined Kalman filter threshold. If None, it will be optimized.
         plot (bool): If True, anomalies will be plotted in a paginated grid.
 
     Returns:
-        pd.DataFrame: Filtered DataFrame with anomalous stocks removed.
+        Tuple[pd.DataFrame, list[str]]: Filtered DataFrame and list of removed symbols.
     """
     if weight_dict is None:
         weight_dict = {"sortino": 0.8, "stability": 0.2}
 
-    threshold = optimize_kalman_threshold(returns_df, weight_dict)
+    # Optimize threshold only if not provided
+    if threshold is None:
+        threshold = optimize_kalman_threshold(
+            returns_df=returns_df, n_trials=50, weight_dict=weight_dict
+        )
 
     anomalous_cols = []
-
-    # Dictionaries to store data for plotting if needed
     returns_data = {}
     anomaly_flags_data = {}
 
@@ -43,10 +48,8 @@ def remove_anomalous_stocks(
 
         anomaly_flags = apply_kalman_filter(returns_series, threshold=threshold)
 
-        # If anomalies found for the stock
         if anomaly_flags.any():
             anomalous_cols.append(stock)
-            # Store data for plotting if plot is True
             if plot:
                 returns_data[stock] = returns_series
                 anomaly_flags_data[stock] = anomaly_flags
@@ -55,9 +58,7 @@ def remove_anomalous_stocks(
         f"Removing {len(anomalous_cols)} stocks with Kalman anomalies: {anomalous_cols}"
     )
 
-    # If plotting is requested and there are stocks with anomalies, plot them
     if plot and returns_data:
-        # Use the list of anomalous stocks for plotting
         plot_anomalies(
             stocks=anomalous_cols,
             returns_data=returns_data,
@@ -65,7 +66,6 @@ def remove_anomalous_stocks(
             stocks_per_page=36,
         )
 
-    # Return the DataFrame with anomalous stocks removed
     filtered_df = returns_df.drop(columns=anomalous_cols)
     return filtered_df, anomalous_cols
 
@@ -90,20 +90,20 @@ def objective(
     Returns:
         float: Composite score (higher is better).
     """
-    # Provide a default weight dictionary if None
     if weight_dict is None:
         weight_dict = {"sortino": 0.8, "stability": 0.2}
 
-    # Ensure both weights sum to 1 (normalize if necessary)
+    # Normalize weights
     total_weight = sum(weight_dict.values())
     weight_sortino = weight_dict.get("sortino", 0.8) / total_weight
     weight_stability = weight_dict.get("stability", 0.2) / total_weight
 
+    # Let Optuna optimize threshold
     threshold = trial.suggest_float("threshold", 5.0, 10.0, step=0.5)
 
-    # Remove anomalous stocks
+    # Now pass threshold into remove_anomalous_stocks
     filtered_df, _ = remove_anomalous_stocks(
-        returns_df, threshold=threshold, plot=False
+        returns_df=returns_df, threshold=threshold, plot=False
     )
 
     if filtered_df.empty:
@@ -146,19 +146,18 @@ def optimize_kalman_threshold(
     returns_df: pd.DataFrame,
     n_trials: int = 50,
     weight_dict: Optional[Dict[str, float]] = None,
-):
+) -> float:
     """
     Optimize the Kalman filter threshold using a multi-objective approach.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
         n_trials (int): Number of Optuna trials.
-        weight_dict (dict): Dictionary with weight settings (e.g., {'sortino': 0.8, 'stability': 0.2}).
+        weight_dict (dict, optional): Dictionary with weight settings (e.g., {'sortino': 0.8, 'stability': 0.2}).
 
     Returns:
         float: Best threshold value.
     """
-    # Provide a default weight dictionary if None
     if weight_dict is None:
         weight_dict = {"sortino": 0.8, "stability": 0.2}
 
