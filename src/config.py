@@ -21,7 +21,7 @@ class Config:
     data_dir: str
     input_files_dir: str
     input_files: List[str]
-    
+
     download: bool
     include_etf_top_holdings: bool
     min_weight: float
@@ -35,9 +35,8 @@ class Config:
     plot_anomalies: bool
     plot_reversion_threshold: bool
 
-    anomaly_detection_deviation_threshold: float
     top_n_candidates: int
-    
+
     use_reversion_filter: bool
     use_signal_filter: bool
     use_anomaly_filter: bool
@@ -88,9 +87,6 @@ class Config:
             plot_clustering=config_dict.get("plot_clustering", False),
             plot_anomalies=config_dict.get("plot_anomalies", False),
             plot_reversion_threshold=config_dict.get("plot_reversion_threshold", False),
-            anomaly_detection_deviation_threshold=config_dict.get(
-                "anomaly_detection_deviation_threshold", 7.0
-            ),
             top_n_candidates=config_dict.get("top_n_candidates", None),
             use_reversion_filter=config_dict.get("use_reversion_filter", True),
             use_signal_filter=config_dict.get("use_signal_filter", True),
