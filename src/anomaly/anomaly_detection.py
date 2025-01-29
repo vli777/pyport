@@ -1,9 +1,11 @@
-from typing import Tuple
+from typing import Dict, Optional, Tuple
 from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
 from pykalman import KalmanFilter
 import seaborn as sns
+
+from anomaly.optimize_threshold import optimize_kalman_threshold
 
 
 def apply_kalman_filter(returns_series, threshold=7.0, epsilon=1e-6):
@@ -56,7 +58,9 @@ def apply_kalman_filter(returns_series, threshold=7.0, epsilon=1e-6):
 
 
 def remove_anomalous_stocks(
-    returns_df: pd.DataFrame, threshold: int = 7.0, plot: bool = False
+    returns_df: pd.DataFrame,
+    weight_dict: Optional[Dict[str, float]],
+    plot: bool = False,
 ) -> Tuple[pd.DataFrame, list[str]]:
     """
     Removes stocks with anomalous returns based on the Kalman filter.
@@ -64,12 +68,14 @@ def remove_anomalous_stocks(
 
     Args:
         returns_df (pd.DataFrame): DataFrame of daily returns.
-        threshold (float): Number of standard deviations to flag anomalies.
+        weight_dict (dict): Dictionary with optional objective weights, e.g. { sortino: 0.8, stability 0.2 }
         plot (bool): If True, anomalies will be plotted in a paginated grid.
 
     Returns:
         pd.DataFrame: Filtered DataFrame with anomalous stocks removed.
     """
+    threshold = optimize_kalman_threshold(returns_df, weight_dict)
+
     anomalous_cols = []
 
     # Dictionaries to store data for plotting if needed

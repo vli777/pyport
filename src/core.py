@@ -11,8 +11,7 @@ from plotly_graphs import plot_graphs
 from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
-from anomaly_detection import remove_anomalous_stocks
-
+from anomaly.anomaly_detection import remove_anomalous_stocks
 from correlation.decorrelation import filter_correlated_groups
 from correlation.optimize_correlation import optimize_correlation_threshold
 from reversion.multiscale_reversion import apply_mean_reversion_multiscale
@@ -123,7 +122,7 @@ def run_pipeline(
             logger.debug("Applying anomaly filter.")
             returns, removed_symbols = remove_anomalous_stocks(
                 returns,
-                threshold=config.anomaly_detection_deviation_threshold,
+                # weight_dict # placeholder for configurable weights based on risk preference
                 plot=config.plot_anomalies,
             )
         else:
@@ -176,7 +175,9 @@ def run_pipeline(
             # Compute weighted signal strength
             weight_daily = optimal_weights.get("weight_daily", 0.5)
             weight_weekly = 1.0 - weight_daily
-            final_signals = weight_daily * daily_signals + weight_weekly * weekly_signals
+            final_signals = (
+                weight_daily * daily_signals + weight_weekly * weekly_signals
+            )
 
             # Optimize inclusion/exclusion thresholds
             optimal_inclusion_thresholds = find_optimal_inclusion_pct(
