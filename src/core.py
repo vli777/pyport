@@ -105,7 +105,7 @@ def run_pipeline(
             returns = adj_close.pct_change()
 
             # Fill only leading NaNs for stocks with different start dates
-            returns = returns.fillna(method="ffill").dropna(how="all")
+            returns = returns.ffill().dropna(how="all")
 
             logger.debug("Calculated daily returns.")
             return returns

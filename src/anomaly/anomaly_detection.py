@@ -9,7 +9,7 @@ from anomaly.kalman_filter import apply_kalman_filter
 
 def remove_anomalous_stocks(
     returns_df: pd.DataFrame,
-    weight_dict: Optional[Dict[str, float]],
+    weight_dict: Optional[Dict[str, float]] = None,
     plot: bool = False,
 ) -> Tuple[pd.DataFrame, list[str]]:
     """
@@ -24,6 +24,9 @@ def remove_anomalous_stocks(
     Returns:
         pd.DataFrame: Filtered DataFrame with anomalous stocks removed.
     """
+    if weight_dict is None:
+        weight_dict = {"sortino": 0.8, "stability": 0.2}
+
     threshold = optimize_kalman_threshold(returns_df, weight_dict)
 
     anomalous_cols = []
