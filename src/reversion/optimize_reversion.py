@@ -1,7 +1,66 @@
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 import numpy as np
 import optuna
 import pandas as pd
+
+from utils.optuna_caching import load_cached_thresholds, save_cached_thresholds
+
+
+def optimize_mean_reversion(
+    returns_df: pd.DataFrame,
+    window_range=range(5, 31, 5),
+    n_trials: int = 100,
+    n_jobs: int = -1,
+) -> dict:
+    """
+    Optimize mean reversion strategy using Optuna and cache results.
+
+    Args:
+        returns_df (pd.DataFrame): Log returns DataFrame.
+        n_trials (int, optional): Number of optimization trials. Defaults to 100.
+
+    Returns:
+        dict: Optimized thresholds for each ticker.
+    """
+    # Load cache if available
+    cached_thresholds = load_cached_thresholds()
+    if cached_thresholds:
+        return cached_thresholds
+
+    # If no valid cache, proceed with optimization
+    study = optuna.create_study(direction="maximize")
+    study.optimize(
+        lambda trial: objective(trial, window_range, returns_df),
+        n_trials=n_trials,
+        n_jobs=n_jobs,
+    )
+
+    # Extract optimal thresholds
+    best_params = study.best_params
+    window = best_params["window"]
+    overbought_multiplier = best_params["overbought_multiplier"]
+    oversold_multiplier = best_params["oversold_multiplier"]
+
+    # Compute rolling mean and standard deviation
+    rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
+    rolling_std = returns_df.rolling(window=window, min_periods=1).std().replace(0, np.nan)  
+
+    # Compute Z-scores
+    z_scores = (returns_df - rolling_mean) / rolling_std  
+
+    # Define dynamic thresholds using Z-score standard deviations
+    dynamic_thresholds = {
+        ticker: (
+            overbought_multiplier * z_scores[ticker].std(skipna=True),
+            oversold_multiplier * z_scores[ticker].std(skipna=True),
+        )
+        for ticker in returns_df.columns
+    }
+
+    # Save to cache
+    save_cached_thresholds(dynamic_thresholds)
+
+    return dynamic_thresholds
 
 
 def objective(trial, window_range: range, returns_df: pd.DataFrame) -> float:
@@ -62,34 +121,11 @@ def objective(trial, window_range: range, returns_df: pd.DataFrame) -> float:
     return cumulative_return
 
 
-def optimize_mean_reversion(
+def simulate_strategy(
     returns_df: pd.DataFrame,
-    window_range=range(5, 31, 5),
-    n_trials: int = 100,
-    n_jobs: int = -1,
-) -> optuna.Study:
-    """
-    Optimize mean reversion strategy using Optuna.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        n_trials (int, optional): Number of optimization trials. Defaults to 100.
-
-    Returns:
-        optuna.Study: The optimization study.
-    """
-    study = optuna.create_study(direction="maximize")
-    study.optimize(
-        lambda trial: objective(
-            trial=trial, window_range=window_range, returns_df=returns_df
-        ),
-        n_trials=n_trials,
-        n_jobs=n_jobs,
-    )
-    return study
-
-
-def simulate_strategy(returns_df, dynamic_thresholds, z_scores_df):
+    dynamic_thresholds: Dict[str, Tuple[float, float]],
+    z_scores_df: pd.DataFrame,
+):
     """
     Simulates the strategy using thresholds and calculates cumulative return.
 

@@ -3,33 +3,58 @@ import optuna
 import pandas as pd
 
 
+from utils.optuna_caching import load_cached_thresholds, save_cached_thresholds
+
+
 def find_optimal_weights(
     reversion_signals: Dict[str, Dict[str, Dict[str, int]]],
     returns_df: pd.DataFrame,
     n_trials: int = 50,
+    cache_dir: str = "cache/reversion_weights",
+    cache_file: str = "signal_weights",
 ) -> Dict[str, float]:
     """
     Run Optuna to find the optimal weighting of daily and weekly signals.
+    Uses cached weights if available.
 
     Args:
         reversion_signals (Dict[str, Dict[str, Dict[str, int]]]): Dictionary of signals per timeframe.
         returns_df (pd.DataFrame): Log returns DataFrame.
         n_trials (int, optional): Number of optimization trials. Defaults to 50.
+        cache_dir (str): Directory for caching results.
+        cache_file (str): Cache filename.
 
     Returns:
         Dict[str, float]: Best weights for daily and weekly signals.
     """
+    # Check cache first
+    cached_results = load_cached_thresholds(cache_dir, cache_file)
+    if cached_results:
+        print(f"Loaded cached optimal weights: {cached_results}")
+        return cached_results
+
+    # Run optimization
     study = optuna.create_study(direction="maximize")
     study.optimize(
         lambda trial: objective(trial, reversion_signals, returns_df),
         n_trials=n_trials,
         n_jobs=-1,  # Utilize all cores
     )
-    # Returns optimal { "weight_daily": x, "weight_weekly": y }
-    return study.best_trial.params
+
+    best_weights = study.best_trial.params  # { "weight_daily": x, "weight_weekly": y }
+
+    # Save results to cache
+    save_cached_thresholds(cache_dir, cache_file, best_weights)
+
+    print(f"Best weights found: {best_weights}")
+    return best_weights
 
 
-def objective(trial, reversion_signals, returns_df) -> float:
+def objective(
+    trial,
+    reversion_signals: Dict[str, Dict[str, Dict[str, int]]],
+    returns_df: pd.DataFrame,
+) -> float:
     """
     Optimize the weights of different time scale signals for mean reversion.
 
@@ -45,7 +70,7 @@ def objective(trial, reversion_signals, returns_df) -> float:
     weight_daily = trial.suggest_float("weight_daily", 0.0, 1.0, step=0.05)
     weight_weekly = 1.0 - weight_daily  # Ensuring sum = 1.0 for interpretability
 
-    # Convert dictionary signals to DataFrames with dates as index and tickers as columns
+    # Convert dictionary signals to DataFrames
     daily_signals = pd.DataFrame.from_dict(reversion_signals["daily"], orient="index").T
     weekly_signals = pd.DataFrame.from_dict(
         reversion_signals["weekly"], orient="index"
@@ -67,16 +92,14 @@ def objective(trial, reversion_signals, returns_df) -> float:
         lambda x: 1 if x > 0.5 else (-1 if x < -0.5 else 0)
     )
 
-    # Ensure we only include stocks that have valid history on each date
+    # Ensure only stocks with valid history are considered
     valid_stocks = returns_df.dropna(axis=1, how="all").columns
     combined_signals = combined_signals[valid_stocks]
     returns_df = returns_df[valid_stocks]
 
     # Convert signals to positions while ensuring no look-ahead bias
-    positions_df = combined_signals.shift(1)  # Shift positions to use previous signals
-
-    # Fill missing positions with 0 (neutral)
-    positions_df.fillna(0, inplace=True)
+    positions_df = combined_signals.shift(1)  # Shift positions to avoid look-ahead bias
+    positions_df.fillna(0, inplace=True)  # Fill missing positions with 0 (neutral)
 
     # Simulate strategy with valid positions
     _, cumulative_return = simulate_strategy(returns_df, positions_df=positions_df)

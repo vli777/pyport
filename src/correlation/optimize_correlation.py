@@ -7,7 +7,69 @@ import copy
 
 from correlation.decorrelation import filter_correlated_groups
 from utils.performance_metrics import calculate_portfolio_alpha
-from utils import logger
+from utils.logger import logger
+from utils.optuna_caching import load_cached_thresholds, save_cached_thresholds
+
+
+def optimize_correlation_threshold(
+    returns_df: pd.DataFrame,
+    performance_df: pd.DataFrame,
+    market_returns: pd.Series,
+    risk_free_rate: float,
+    sharpe_threshold: float = 0.005,
+    linkage_method: str = "average",
+    n_trials: int = 50,
+    direction: str = "maximize",
+    sampler: Optional[Callable] = None,
+    pruner: Optional[Callable] = None,
+    study_name: Optional[str] = None,
+    storage: Optional[str] = None,
+    cache_dir: str = "cache/correlation_thresholds",  # Allow configurable cache path
+    cache_file: str = "optuna_study",
+) -> Tuple[Dict[str, float], float]:
+    """
+    Optimize the correlation_threshold and lambda_weight using Optuna.
+    Caches results to avoid redundant optimizations.
+    """
+    # Check for cached thresholds
+    cached_results = load_cached_thresholds(cache_dir, cache_file)
+    if cached_results is not None:
+        print(f"Loaded cached optimization results for {cache_file}.")
+        return cached_results, None
+
+    # Create objective function
+    returns_copy = copy.deepcopy(returns_df)
+    objective_func = functools.partial(
+        objective,
+        returns_df=returns_copy,
+        performance_df=performance_df,
+        market_returns=market_returns,
+        risk_free_rate=risk_free_rate,
+        sharpe_threshold=sharpe_threshold,
+        linkage_method=linkage_method,
+    )
+
+    # Create or load an Optuna study
+    if storage and study_name:
+        study = optuna.create_study(
+            direction=direction,
+            sampler=sampler,
+            pruner=pruner,
+            study_name=study_name,
+            storage=storage,
+            load_if_exists=True,
+        )
+    else:
+        study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
+
+    # Optimize
+    study.optimize(objective_func, n_trials=n_trials)
+
+    # Cache results
+    save_cached_thresholds(cache_dir, cache_file, study.best_params)
+
+    print(f"Optimization completed. Cached results saved to {cache_dir}/{cache_file}.")
+    return study.best_params, study.best_value
 
 
 def objective(
@@ -84,59 +146,3 @@ def objective(
     )
 
     return objective_value
-
-
-def optimize_correlation_threshold(
-    returns_df: pd.DataFrame,
-    performance_df: pd.DataFrame,
-    market_returns: pd.Series,
-    risk_free_rate: float,
-    sharpe_threshold: float = 0.005,
-    linkage_method: str = "average",
-    n_trials: int = 50,
-    direction: str = "maximize",
-    sampler: Optional[Callable] = None,
-    pruner: Optional[Callable] = None,
-    study_name: Optional[str] = None,
-    storage: Optional[str] = None,
-) -> Tuple[Dict[str, float], float]:
-    """
-    Optimize the correlation_threshold and lambda_weight to maximize the weighted objective using Optuna.
-
-    Returns:
-        Tuple[Dict[str, float], float]: Best parameters and best objective value.
-    """
-    # Use deep copy to prevent mutation issues
-    returns_copy = copy.deepcopy(returns_df)
-
-    objective_func = functools.partial(
-        objective,
-        returns_df=returns_copy,
-        performance_df=performance_df,
-        market_returns=market_returns,
-        risk_free_rate=risk_free_rate,
-        sharpe_threshold=sharpe_threshold,
-        linkage_method=linkage_method,
-    )
-
-    # Create or load an Optuna study
-    if storage and study_name:
-        study = optuna.create_study(
-            direction=direction,
-            sampler=sampler,
-            pruner=pruner,
-            study_name=study_name,
-            storage=storage,
-            load_if_exists=True,
-        )
-    else:
-        study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
-
-    # Optimize
-    study.optimize(objective_func, n_trials=n_trials)
-
-    # Log best parameters
-    logger.info(f"Best parameters: {study.best_params}")
-    logger.info(f"Best objective value: {study.best_value}")
-
-    return study.best_params, study.best_value

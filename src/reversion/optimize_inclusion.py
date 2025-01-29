@@ -3,6 +3,58 @@ import optuna
 import pandas as pd
 
 
+from utils.optuna_caching import load_cached_thresholds, save_cached_thresholds
+
+
+def find_optimal_inclusion_pct(
+    final_signals: pd.DataFrame,
+    returns_df: pd.DataFrame,
+    n_trials: int = 50,
+    cache_dir: str = "cache/inclusion_thresholds",
+    cache_file: str = "optimal_thresholds",
+) -> Dict[str, float]:
+    """
+    Uses Optuna to optimize the inclusion/exclusion percentiles with caching.
+
+    Args:
+        final_signals (pd.DataFrame): Weighted signal scores per ticker.
+        returns_df (pd.DataFrame): Log returns DataFrame.
+        n_trials (int, optional): Number of trials for Optuna optimization. Defaults to 50.
+        cache_dir (str): Directory for caching results.
+        cache_file (str): Cache filename.
+
+    Returns:
+        Dict[str, float]: A dictionary containing the best inclusion/exclusion percentiles.
+    """
+    # Try loading cached results
+    cached_results = load_cached_thresholds(cache_dir, cache_file)
+    if cached_results:
+        print(f"Loaded cached optimal thresholds: {cached_results}")
+        return cached_results
+
+    # Run optimization if no cache exists
+    study = optuna.create_study(direction="maximize")
+    study.optimize(
+        lambda trial: objective(trial, final_signals, returns_df), n_trials=n_trials
+    )
+
+    # Get the best thresholds
+    best_include_pct = study.best_params["include_threshold_pct"]
+    best_exclude_pct = study.best_params["exclude_threshold_pct"]
+
+    optimal_thresholds = {
+        "include_threshold_pct": best_include_pct,
+        "exclude_threshold_pct": best_exclude_pct,
+    }
+
+    # Save results to cache
+    save_cached_thresholds(cache_dir, cache_file, optimal_thresholds)
+
+    print(f"ptimal thresholds found and saved: {optimal_thresholds}")
+
+    return optimal_thresholds
+
+
 def objective(trial, final_signals: pd.DataFrame, returns_df: pd.DataFrame) -> float:
     """
     Use Optuna to optimize the inclusion/exclusion thresholds while handling different stock history lengths.
@@ -96,38 +148,3 @@ def simulate_strategy(
     ).prod() - 1  # More accurate cumulative return
 
     return strategy_returns, cumulative_return
-
-
-# Ensure final_signals and returns_df are defined before optimization
-def find_optimal_inclusion_pct(
-    final_signals: pd.Series, returns_df: pd.DataFrame, n_trials: int = 50
-) -> Dict[str, float]:
-    """
-    Uses Optuna to optimize the inclusion/exclusion percentiles.
-
-    Args:
-        final_signals (pd.Series): Weighted signal scores per ticker.
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        n_trials (int, optional): Number of trials for Optuna optimization. Defaults to 50.
-
-    Returns:
-        Dict[str, float]: A dictionary containing the best inclusion/exclusion percentiles.
-    """
-    # Create an Optuna study and optimize the thresholds
-    study = optuna.create_study(direction="maximize")
-    study.optimize(
-        lambda trial: objective(trial, final_signals, returns_df), n_trials=n_trials
-    )
-
-    # Get the best thresholds
-    best_include_pct = study.best_params["include_threshold_pct"]
-    best_exclude_pct = study.best_params["exclude_threshold_pct"]
-
-    print(
-        f"✅ Optimal thresholds found: Include {best_include_pct}, Exclude {best_exclude_pct}"
-    )
-
-    return {
-        "include_threshold_pct": best_include_pct,
-        "exclude_threshold_pct": best_exclude_pct,
-    }
