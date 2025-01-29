@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 
-def calculate_z_score(returns_df, window):
+def calculate_z_score(returns_df: pd.DataFrame, window: int = 20):
     """
     Calculate the Z-Score for each ticker in a returns DataFrame based on a rolling window.
 
@@ -18,90 +18,14 @@ def calculate_z_score(returns_df, window):
         pd.DataFrame: Z-Score DataFrame for all tickers.
     """
     z_scores = returns_df.apply(
-        lambda x: (x - x.rolling(window=window, min_periods=1).mean()) /
-                  x.rolling(window=window, min_periods=1).std(), axis=0
+        lambda x: (x - x.rolling(window=window, min_periods=1).mean())
+        / x.rolling(window=window, min_periods=1).std(),
+        axis=0,
     )
     return z_scores
 
 
 
-def get_zscore_thresholds_frame(
-    returns_df: pd.DataFrame,
-    dynamic_windows: Dict[str, Dict[str, int]],
-    overbought_multipliers: Dict[str, float],
-    oversold_multipliers: Dict[str, float]
-) -> Dict[str, Dict[str, Tuple[float, float]]]:
-    """
-    Calculate dynamic Z-score thresholds for each ticker and period based on dynamic windows.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        dynamic_windows (Dict[str, Dict[str, int]]): Window sizes per period and ticker.
-            Example:
-            {
-                'daily': {'AAPL': 20, 'GOOGL': 20, ...},
-                'weekly': {'AAPL': 3, 'GOOGL': 3, ...},
-            }
-        overbought_multipliers (Dict[str, float]): Overbought multipliers per ticker.
-        oversold_multipliers (Dict[str, float]): Oversold multipliers per ticker.
-
-    Returns:
-        Dict[str, Dict[str, Tuple[float, float]]]: Z-score thresholds per period and ticker.
-            Example:
-            {
-                'daily': {'AAPL': (1.2, -1.5), 'GOOGL': (1.1, -1.3), ...},
-                'weekly': {'AAPL': (1.3, -1.4), 'GOOGL': (1.2, -1.2), ...},
-            }
-    """
-    thresholds = {}
-    for period in ['daily', 'weekly']:
-        thresholds[period] = {}
-        for ticker, window in dynamic_windows.get(period, {}).items():
-            rolling_mean = returns_df[ticker].rolling(window=window, min_periods=1).mean()
-            rolling_std = returns_df[ticker].rolling(window=window, min_periods=1).std()
-            z_scores = (returns_df[ticker] - rolling_mean) / rolling_std.replace(0, np.nan)
-            z_std = z_scores.std()
-            if np.isnan(z_std) or z_std == 0:
-                z_std = 1.0  # Avoid division by zero
-
-            overbought_threshold = overbought_multipliers.get(ticker, 1.0) * z_std
-            oversold_threshold = oversold_multipliers.get(ticker, 1.0) * z_std
-            thresholds[period][ticker] = (overbought_threshold, oversold_threshold)
-    return thresholds
-
-
-def get_zscore_thresholds_ticker(
-    returns_df: pd.DataFrame,
-    window: int,
-    overbought_multiplier: float,
-    oversold_multiplier: float
-) -> Dict[str, Tuple[float, float]]:
-    """
-    Calculate dynamic Z-score thresholds for each ticker based on a single rolling window.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        window (int): Rolling window size for Z-score calculation.
-        overbought_multiplier (float): Multiplier for overbought Z-score threshold.
-        oversold_multiplier (float): Multiplier for oversold Z-score threshold.
-
-    Returns:
-        Dict[str, Tuple[float, float]]: Z-score thresholds per ticker.
-            Example: {'AAPL': (1.2, -1.5), 'GOOGL': (1.1, -1.3), ...}
-    """
-    thresholds = {}
-    for ticker in returns_df.columns:
-        rolling_mean = returns_df[ticker].rolling(window=window, min_periods=1).mean()
-        rolling_std = returns_df[ticker].rolling(window=window, min_periods=1).std()
-        z_scores = (returns_df[ticker] - rolling_mean) / rolling_std.replace(0, np.nan)
-        z_std = z_scores.std()
-        if np.isnan(z_std) or z_std == 0:
-            z_std = 1.0  # Avoid division by zero
-
-        overbought_threshold = overbought_multiplier * z_std
-        oversold_threshold = oversold_multiplier * z_std
-        thresholds[ticker] = (overbought_threshold, oversold_threshold)
-    return thresholds
 
 
 def plot_z_scores_grid(
