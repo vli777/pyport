@@ -1,3 +1,4 @@
+from typing import Tuple
 from matplotlib import pyplot as plt
 import pandas as pd
 import numpy as np
@@ -54,7 +55,9 @@ def apply_kalman_filter(returns_series, threshold=7.0, epsilon=1e-6):
     return anomaly_flags
 
 
-def remove_anomalous_stocks(returns_df, threshold=7.0, plot=False):
+def remove_anomalous_stocks(
+    returns_df: pd.DataFrame, threshold: int = 7.0, plot: bool = False
+) -> Tuple[pd.DataFrame, list[str]]:
     """
     Removes stocks with anomalous returns based on the Kalman filter.
     Optionally plots anomalies for all flagged stocks in a paginated 6x6 grid.

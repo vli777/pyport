@@ -425,3 +425,19 @@ def calculate_portfolio_alpha(
     logger.debug(f"Calculated alpha: {alpha}")
 
     return alpha
+
+
+def resample_returns(returns_df):
+    """
+    Resample daily returns to weekly and monthly frequencies.
+
+    Args:
+        returns_df (pd.DataFrame): Daily log returns DataFrame with tickers as columns and dates as index.
+
+    Returns:
+        dict: Dictionary containing resampled DataFrames longer time periods.
+    """
+    resampled_data = {
+        'weekly': returns_df.resample('W').sum(),        
+    }
+    return resampled_data

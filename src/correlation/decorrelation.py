@@ -27,6 +27,10 @@ def filter_correlated_groups(
     total_excluded: set = set()
     iteration = 1
 
+    if top_n is None:
+        group_size = len(returns_df.columns)
+        top_n = max(1, int(group_size * 0.1))                
+            
     while len(returns_df.columns) <= top_n:
         # Reduce noise via Ledoit-Wolf shrinkage if the number of assets is larger than 50
         if len(returns_df.columns) > 50:
