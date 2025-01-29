@@ -3,10 +3,10 @@ import optuna
 import pandas as pd
 import numpy as np
 import functools
-
+import copy
 
 from correlation.decorrelation import filter_correlated_groups
-from utils.portfolio_utils import calculate_portfolio_alpha
+from utils.performance_metrics import calculate_portfolio_alpha
 from utils import logger
 
 
@@ -36,27 +36,40 @@ def objective(
     """
     # Suggest correlation threshold and lambda weight
     correlation_threshold = trial.suggest_float("correlation_threshold", 0.5, 0.9)
-    lambda_weight = trial.suggest_float("lambda", 0.1, 1.0)  # Range for lambda tuning
+    lambda_weight = trial.suggest_float("lambda", 0.1, 1.0)
 
-    # Filter tickers based on the suggested correlation threshold
+    # Use a copy to prevent in-place modifications
     filtered_tickers = filter_correlated_groups(
         returns_df=returns_df.copy(),
         performance_df=performance_df.copy(),
-        correlation_threshold=correlation_threshold,  
+        correlation_threshold=correlation_threshold,
         sharpe_threshold=sharpe_threshold,
         linkage_method=linkage_method,
     )
 
-    # If no tickers are left after filtering, return a minimal value
-    if not filtered_tickers:
+    # Prevent empty portfolio issue (return a small penalty instead of -inf)
+    if not filtered_tickers or len(filtered_tickers) < 5:
         logger.warning(
-            f"No tickers left after filtering with correlation_threshold={correlation_threshold}. Returning -inf."
+            f"Too few tickers ({len(filtered_tickers)}) left after filtering. Applying penalty."
         )
-        return float("-inf")
+        return -100  # Small penalty to discourage empty selections
 
-    # Calculate portfolio metrics
-    filtered_returns = returns_df[filtered_tickers]
+    # Align stock histories before calculating correlation
+    filtered_returns = returns_df[filtered_tickers].dropna(how="all")
+    min_common_date = filtered_returns.dropna(how="all").index.min()
+    filtered_returns = filtered_returns.loc[min_common_date:]
+
+    # Ensure at least 50% of data is available per stock
+    min_history = len(filtered_returns) * 0.5
+    filtered_returns = filtered_returns.dropna(thresh=int(min_history), axis=1)
+
+    if filtered_returns.empty:
+        return -100  # Apply penalty if no stocks remain
+
+    # Compute correlation on the largest available overlapping range
     avg_correlation = filtered_returns.corr().abs().mean().mean()
+
+    # Calculate portfolio alpha
     portfolio_alpha = calculate_portfolio_alpha(
         filtered_returns, market_returns, risk_free_rate
     )
@@ -65,7 +78,9 @@ def objective(
     objective_value = portfolio_alpha - lambda_weight * avg_correlation
 
     logger.debug(
-        f"Trial {trial.number}: correlation_threshold={correlation_threshold}, lambda={lambda_weight}, portfolio_alpha={portfolio_alpha}, avg_correlation={avg_correlation}, objective={objective_value}"
+        f"Trial {trial.number}: correlation_threshold={correlation_threshold}, "
+        f"lambda={lambda_weight}, portfolio_alpha={portfolio_alpha}, "
+        f"avg_correlation={avg_correlation}, objective={objective_value}"
     )
 
     return objective_value
@@ -88,27 +103,15 @@ def optimize_correlation_threshold(
     """
     Optimize the correlation_threshold and lambda_weight to maximize the weighted objective using Optuna.
 
-    Args:
-        returns_df (pd.DataFrame): DataFrame containing returns of tickers.
-        performance_df (pd.DataFrame): DataFrame containing performance metrics.
-        market_returns (pd.Series): Series containing market returns.
-        risk_free_rate (float): Risk-free rate for alpha calculation.
-        sharpe_threshold (float, optional): Threshold for Sharpe Ratio in filtering. Defaults to 0.005.
-        linkage_method (str, optional): Method for hierarchical clustering. Defaults to "average".
-        n_trials (int, optional): Number of Optuna trials. Defaults to 50.
-        direction (str, optional): Optimization direction ("maximize" or "minimize"). Defaults to "maximize".
-        sampler (Callable, optional): Optuna sampler. Defaults to None.
-        pruner (Callable, optional): Optuna pruner. Defaults to None.
-        study_name (str, optional): Name of the Optuna study for persistence. Defaults to None.
-        storage (str, optional): Storage URL for Optuna study. Defaults to None.
-
     Returns:
         Tuple[Dict[str, float], float]: Best parameters and best objective value.
     """
-    # Define a partial objective function with fixed parameters
+    # Use deep copy to prevent mutation issues
+    returns_copy = copy.deepcopy(returns_df)
+
     objective_func = functools.partial(
         objective,
-        returns_df=returns_df,
+        returns_df=returns_copy,
         performance_df=performance_df,
         market_returns=market_returns,
         risk_free_rate=risk_free_rate,
@@ -132,7 +135,7 @@ def optimize_correlation_threshold(
     # Optimize
     study.optimize(objective_func, n_trials=n_trials)
 
-    # Log the best parameters and value
+    # Log best parameters
     logger.info(f"Best parameters: {study.best_params}")
     logger.info(f"Best objective value: {study.best_value}")
 

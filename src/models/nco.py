@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples
-from scipy.linalg import block_diag
 from scipy.optimize import minimize
 
 from utils import logger
@@ -55,36 +54,28 @@ def optimize_weights(cov, mu=None, max_weight=1.0, allow_short=False):
 
 
 def optimize_weights_sharpe(cov, mu, max_weight=1.0, allow_short=False, target_sum=1.0):
-    """
-    Compute portfolio weights that maximize the Sharpe ratio.
+    """Compute portfolio weights that maximize the Sharpe ratio."""
+    if cov.shape[0] == 1:
+        return np.array([1.0])  # Single asset gets full allocation
 
-    Args:
-        cov (np.ndarray): Covariance matrix of asset returns.
-        mu (np.ndarray): Expected returns of assets.
-        max_weight (float): Maximum allowed weight per asset (between 0 and 1).
+    valid_assets = cov.index.intersection(mu.index)  # Align mu and covariance
+    mu = mu.loc[valid_assets]
 
-    Returns:
-        np.ndarray: Optimal weights that maximize the Sharpe ratio.
-    """
-    # Number of assets
-    n = cov.shape[0]
-
-    # Define the objective function (negative Sharpe ratio)
     def negative_sharpe(weights):
         portfolio_return = weights @ mu
         portfolio_volatility = np.sqrt(weights.T @ cov @ weights)
         return -portfolio_return / portfolio_volatility
 
-    # Initial guess: Equal weights
-    init_weights = np.clip(np.ones(n) / n, -max_weight, max_weight)
+    init_weights = np.clip(
+        np.ones(len(valid_assets)) / len(valid_assets), -max_weight, max_weight
+    )
 
-    # Choose lower bound based on allow_short
     bounds = [
-        (-max_weight, max_weight) if allow_short else (0, max_weight) for _ in range(n)
+        (-max_weight, max_weight) if allow_short else (0, max_weight)
+        for _ in valid_assets
     ]
     constraints = {"type": "eq", "fun": lambda w: np.sum(w) - target_sum}
 
-    # Optimize
     result = minimize(
         negative_sharpe,
         init_weights,
@@ -94,12 +85,6 @@ def optimize_weights_sharpe(cov, mu, max_weight=1.0, allow_short=False, target_s
     )
 
     if not result.success:
-        logger.error(f"Optimization failed: {result.message}")
-        logger.debug(f"Initial weights: {init_weights}")
-        logger.debug(f"Bounds: {bounds}")
-        logger.debug(f"Constraints: {constraints}")
-        logger.debug(f"Covariance matrix: {cov}")
-        logger.debug(f"Expected returns: {mu}")
         raise ValueError("Optimization failed:", result.message)
 
     return result.x

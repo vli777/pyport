@@ -50,31 +50,40 @@ def run_optimization_and_save(
     for model in config.models[years]:
         cache_key = make_cache_key(model, years, symbols)
 
-        # 1) Check cache
+        # Check cache
         cached = load_model_results_from_cache(cache_key)
         if cached is not None:
             print(f"Using cached results for {model} with {years} years.")
             normalized_weights = normalize_weights(cached, config.min_weight)
             final_weights = normalized_weights
-            # Convert the Series to a dict before storing in stack
             stack[model + str(years)] = normalized_weights.to_dict()
             save_model_results_to_cache(cache_key, final_weights.to_dict())
         else:
-            # 2) Not in cache => run optimization
-            asset_returns = np.log(df[symbols]).diff().dropna()
-            mu_daily = asset_returns.mean()
+            # Fix: Ensure shorter-history stocks are retained
+            asset_returns = np.log(df[symbols]).diff().fillna(0)
+
+            # Ensure covariance matrix is computed only on valid assets
+            valid_assets = asset_returns.dropna(
+                thresh=int(len(df) * 0.5), axis=1
+            ).columns
+            asset_returns = asset_returns[valid_assets]
+
+            # Compute covariance with aligned data
             lw = LedoitWolf()
             cov_daily = lw.fit(asset_returns).covariance_
             cov_daily = pd.DataFrame(
-                cov_daily, index=asset_returns.columns, columns=asset_returns.columns
+                cov_daily, index=valid_assets, columns=valid_assets
             )
 
             trading_days_per_year = 252
+            mu_daily = asset_returns.mean()
             mu_annual = mu_daily * trading_days_per_year
             cov_annual = cov_daily * trading_days_per_year
 
-            max_weight = config.max_weight
+            # Ensure `mu` is aligned with covariance matrix
+            mu_annual = mu_annual.loc[valid_assets]
 
+            max_weight = config.max_weight
             model_args = config.model_config[model]
             model_args.update({"max_weight": max_weight})
 

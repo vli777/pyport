@@ -4,6 +4,7 @@ from pathlib import Path
 import logging
 import sys
 from typing import Any, Dict, List, Optional, Tuple
+import numpy as np
 import pandas as pd
 
 from config import Config
@@ -18,11 +19,11 @@ from reversion.multiscale_reversion import apply_mean_reversion_multiscale
 from reversion.optimize_timescale_weights import find_optimal_weights
 from reversion.recommendation import generate_reversion_recommendations
 from reversion.optimize_inclusion import find_optimal_inclusion_pct
+from utils.performance_metrics import calculate_performance_metrics
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
 from utils.portfolio_utils import (
-    calculate_performance_metrics,
     normalize_weights,
     stacked_output,
 )
@@ -96,12 +97,22 @@ def run_pipeline(
             pd.DataFrame: DataFrame containing daily returns for each stock.
         """
         try:
+            # Extract only 'Adj Close' level
             adj_close = df.xs("Adj Close", level=1, axis=1)
-            returns = adj_close.pct_change().dropna()
+
+            # Calculate daily returns while preserving different stock histories
+            returns = adj_close.pct_change()
+
+            # Fill only leading NaNs for stocks with different start dates
+            returns = returns.fillna(method="ffill").dropna(how="all")
+
             logger.debug("Calculated daily returns.")
             return returns
-        except KeyError:
-            logger.error("Adjusted close prices not found in the DataFrame.")
+
+        except KeyError as e:
+            logger.error(
+                f"Adjusted close prices not found in the DataFrame. Error: {e}"
+            )
             raise
 
     def preprocess_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
@@ -137,29 +148,28 @@ def run_pipeline(
         """
         original_symbols = list(returns_df.columns)  # Preserve original symbols
 
-        # Step 1: Optimize mean reversion signals
+        # Apply mean reversion signals (if enabled)
         if config.use_reversion_filter:
-            # Step 1: Generate Reversion Signals
+            # Generate Reversion Signals
             reversion_signals = apply_mean_reversion_multiscale(
                 returns_df, n_trials=50, n_jobs=-1, plot=config.plot_reversion_threshold
             )
             print("Reversion Signals Generated.")
 
-            # Step 2: Optimize Weights
+            # Optimize Weights
             optimal_weights = find_optimal_weights(
                 reversion_signals, returns_df, n_trials=50
             )
             print(f"Optimal Weights: {optimal_weights}")
 
-            # Step 3: Generate Final Recommendations based on initial thresholds
+            # Generate Initial Recommendations
             final_recommendations = generate_reversion_recommendations(
                 reversion_signals, optimal_weights, include_pct=0.2, exclude_pct=0.2
             )
             print("Initial Tickers to include:", final_recommendations["include"])
             print("Initial Tickers to exclude:", final_recommendations["exclude"])
 
-            # Step 4: Optimize Inclusion/Exclusion Thresholds
-            # Compute final_signals
+            # Align signal data properly
             daily_signals = pd.DataFrame.from_dict(
                 reversion_signals["daily"], orient="index"
             ).T
@@ -167,10 +177,12 @@ def run_pipeline(
                 reversion_signals["weekly"], orient="index"
             ).T
 
-            # Ensure both DataFrames have the same index (dates)
-            combined_dates = daily_signals.index.union(weekly_signals.index)
-            daily_signals = daily_signals.reindex(combined_dates).fillna(0)
-            weekly_signals = weekly_signals.reindex(combined_dates).fillna(0)
+            # Use available trading history instead of forcing all stocks into the same range
+            all_dates = (
+                returns_df.index
+            )  # Use returns_df index as the reference trading calendar
+            daily_signals = daily_signals.reindex(all_dates).fillna(0)
+            weekly_signals = weekly_signals.reindex(all_dates).fillna(0)
 
             # Compute weighted signal strength
             weight_daily = optimal_weights.get("weight_daily", 0.5)
@@ -179,13 +191,13 @@ def run_pipeline(
                 weight_daily * daily_signals + weight_weekly * weekly_signals
             )
 
-            # Optimize inclusion/exclusion thresholds
+            # Optimize Inclusion/Exclusion Thresholds
             optimal_inclusion_thresholds = find_optimal_inclusion_pct(
                 final_signals, returns_df, n_trials=50
             )
             print(f"✅ Optimal Inclusion Thresholds: {optimal_inclusion_thresholds}")
 
-            # Step 5: Generate Final Recommendations with optimized thresholds
+            # Generate Final Recommendations with optimized thresholds
             reversion_recommendations = generate_reversion_recommendations(
                 reversion_signals,
                 optimal_weights,
@@ -197,7 +209,7 @@ def run_pipeline(
                 ),
             )
 
-            # Step 6: Modify Trading Universe
+            # Modify Trading Universe
             include_tickers = set(reversion_recommendations["include"])
             exclude_tickers = set(reversion_recommendations["exclude"])
 
@@ -210,19 +222,16 @@ def run_pipeline(
         else:
             filtered_symbols = original_symbols
 
-        # Fallback to original symbols if filtering results in an empty list
-        if not filtered_symbols:
-            filtered_symbols = original_symbols
-
-        # Step 2: Validate filtered symbols against returns_df columns
+        # Ensure final symbols exist in returns_df (not just original_symbols)
         valid_symbols = [
-            symbol for symbol in filtered_symbols if symbol in original_symbols
+            symbol for symbol in filtered_symbols if symbol in returns_df.columns
         ]
+
         if len(valid_symbols) < len(filtered_symbols):
             missing_symbols = set(filtered_symbols) - set(valid_symbols)
             logger.warning(f"Filtered symbols not in returns_df: {missing_symbols}")
 
-        # Step 3: Apply correlation filter (if enabled)
+        # Apply correlation filter (if enabled)
         if config.use_correlation_filter and valid_symbols:
             try:
                 # Calculate performance metrics
@@ -268,7 +277,7 @@ def run_pipeline(
                 # Fall back to original symbols if optimization fails
                 valid_symbols = original_symbols
 
-        # Step 4: Ensure a non-empty list of symbols is returned
+        # Ensure a non-empty list of symbols is returned
         if not valid_symbols:
             logger.warning(
                 "No valid symbols after filtering. Returning original symbols."
@@ -340,7 +349,11 @@ def run_pipeline(
     # Step 4: Load and preprocess data
     logger.info("Loading and preprocessing data...")
     df_all = load_data(all_symbols, start_long, end_long)
+
+    # Ensure we use the **largest valid date range** for returns_df
+    all_dates = df_all.index  # Keep full range before filtering
     returns_df, removed_anomalous = preprocess_data(df_all)
+
     # Log removed anomalous symbols
     if removed_anomalous:
         logger.info(f"Anomalous symbols removed: {removed_anomalous}")
@@ -348,9 +361,14 @@ def run_pipeline(
     # Step 5: Filter symbols based on mean reversion only if required
     logger.info("Filtering symbols...")
     valid_symbols = filter_symbols(returns_df, config)
+
+    # Ensure `valid_symbols` aligns with available trading history
+    valid_symbols = [sym for sym in valid_symbols if sym in returns_df.columns]
+
     if not valid_symbols:
         logger.warning("No valid symbols remain after filtering. Aborting pipeline.")
         return {}
+
     logger.info(f"Symbols selected for optimization: {valid_symbols}")
 
     try:
@@ -366,26 +384,34 @@ def run_pipeline(
         start, end = calculate_start_end_dates(period)
         logger.debug(f"Processing period: {period} from {start} to {end}")
 
-        # Slice price data for the period
+        # Preserve full available date range
         df_period = df_all.loc[start:end].copy()
 
         # Flatten df_period for optimization
         if isinstance(
             df_period.columns, pd.MultiIndex
         ) and "Adj Close" in df_period.columns.get_level_values(1):
-            df_period = df_period.xs("Adj Close", level=1, axis=1)
+            try:
+                df_period = df_period.xs("Adj Close", level=1, axis=1)
 
-        # Ensure the DataFrame is flat with symbols as columns and dates as the index
+                # Ensure stocks with shorter histories remain in the dataset
+                all_tickers = df_period.columns.get_level_values(0).unique()
+                df_period = df_period.reindex(columns=all_tickers, fill_value=np.nan)
+
+                df_period.columns.name = None  # Flatten MultiIndex properly
+            except KeyError:
+                logger.warning(
+                    "Adj Close column not found. Returning original DataFrame."
+                )
+
+        # Align stocks with different start dates properly
+        df_period = df_period.reindex(
+            index=all_dates, columns=valid_symbols, fill_value=np.nan
+        )
         df_period.columns.name = None  # Remove column name (Ticker)
         df_period.index.name = "Date"  # Set index name for clarity
 
-        # Filter df_period to include only valid_symbols
-        df_period = df_period[valid_symbols]
-
-        # Update dfs with the new start and end dates
-        dfs["start"] = min(dfs["start"], start)
-        dfs["end"] = max(dfs["end"], end)
-
+        # Prevent removal of stocks due to shorter histories
         if config.test_mode:
             df_period.to_csv("full_df.csv")
             visible_length = int(len(df_period) * config.test_data_visible_pct)
@@ -430,13 +456,14 @@ def run_pipeline(
         f"dfs['data'] Columns ({len(dfs['data'].columns)}): {list(dfs['data'].columns)}"
     )
 
-    # Align dfs["data"] with normalized_avg_weights dict
+    # Ensure we only drop stocks **below the min weight threshold**, not just because of missing data
     dfs["data"] = dfs["data"].filter(items=normalized_avg_weights.keys())
+
     logger.debug(
         f"Filtered symbols after trimming allocations below minimum weight {config.min_weight}: {dfs['data'].columns}"
     )
 
-    # Check for empty DataFrame after filtering
+    # Prevent empty DataFrame after filtering
     if dfs["data"].empty:
         logger.error("No valid symbols remain in the DataFrame after alignment.")
 
