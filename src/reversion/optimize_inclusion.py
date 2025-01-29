@@ -3,20 +3,21 @@ import optuna
 import pandas as pd
 
 
-def optimize_inclusion_thresholds(
-    trial, final_signals: pd.Series, returns_df: pd.DataFrame
-) -> float:
+def objective(trial, final_signals: pd.Series, returns_df: pd.DataFrame) -> float:
     """
     Use Optuna to optimize the inclusion/exclusion thresholds.
 
     Args:
         trial (optuna.trial.Trial): Optuna trial object.
-        final_signals (pd.Series): Weighted signal scores per ticker.
+        final_signals (pd.DataFrame): Weighted time-series signals per ticker.
         returns_df (pd.DataFrame): Log returns DataFrame.
 
     Returns:
         float: Cumulative return based on optimized thresholds.
     """
+    # Ensure `final_signals` has datetime index
+    final_signals.index = pd.to_datetime(final_signals.index)
+
     # Search space for inclusion/exclusion thresholds (percentiles)
     include_threshold_pct = trial.suggest_float(
         "include_threshold_pct", 0.1, 0.4, step=0.05
@@ -25,23 +26,35 @@ def optimize_inclusion_thresholds(
         "exclude_threshold_pct", 0.1, 0.4, step=0.05
     )
 
-    # Select tickers based on percentile thresholds
-    include_threshold = final_signals.quantile(1 - include_threshold_pct)
-    exclude_threshold = final_signals.quantile(exclude_threshold_pct)
-
-    include_tickers = final_signals[final_signals >= include_threshold].index.tolist()
-    exclude_tickers = final_signals[final_signals <= exclude_threshold].index.tolist()
-
-    # Ensure no ticker is in both
-    include_tickers = list(set(include_tickers) - set(exclude_tickers))
-    exclude_tickers = list(set(exclude_tickers) - set(include_tickers))
-
-    # Create positions dataframe
+    # Initialize positions DataFrame
     positions = pd.DataFrame(0, index=returns_df.index, columns=returns_df.columns)
 
-    # Convert back to list before assigning
-    positions.loc[:, include_tickers] = 1
-    positions.loc[:, exclude_tickers] = -1
+    for date in returns_df.index:
+        # Ensure `date` is in datetime format
+        date = pd.to_datetime(date)
+
+        # Only use past data up to `date`
+        if date not in final_signals.index:
+            continue  # Skip if no signal for this date
+
+        current_signals = final_signals.loc[date]  # Get signals for this specific date
+
+        include_threshold = current_signals.quantile(1 - include_threshold_pct)
+        exclude_threshold = current_signals.quantile(exclude_threshold_pct)
+
+        include_tickers = current_signals[
+            current_signals >= include_threshold
+        ].index.tolist()
+        exclude_tickers = current_signals[
+            current_signals <= exclude_threshold
+        ].index.tolist()
+
+        # Ensure no ticker is in both
+        include_tickers = list(set(include_tickers) - set(exclude_tickers))
+        exclude_tickers = list(set(exclude_tickers) - set(include_tickers))
+
+        positions.loc[date, include_tickers] = 1
+        positions.loc[date, exclude_tickers] = -1
 
     # Simulate strategy
     _, cumulative_return = simulate_strategy(returns_df, positions)
@@ -73,11 +86,6 @@ def simulate_strategy(
     ).prod() - 1  # More accurate cumulative return
 
     return strategy_returns, cumulative_return
-
-
-# Define the objective function with arguments
-def objective(trial, final_signals, returns_df):
-    return optimize_inclusion_thresholds(trial, final_signals, returns_df)
 
 
 # Ensure final_signals and returns_df are defined before optimization
