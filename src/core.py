@@ -176,9 +176,7 @@ def run_pipeline(
             # Compute weighted signal strength
             weight_daily = optimal_weights.get("weight_daily", 0.5)
             weight_weekly = 1.0 - weight_daily
-            final_signals = (
-                weight_daily * daily_signals + weight_weekly * weekly_signals
-            ).mean()
+            final_signals = weight_daily * daily_signals + weight_weekly * weekly_signals
 
             # Optimize inclusion/exclusion thresholds
             optimal_inclusion_thresholds = find_optimal_inclusion_pct(

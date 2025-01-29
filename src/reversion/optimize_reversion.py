@@ -33,8 +33,8 @@ def objective(trial, window_range: range, returns_df: pd.DataFrame) -> float:
     )
 
     # Calculate Z-scores
-    rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
-    rolling_std = returns_df.rolling(window=window, min_periods=1).std()
+    rolling_mean = returns_df.shift(1).rolling(window=window, min_periods=1).mean()
+    rolling_std = returns_df.shift(1).rolling(window=window, min_periods=1).std()
     z_score_df = (returns_df - rolling_mean) / rolling_std.replace(0, np.nan)
 
     # Define dynamic thresholds

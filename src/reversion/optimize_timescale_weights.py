@@ -47,9 +47,7 @@ def optimize_signal_weights(trial, reversion_signals, returns_df) -> float:
 
     # Convert dictionary signals to DataFrames with dates as index and tickers as columns
     daily_signals = pd.DataFrame.from_dict(reversion_signals["daily"], orient="index").T
-    weekly_signals = pd.DataFrame.from_dict(
-        reversion_signals["weekly"], orient="index"
-    ).T
+    weekly_signals = pd.DataFrame.from_dict(reversion_signals["weekly"], orient="index").T
 
     # Ensure both DataFrames have the same index (dates)
     combined_dates = daily_signals.index.union(weekly_signals.index)
@@ -64,8 +62,11 @@ def optimize_signal_weights(trial, reversion_signals, returns_df) -> float:
         lambda x: 1 if x > 0.5 else (-1 if x < -0.5 else 0)
     )
 
-    # Simulate strategy with weighted signals
-    _, cumulative_return = simulate_strategy(returns_df, combined_signals)
+    # Convert signals to positions by shifting to prevent look-ahead bias
+    positions_df = combined_signals.shift(1)  # Shift positions to use previous signals
+
+    # Simulate strategy with valid positions
+    _, cumulative_return = simulate_strategy(returns_df, positions_df=positions_df)
 
     return cumulative_return  # Optuna maximizes this
 
