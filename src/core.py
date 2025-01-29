@@ -19,7 +19,7 @@ from reversion.multiscale_reversion import apply_mean_reversion_multiscale
 from reversion.optimize_timescale_weights import find_optimal_weights
 from reversion.recommendation import generate_reversion_recommendations
 from reversion.optimize_inclusion import find_optimal_inclusion_pct
-from .boxplot import generate_boxplot_data
+from boxplot import generate_boxplot_data
 from utils.performance_metrics import calculate_performance_metrics
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
@@ -501,7 +501,7 @@ def run_pipeline(
 
     # Step 11: Compile and return results
     boxplot_stats = generate_boxplot_data(daily_returns)
-    
+
     return {
         "start_date": str(dfs["start"]),
         "end_date": str(dfs["end"]),
@@ -510,5 +510,5 @@ def run_pipeline(
         "normalized_avg": normalized_avg_weights,
         "daily_returns": daily_returns,
         "cumulative_returns": cumulative_returns,
-         "boxplot_stats": boxplot_stats, # (not extractable from plotly boxplot)
+        "boxplot_stats": boxplot_stats,  # (not extractable from plotly boxplot)
     }
