@@ -3,9 +3,9 @@ import optuna
 import pandas as pd
 
 
-def objective(trial, final_signals: pd.Series, returns_df: pd.DataFrame) -> float:
+def objective(trial, final_signals: pd.DataFrame, returns_df: pd.DataFrame) -> float:
     """
-    Use Optuna to optimize the inclusion/exclusion thresholds.
+    Use Optuna to optimize the inclusion/exclusion thresholds while handling different stock history lengths.
 
     Args:
         trial (optuna.trial.Trial): Optuna trial object.
@@ -15,7 +15,8 @@ def objective(trial, final_signals: pd.Series, returns_df: pd.DataFrame) -> floa
     Returns:
         float: Cumulative return based on optimized thresholds.
     """
-    # Ensure `final_signals` has datetime index
+    # Ensure `final_signals` has a datetime index
+    final_signals = final_signals.copy()
     final_signals.index = pd.to_datetime(final_signals.index)
 
     # Search space for inclusion/exclusion thresholds (percentiles)
@@ -26,18 +27,23 @@ def objective(trial, final_signals: pd.Series, returns_df: pd.DataFrame) -> floa
         "exclude_threshold_pct", 0.1, 0.4, step=0.05
     )
 
-    # Initialize positions DataFrame
-    positions = pd.DataFrame(0, index=returns_df.index, columns=returns_df.columns)
+    # Initialize positions DataFrame with NaN instead of zeros to allow dynamic updates
+    positions = pd.DataFrame(
+        index=returns_df.index, columns=returns_df.columns, dtype=float
+    )
 
     for date in returns_df.index:
-        # Ensure `date` is in datetime format
-        date = pd.to_datetime(date)
+        date = pd.to_datetime(date)  # Ensure correct format
 
-        # Only use past data up to `date`
+        # Get available stocks at this date (ignore missing values)
+        available_stocks = returns_df.loc[date].dropna().index
         if date not in final_signals.index:
             continue  # Skip if no signal for this date
 
-        current_signals = final_signals.loc[date]  # Get signals for this specific date
+        current_signals = final_signals.loc[date, available_stocks].dropna()
+
+        if current_signals.empty:
+            continue  # No valid signals for this date
 
         include_threshold = current_signals.quantile(1 - include_threshold_pct)
         exclude_threshold = current_signals.quantile(exclude_threshold_pct)
@@ -53,8 +59,12 @@ def objective(trial, final_signals: pd.Series, returns_df: pd.DataFrame) -> floa
         include_tickers = list(set(include_tickers) - set(exclude_tickers))
         exclude_tickers = list(set(exclude_tickers) - set(include_tickers))
 
+        # Update only available stocks at this date
         positions.loc[date, include_tickers] = 1
         positions.loc[date, exclude_tickers] = -1
+
+    # Fill missing values with 0 (stocks with no positions remain neutral)
+    positions.fillna(0, inplace=True)
 
     # Simulate strategy
     _, cumulative_return = simulate_strategy(returns_df, positions)

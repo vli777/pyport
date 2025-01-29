@@ -32,18 +32,28 @@ def objective(trial, window_range: range, returns_df: pd.DataFrame) -> float:
         "oversold_multiplier", -2.5, -1.5, step=0.1
     )
 
-    # Calculate Z-scores
-    rolling_mean = returns_df.shift(1).rolling(window=window, min_periods=1).mean()
-    rolling_std = returns_df.shift(1).rolling(window=window, min_periods=1).std()
-    z_score_df = (returns_df - rolling_mean) / rolling_std.replace(0, np.nan)
+    # Calculate rolling mean and std with proper handling for different stock histories
+    rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
+    rolling_std = returns_df.rolling(window=window, min_periods=1).std()
 
-    # Define dynamic thresholds
+    # Avoid division by zero when standard deviation is zero
+    rolling_std = rolling_std.replace(0, np.nan)
+
+    # Calculate Z-scores dynamically based on available history
+    z_score_df = (returns_df - rolling_mean) / rolling_std
+
+    # Ensure only stocks with valid history are considered
+    valid_stocks = returns_df.dropna(axis=1, how="all").columns
+    z_score_df = z_score_df[valid_stocks]
+    returns_df = returns_df[valid_stocks]
+
+    # Define dynamic thresholds per stock
     dynamic_thresholds = {
         ticker: (
-            overbought_multiplier * z_score_df[ticker].std(),
-            oversold_multiplier * z_score_df[ticker].std(),
+            overbought_multiplier * z_score_df[ticker].std(skipna=True),
+            oversold_multiplier * z_score_df[ticker].std(skipna=True),
         )
-        for ticker in returns_df.columns
+        for ticker in valid_stocks
     }
 
     # Simulate strategy performance
@@ -95,8 +105,10 @@ def simulate_strategy(returns_df, dynamic_thresholds, z_scores_df):
     """
     positions = pd.DataFrame(0, index=returns_df.index, columns=returns_df.columns)
 
-    # Generate signals based on thresholds
     for ticker in returns_df.columns:
+        if ticker not in dynamic_thresholds:
+            continue  # Skip tickers with insufficient data
+
         overbought, oversold = dynamic_thresholds[ticker]
         z_scores = z_scores_df[ticker]
 
@@ -107,10 +119,13 @@ def simulate_strategy(returns_df, dynamic_thresholds, z_scores_df):
             np.where(z_scores > overbought, -1, 0),  # Short position
         )
 
-    # Calculate daily strategy returns
+    # Ensure stocks with missing data are handled properly
+    positions.fillna(0, inplace=True)
+
+    # Calculate daily strategy returns using shifted positions to prevent look-ahead bias
     strategy_returns = (positions.shift(1) * returns_df).sum(axis=1)
 
-    # Calculate cumulative return
-    cumulative_return = np.exp(strategy_returns.cumsum().iloc[-1])
+    # Calculate cumulative return (log to normal return conversion)
+    cumulative_return = np.exp(strategy_returns.cumsum().iloc[-1]) - 1
 
     return strategy_returns, cumulative_return

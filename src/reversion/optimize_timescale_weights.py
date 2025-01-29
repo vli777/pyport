@@ -21,7 +21,7 @@ def find_optimal_weights(
     """
     study = optuna.create_study(direction="maximize")
     study.optimize(
-        lambda trial: optimize_signal_weights(trial, reversion_signals, returns_df),
+        lambda trial: objective(trial, reversion_signals, returns_df),
         n_trials=n_trials,
         n_jobs=-1,  # Utilize all cores
     )
@@ -29,7 +29,7 @@ def find_optimal_weights(
     return study.best_trial.params
 
 
-def optimize_signal_weights(trial, reversion_signals, returns_df) -> float:
+def objective(trial, reversion_signals, returns_df) -> float:
     """
     Optimize the weights of different time scale signals for mean reversion.
 
@@ -47,23 +47,36 @@ def optimize_signal_weights(trial, reversion_signals, returns_df) -> float:
 
     # Convert dictionary signals to DataFrames with dates as index and tickers as columns
     daily_signals = pd.DataFrame.from_dict(reversion_signals["daily"], orient="index").T
-    weekly_signals = pd.DataFrame.from_dict(reversion_signals["weekly"], orient="index").T
+    weekly_signals = pd.DataFrame.from_dict(
+        reversion_signals["weekly"], orient="index"
+    ).T
 
-    # Ensure both DataFrames have the same index (dates)
-    combined_dates = daily_signals.index.union(weekly_signals.index)
+    # Align both signals and returns DataFrames
+    combined_dates = daily_signals.index.union(weekly_signals.index).union(
+        returns_df.index
+    )
     daily_signals = daily_signals.reindex(combined_dates).fillna(0)
     weekly_signals = weekly_signals.reindex(combined_dates).fillna(0)
+    returns_df = returns_df.reindex(combined_dates)
 
     # Weighted combination of signals
     combined_signals = weight_daily * daily_signals + weight_weekly * weekly_signals
 
-    # Ensure signals are integers (-1, 0, 1) after weighting
-    combined_signals = combined_signals.map(
+    # Ensure signals remain in {-1, 0, 1}
+    combined_signals = combined_signals.applymap(
         lambda x: 1 if x > 0.5 else (-1 if x < -0.5 else 0)
     )
 
-    # Convert signals to positions by shifting to prevent look-ahead bias
+    # Ensure we only include stocks that have valid history on each date
+    valid_stocks = returns_df.dropna(axis=1, how="all").columns
+    combined_signals = combined_signals[valid_stocks]
+    returns_df = returns_df[valid_stocks]
+
+    # Convert signals to positions while ensuring no look-ahead bias
     positions_df = combined_signals.shift(1)  # Shift positions to use previous signals
+
+    # Fill missing positions with 0 (neutral)
+    positions_df.fillna(0, inplace=True)
 
     # Simulate strategy with valid positions
     _, cumulative_return = simulate_strategy(returns_df, positions_df=positions_df)
