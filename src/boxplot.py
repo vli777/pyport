@@ -1,59 +1,45 @@
+from typing import Any, Dict
 import numpy as np
-import plotly.graph_objects as go
+import pandas as pd
 
 
-def generate_boxplot_data(data):
-    # Calculate numerical values for boxplot
-    q1 = np.percentile(data, 25)
-    median = np.percentile(data, 50)
-    q3 = np.percentile(data, 75)
-    lower_whisker = np.min(data)
-    upper_whisker = np.max(data)
+def generate_boxplot_data(df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    """
+    Compute boxplot statistics (Q1, median, Q3, whiskers, and outliers)
+    for each column in a DataFrame.
 
-    # Calculate outliers if any
-    iqr = q3 - q1
-    lower_fence = q1 - 1.5 * iqr
-    upper_fence = q3 + 1.5 * iqr
-    outliers = [x for x in data if x < lower_fence or x > upper_fence]
+    Args:
+        df (pd.DataFrame): DataFrame where each column represents a stock's daily returns.
 
-    # Return all the numerical values
-    return {
-        "q1": q1,
-        "median": median,
-        "q3": q3,
-        "lower_whisker": lower_whisker,
-        "upper_whisker": upper_whisker,
-        "outliers": outliers,
-    }
+    Returns:
+        Dict[str, Dict[str, Any]]: Dictionary where each stock symbol maps to its boxplot statistics.
+    """
+    boxplot_stats = {}
 
+    for col in df.columns:
+        data = df[col].dropna().values  # Drop NaNs for accurate calculations
+        if len(data) == 0:
+            continue  # Skip empty columns
 
-def plot_boxplot(data, boxplot_data):
-    # Create a box plot using the values
-    fig = go.Figure()
+        q1 = np.percentile(data, 25)
+        median = np.percentile(data, 50)
+        q3 = np.percentile(data, 75)
+        lower_whisker = np.min(data)
+        upper_whisker = np.max(data)
 
-    fig.add_trace(
-        go.Box(
-            y=data,
-            q1=[boxplot_data["q1"]],
-            median=[boxplot_data["median"]],
-            q3=[boxplot_data["q3"]],
-            lowerfence=[boxplot_data["lower_whisker"]],
-            upperfence=[boxplot_data["upper_whisker"]],
-            boxpoints="outliers",
-            outlierpoints=boxplot_data["outliers"],
-            name="Data",
-        )
-    )
+        # Compute outliers using IQR method
+        iqr = q3 - q1
+        lower_fence = q1 - 1.5 * iqr
+        upper_fence = q3 + 1.5 * iqr
+        outliers = [x for x in data if x < lower_fence or x > upper_fence]
 
-    fig.show()
+        boxplot_stats[col] = {
+            "q1": q1,
+            "median": median,
+            "q3": q3,
+            "lower_whisker": lower_whisker,
+            "upper_whisker": upper_whisker,
+            "outliers": outliers,
+        }
 
-
-# Example usage
-data = np.random.normal(size=100)
-boxplot_data = generate_boxplot_data(data)
-
-# Print numerical values for the boxplot
-print("Boxplot numerical values:", boxplot_data)
-
-# Plot the boxplot
-plot_boxplot(data, boxplot_data)
+    return boxplot_stats

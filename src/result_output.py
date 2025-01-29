@@ -3,10 +3,9 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from config import Config
+from utils.performance_metrics import calculate_portfolio_performance, sharpe_ratio
 from utils import logger
 from utils.portfolio_utils import (
-    calculate_portfolio_performance,
-    sharpe_ratio,
     trim_weights,
 )
 
