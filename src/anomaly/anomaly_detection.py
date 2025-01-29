@@ -67,7 +67,11 @@ def remove_anomalous_stocks(
     return filtered_df, anomalous_cols
 
 
-def objective(trial, returns_df: pd.DataFrame, weight_dict: dict = None) -> float:
+def objective(
+    trial,
+    returns_df: pd.DataFrame,
+    weight_dict: Optional[Dict[str, float]] = None,
+) -> float:
     """
     Optimize Kalman filter threshold using a combined objective function.
 
@@ -83,7 +87,7 @@ def objective(trial, returns_df: pd.DataFrame, weight_dict: dict = None) -> floa
     Returns:
         float: Composite score (higher is better).
     """
-    # Default weights if not provided
+    # Provide a default weight dictionary if None
     if weight_dict is None:
         weight_dict = {"sortino": 0.8, "stability": 0.2}
 
@@ -136,7 +140,9 @@ def objective(trial, returns_df: pd.DataFrame, weight_dict: dict = None) -> floa
 
 
 def optimize_kalman_threshold(
-    returns_df: pd.DataFrame, n_trials: int = 50, weight_dict: dict = None
+    returns_df: pd.DataFrame,
+    n_trials: int = 50,
+    weight_dict: Optional[Dict[str, float]] = None,
 ):
     """
     Optimize the Kalman filter threshold using a multi-objective approach.
@@ -149,6 +155,10 @@ def optimize_kalman_threshold(
     Returns:
         float: Best threshold value.
     """
+    # Provide a default weight dictionary if None
+    if weight_dict is None:
+        weight_dict = {"sortino": 0.8, "stability": 0.2}
+
     study = optuna.create_study(direction="maximize")
     study.optimize(
         lambda trial: objective(trial, returns_df, weight_dict),
