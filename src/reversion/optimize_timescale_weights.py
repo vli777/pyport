@@ -60,7 +60,7 @@ def optimize_signal_weights(trial, reversion_signals, returns_df) -> float:
     combined_signals = weight_daily * daily_signals + weight_weekly * weekly_signals
 
     # Ensure signals are integers (-1, 0, 1) after weighting
-    combined_signals = combined_signals.applymap(
+    combined_signals = combined_signals.map(
         lambda x: 1 if x > 0.5 else (-1 if x < -0.5 else 0)
     )
 
