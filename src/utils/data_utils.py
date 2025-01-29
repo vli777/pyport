@@ -199,26 +199,3 @@ def convert_all_csv_to_parquet(data_folder: str):
         df.to_parquet(parquet_file)
 
         logger.info(f"Converted {csv_file.name} -> {parquet_file.name}")
-
-
-import os
-
-
-def remove_all_csv_in_folder(data_folder: str):
-    data_path = Path(data_folder)
-    for csv_file in data_path.glob("*.csv"):
-        os.remove(csv_file)
-        logger.info(f"Removed {csv_file}")
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Convert CSV files in a folder to Parquet."
-    )
-    parser.add_argument("data_folder", help="Path to the folder containing CSV files.")
-
-    args = parser.parse_args()
-
-    remove_all_csv_in_folder(args.data_folder)

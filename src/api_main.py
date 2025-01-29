@@ -8,7 +8,7 @@ from typing import List, Optional
 import uvicorn
 
 from config import Config
-from iterative_pipeline import iterative_pipeline_runner
+from .main import iterative_pipeline_runner
 
 
 app = FastAPI(
