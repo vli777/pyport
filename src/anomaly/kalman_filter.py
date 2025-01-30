@@ -1,52 +1,40 @@
+from typing import Dict, Tuple
 import pandas as pd
 import numpy as np
 from pykalman import KalmanFilter
 
 
-def apply_kalman_filter(returns_series, threshold=7.0, epsilon=1e-6):
-    # Ensure returns_series is 1-dimensional
-    if not isinstance(returns_series, pd.Series):
-        raise ValueError("returns_series must be a Pandas Series.")
+def apply_kalman_filter(returns_series: pd.Series, threshold: float) -> Tuple[pd.Series, np.ndarray]:
+    """
+    Applies the Kalman filter to a series of returns and returns anomaly flags and estimates.
 
-    # Ensure the series is valid
-    if len(returns_series) < 2:
-        print(f"Insufficient data for Kalman filter. Length: {len(returns_series)}")
-        return pd.Series([False] * len(returns_series), index=returns_series.index)
+    Args:
+        returns_series (pd.Series): Series of returns for a single stock.
+        threshold (float): Threshold multiplier for standard deviation.
 
-    # Initialize the Kalman filter
-    kf = KalmanFilter(initial_state_mean=0, n_dim_obs=1)
+    Returns:
+        Tuple[pd.Series, np.ndarray]: Boolean series indicating anomalies and Kalman estimates.
+    """
+    # Initialize Kalman Filter
+    kf = KalmanFilter(dim_x=2, dim_z=1)
+    kf.x = np.array([returns_series.mean(), 0.])  # initial state (location and velocity)
+    kf.F = np.array([[1, 1],
+                     [0, 1]])  # state transition matrix
+    kf.H = np.array([[1, 0]])  # Measurement function
+    kf.P *= 1000.  # covariance matrix
+    kf.R = 0.01  # measurement noise
+    kf.Q = np.array([[1, 0],
+                     [0, 1]]) * 0.001  # process noise
 
-    # Increase process noise for smoother estimates
-    kf.transition_covariance = np.eye(1) * 0.1
+    estimates = []
+    for z in returns_series:
+        kf.predict()
+        kf.update(z)
+        estimates.append(kf.x[0])
 
-    # Reshape the input to 2D array (T x 1)
-    values = returns_series.values.reshape(-1, 1)
+    estimates = np.array(estimates)
+    residuals = returns_series.values - estimates
+    std_dev = residuals.std()
+    anomaly_flags = np.abs(residuals) > (threshold * std_dev)
 
-    # Train the Kalman filter
-    kf = kf.em(values, n_iter=3)
-
-    # Get smoothed state means
-    smoothed_state_means, _ = kf.smooth(values)
-
-    # Calculate residuals
-    residuals = values - smoothed_state_means
-
-    # Calculate the median of residuals
-    median_res = np.median(residuals)
-
-    # Compute the Median Absolute Deviation (MAD)
-    mad = np.median(np.abs(residuals - median_res))
-
-    # Avoid division by zero or very small MAD
-    mad = max(mad, epsilon)
-
-    # Define a modified Z-score using MAD
-    modified_z_scores = 0.6745 * (residuals - median_res) / mad
-
-    # Identify anomalies based on a threshold on the modified Z-score
-    anomaly_flags = np.abs(modified_z_scores) > threshold
-
-    # Squeeze anomaly_flags to convert from 2D to 1D
-    anomaly_flags = anomaly_flags.squeeze()
-
-    return anomaly_flags
+    return pd.Series(anomaly_flags, index=returns_series.index), estimates

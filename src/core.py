@@ -127,20 +127,22 @@ def run_pipeline(
         Returns:
             pd.DataFrame: Processed DataFrame with daily returns and optional anomaly filtering applied.
         """
-        returns = calculate_returns(df)
+        returns_df = calculate_returns(df)
 
         removed_symbols = []
         if config.use_anomaly_filter:
             logger.debug("Applying anomaly filter.")
-            returns, removed_symbols = remove_anomalous_stocks(
-                returns,
+            filtered_returns_df, removed_symbols, thresholds = remove_anomalous_stocks(
+                returns_df=returns_df,
                 # weight_dict # placeholder for configurable weights based on risk preference
+                cache_filename="optimized_thresholds.pkl",
+                reoptimize=False,
                 plot=config.plot_anomalies,
             )
         else:
             logger.debug("Skipping anomaly filter.")
 
-        return returns, removed_symbols
+        return filtered_returns_df, removed_symbols
 
     def filter_symbols(returns_df: pd.DataFrame, config: Config) -> List[str]:
         """

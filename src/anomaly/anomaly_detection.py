@@ -6,230 +6,180 @@ import numpy as np
 import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
-from concurrent.futures import ThreadPoolExecutor
+from joblib import Parallel, delayed
 
 from anomaly.plot_anomalies import plot_anomalies
 from anomaly.kalman_filter import apply_kalman_filter
+from anomaly.caching import load_thresholds_from_pickle, save_thresholds_to_pickle
 
 
 def remove_anomalous_stocks(
     returns_df: pd.DataFrame,
     weight_dict: Optional[Dict[str, float]] = None,
-    threshold: float = None,
     plot: bool = False,
-    cache_dir: str = "optuna_cache/kalman_thresholds",
-    cache_file: str = "kalman_study.db",
-    n_jobs: int = 1,  # Number of parallel jobs
-) -> Tuple[pd.DataFrame, List[str]]:
+    n_jobs: int = -1,
+    cache_filename: str = "optimized_thresholds.pkl",
+    reoptimize: bool = False,  # Flag to force re-optimization
+) -> Tuple[pd.DataFrame, List[str], Dict[str, float]]:
     """
     Removes stocks with anomalous returns based on the Kalman filter.
-    Uses cached threshold if available, otherwise optimizes a new one.
+    Optimizes thresholds per ticker using Optuna and caches the results.
 
     Args:
         returns_df (pd.DataFrame): DataFrame of daily returns.
-        weight_dict (dict, optional): Dictionary with optional objective weights.
-        threshold (float, optional): Predefined Kalman filter threshold. If None, it will be optimized.
+        weight_dict (dict, optional): Dictionary with objective weights.
         plot (bool): If True, anomalies will be plotted.
-        cache_dir (str): Cache directory for threshold storage.
-        cache_file (str): Cache filename.
         n_jobs (int): Number of parallel jobs.
+        cache_filename (str): Filename for the Pickle cache.
+        reoptimize (bool): If True, force re-optimization even if cache exists.
 
     Returns:
-        Tuple[pd.DataFrame, list[str]]: Filtered DataFrame and list of removed symbols.
+        Tuple[pd.DataFrame, list[str], Dict[str, float]]: Filtered DataFrame, list of removed symbols, and thresholds.
     """
     if weight_dict is None:
         weight_dict = {"sortino": 0.8, "stability": 0.2}
 
-    # Use cached threshold if available
-    if threshold is None:
-        threshold = optimize_kalman_threshold(
-            returns_df=returns_df,
-            n_trials=50,
-            weight_dict=weight_dict,
-            cache_dir=cache_dir,
-            cache_file=cache_file,
-            n_jobs=n_jobs,
-        )
+    # Load cached thresholds
+    thresholds = {}
+    if not reoptimize:
+        thresholds = load_thresholds_from_pickle(cache_filename)
 
     anomalous_cols = []
-    returns_data = {}
-    anomaly_flags_data = {}
+    results = {}
+    estimates_dict = {}
 
-    # Define a helper function for parallel processing
-    def process_stock(stock):
+    # Define a helper function for processing each ticker
+    def process_ticker(stock, cached_thresholds):
         returns_series = returns_df[stock].dropna()
         if returns_series.empty:
             print(f"Warning: No data for stock {stock}. Skipping.")
             return None
-        anomaly_flags = apply_kalman_filter(returns_series, threshold=threshold)
-        if anomaly_flags.any():
-            return stock, returns_series, anomaly_flags
+
+        # Check if threshold is cached
+        if stock in cached_thresholds and not reoptimize:
+            threshold = cached_thresholds[stock]
+        else:
+            # Optimize threshold using Optuna
+            threshold = optimize_threshold_for_ticker(returns_series, weight_dict)
+            thresholds[stock] = threshold  # Update thresholds dict
+
+        # Apply Kalman filter with optimized threshold
+        anomaly_flags, estimates = apply_kalman_filter(
+            returns_series, threshold=threshold
+        )
+
+        # Count anomalies
+        num_anomalies = anomaly_flags.sum()
+
+        if num_anomalies > 0:
+            return (stock, anomaly_flags, estimates, threshold)
         return None
 
-    # Use ThreadPoolExecutor for I/O bound or ProcessPoolExecutor for CPU bound tasks
-    with ThreadPoolExecutor(max_workers=n_jobs) as executor:
-        results = list(executor.map(process_stock, returns_df.columns))
+    # Parallel processing using Joblib
+    parallel_results = Parallel(n_jobs=n_jobs)(
+        delayed(process_ticker)(stock, thresholds) for stock in returns_df.columns
+    )
 
-    for result in results:
-        if result is not None:
-            stock, returns_series, anomaly_flags = result
+    # Collect results
+    for res in parallel_results:
+        if res is not None:
+            stock, anomaly_flags, estimates, threshold = res
             anomalous_cols.append(stock)
-            if plot:
-                returns_data[stock] = returns_series
-                anomaly_flags_data[stock] = anomaly_flags
+            results[stock] = anomaly_flags
+            estimates_dict[stock] = estimates
 
     print(
         f"Removing {len(anomalous_cols)} stocks with Kalman anomalies: {anomalous_cols}"
     )
 
-    if plot and returns_data:
+    if plot and results:
         plot_anomalies(
             stocks=anomalous_cols,
-            returns_data=returns_data,
-            anomaly_flags_data=anomaly_flags_data,
+            returns_data=returns_df.to_dict(orient="series"),
+            anomaly_flags_data=results,
+            estimates_data=estimates_dict,
+            thresholds=thresholds,
             stocks_per_page=36,
         )
 
+    # Save updated thresholds to cache
+    save_thresholds_to_pickle(thresholds, cache_filename)
+
+    # Filter out anomalous stocks
     filtered_df = returns_df.drop(columns=anomalous_cols)
-    return filtered_df, anomalous_cols
+    return filtered_df, anomalous_cols, thresholds
 
 
-def optimize_kalman_threshold(
-    returns_df: pd.DataFrame,
-    n_trials: int = 50,
-    weight_dict: Optional[Dict[str, float]] = None,
-    cache_dir: str = "optuna_cache/kalman_thresholds",
-    cache_file: str = "kalman_study.db",
-    n_jobs: int = 1,  # Number of parallel jobs
+def optimize_threshold_for_ticker(
+    returns_series: pd.Series, weight_dict: Dict[str, float]
 ) -> float:
     """
-    Optimize the Kalman filter threshold using a multi-objective approach with parallel execution.
-    Uses Optuna's SQLite cache to store results and avoid redundant optimizations.
+    Optimize the Kalman filter threshold for a single ticker using Optuna.
 
     Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        n_trials (int): Number of Optuna trials.
-        weight_dict (dict, optional): Dictionary with weight settings
-            (e.g., {'sortino': 0.8, 'stability': 0.2}).
-        cache_dir (str): Directory for caching Optuna studies.
-        cache_file (str): Cache database filename.
-        n_jobs (int): Number of parallel jobs.
+        returns_series (pd.Series): Series of returns for the ticker.
+        weight_dict (Dict[str, float]): Weights for the objective function.
 
     Returns:
-        float: Best threshold value.
+        float: Optimal threshold.
     """
-    if weight_dict is None:
-        weight_dict = {"sortino": 0.8, "stability": 0.2}
 
-    # Ensure cache directory exists
-    Path(cache_dir).mkdir(parents=True, exist_ok=True)
+    def objective(trial):
+        # Suggest a threshold within a realistic range based on prior knowledge
+        threshold = trial.suggest_float("threshold", 9.0, 13.0, step=0.1)
 
-    # SQLite storage path
-    storage_path = f"sqlite:///{os.path.join(cache_dir, cache_file)}"
-    study_name = "kalman_threshold_optimization"
+        # Apply Kalman filter and detect anomalies
+        anomaly_flags, estimates = apply_kalman_filter(
+            returns_series, threshold=threshold
+        )
 
-    # Define a sampler and pruner for better performance
-    sampler = TPESampler(n_startup_trials=10, multivariate=True, group=True)
-    pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=5)
+        # Compute metrics
+        num_anomalies = anomaly_flags.sum()
+        if num_anomalies == 0:
+            return -np.inf  # Penalize no anomalies detected
 
-    # Load or create the study
-    study = optuna.create_study(
-        study_name=study_name,
-        storage=storage_path,
-        sampler=sampler,
-        pruner=pruner,
-        direction="maximize",
-        load_if_exists=True,
-    )
+        # Portfolio return (example metric)
+        portfolio_return = returns_series.mean()
 
-    # Optimize with parallelization
+        # Calculate downside deviation (only negative returns)
+        negative_returns = returns_series[returns_series < 0]
+        downside_risk = negative_returns.std()
+
+        # Sortino Ratio (risk-adjusted return)
+        sortino_ratio = portfolio_return / downside_risk if downside_risk != 0 else 0
+
+        # Rolling volatility
+        rolling_volatility = returns_series.rolling(window=30).std().mean()
+
+        # Stability penalty
+        stability_penalty = -rolling_volatility * 0.1  # Adjust multiplier as needed
+
+        # Composite score
+        composite_score = (weight_dict["sortino"] * sortino_ratio) + (
+            weight_dict["stability"] * stability_penalty
+        )
+
+        # Report intermediate values for pruning
+        trial.report(composite_score, step=int(threshold * 10))
+
+        # Prune if necessary
+        if trial.should_prune():
+            raise optuna.exceptions.TrialPruned()
+
+        return composite_score
+
+    # Create a study (in-memory for speed; adjust storage for persistence if needed)
+    sampler = TPESampler(seed=42)
+    pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=3)
+    study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
+
+    # Optimize
     study.optimize(
-        lambda trial: objective(trial, returns_df, weight_dict),
-        n_trials=n_trials,
-        n_jobs=n_jobs,
-    )
+        objective, n_trials=20, timeout=60
+    )  # Adjust n_trials and timeout as needed
 
-    best_threshold = study.best_trial.params["threshold"]
-    print(f"Best Kalman threshold found: {best_threshold} with weights {weight_dict}")
+    if study.best_trial is None:
+        print("No best trial found. Returning default threshold.")
+        return 10.0  # Default threshold if optimization fails
 
-    return best_threshold
-
-
-def objective(
-    trial: optuna.Trial,
-    returns_df: pd.DataFrame,
-    weight_dict: Optional[Dict[str, float]] = None,
-) -> float:
-    """
-    Optimize Kalman filter threshold using a combined objective function.
-
-    Balances:
-    - Sortino Ratio (risk-adjusted return)
-    - Stability Penalty (rolling volatility to avoid meme stocks)
-
-    Args:
-        trial (optuna.trial.Trial): Optuna trial object.
-        returns_df (pd.DataFrame): DataFrame of daily returns.
-        weight_dict (dict): Dictionary with weight settings. Defaults to {'sortino': 0.8, 'stability': 0.2}.
-
-    Returns:
-        float: Composite score (higher is better).
-    """
-    if weight_dict is None:
-        weight_dict = {"sortino": 0.8, "stability": 0.2}
-
-    # Normalize weights
-    total_weight = sum(weight_dict.values())
-    weight_sortino = weight_dict.get("sortino", 0.8) / total_weight
-    weight_stability = weight_dict.get("stability", 0.2) / total_weight
-
-    # Let Optuna optimize threshold
-    threshold = trial.suggest_float("threshold", 7.0, 12.0, step=0.5)
-
-    # Now pass threshold into remove_anomalous_stocks
-    # Disable plotting and parallel jobs within objective
-    filtered_df, _ = remove_anomalous_stocks(
-        returns_df=returns_df, threshold=threshold, plot=False, n_jobs=1
-    )
-
-    if filtered_df.empty:
-        return -np.inf  # Penalize empty selections
-
-    # Portfolio return
-    portfolio_return = filtered_df.mean(axis=1).mean()
-
-    # Calculate downside deviation (only negative returns)
-    negative_returns = filtered_df.mean(axis=1)[filtered_df.mean(axis=1) < 0]
-    downside_risk = negative_returns.std()
-
-    # Avoid division by zero
-    if downside_risk == 0:
-        return -np.inf  # Penalize cases where no downside risk is captured
-
-    # Sortino Ratio (risk-adjusted return)
-    sortino_ratio = portfolio_return / downside_risk
-
-    # Stability Penalty (rolling volatility)
-    rolling_volatility = filtered_df.mean(axis=1).rolling(window=30).std().mean()
-
-    # Avoid division by zero
-    if rolling_volatility == 0:
-        rolling_volatility = 1e-6  # Prevent divide by zero
-
-    stability_penalty = (
-        -rolling_volatility * 0.1
-    )  # Reduce weight of excessive volatility
-
-    # Weighted sum of Sortino Ratio and Stability Penalty
-    composite_score = (weight_sortino * sortino_ratio) + (
-        weight_stability * stability_penalty
-    )
-
-    # Report intermediate values for pruning
-    trial.report(composite_score, step=threshold)
-
-    # Prune if the trial is not promising
-    if trial.should_prune():
-        raise optuna.exceptions.TrialPruned()
-
-    return composite_score
+    return study.best_trial.params["threshold"]
