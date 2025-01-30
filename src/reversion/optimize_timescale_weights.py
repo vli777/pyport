@@ -4,13 +4,19 @@ from typing import Dict, List, Tuple
 import optuna
 import pandas as pd
 
+from utils.caching_utils import (
+    load_parameters_from_pickle,
+    save_parameters_to_pickle,
+)
+
 
 def find_optimal_weights(
     reversion_signals: Dict[str, Dict[str, Dict[str, int]]],
     returns_df: pd.DataFrame,
     n_trials: int = 50,
-    cache_dir: str = "optuna_cache/reversion_weights",
-    cache_file: str = "signal_weights.db",
+    n_jobs: int = -1,
+    cache_filename: str = "optuna_cache/reversion_period_weights.pkl",
+    reoptimize: bool = False,
 ) -> Dict[str, float]:
     """
     Run Optuna to find the optimal weighting of daily and weekly signals.
@@ -20,47 +26,39 @@ def find_optimal_weights(
         reversion_signals (Dict[str, Dict[str, Dict[str, int]]]): Dictionary of signals per timeframe.
         returns_df (pd.DataFrame): Log returns DataFrame.
         n_trials (int, optional): Number of optimization trials. Defaults to 50.
-        cache_dir (str): Directory for caching results.
-        cache_file (str): Cache filename.
+        n_jobs (int, optional): Number of parallel jobs. Defaults to 1.
+        cache_filename (str, optional): Path to Pickle cache file.
+        reoptimize (bool): Override to reoptimize.
 
     Returns:
         Dict[str, float]: Best weights for daily and weekly signals.
     """
-    # Ensure cache directory exists
-    Path(cache_dir).mkdir(parents=True, exist_ok=True)
-
-    # Define storage path and study name
-    storage_path = f"sqlite:///{os.path.join(cache_dir, cache_file)}"
-    study_name = "reversion_weights_optimization"
+    # Load cached results if available and reoptimization is not forced
+    cached_weights = None
+    if not reoptimize:
+        cached_weights = load_parameters_from_pickle(cache_filename)
+        if cached_weights:
+            return cached_weights
 
     # Load or create the study
     study = optuna.create_study(
-        study_name=study_name,
-        storage=storage_path,
+        study_name="reversion_weights_optimization",
         direction="maximize",
-        load_if_exists=True,
+        sampler=optuna.samplers.TPESampler(n_startup_trials=max(5, n_trials // 10)),
     )
-    print(f"Study '{study_name}' loaded from {storage_path}.")
 
-    # Calculate remaining trials to avoid redundant computations
-    remaining_trials = n_trials - len(study.trials)
-    if remaining_trials <= 0:
-        print(
-            f"Already completed {len(study.trials)} trials. No additional trials needed."
-        )
-    else:
-        print(f"Starting optimization with {remaining_trials} new trials...")
-        study.optimize(
-            lambda trial: objective(trial, reversion_signals, returns_df),
-            n_trials=remaining_trials,
-            n_jobs=1,  # Set to 1 to avoid SQLite locking issues
-            timeout=None,  # Optional: set a timeout if needed
-        )
+    # Run optimization in parallel
+    study.optimize(
+        lambda trial: objective(trial, reversion_signals, returns_df),
+        n_trials=n_trials,
+        n_jobs=n_jobs,  # Use all available CPU cores
+    )
 
-    best_weights = (
-        study.best_trial.params
-    )  # e.g., { "weight_daily": x, "weight_weekly": y }
-    print(f"🎯 Best weights found: {best_weights}")
+    # Save best parameters to cache
+    save_parameters_to_pickle(study, cache_filename)
+
+    # Extract and return best weights
+    best_weights = study.best_params
 
     return best_weights
 

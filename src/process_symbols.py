@@ -23,7 +23,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
 
     # 1) If file doesn't exist, download full range
     if not pq_file.is_file():
-        logger.info(f"No file for {symbol}. Downloading full history from {start_ts} to {end_ts}.")
+        logger.info(
+            f"No file for {symbol}. Downloading full history from {start_ts} to {end_ts}."
+        )
         df_new = get_stock_data(symbol, start_date=start_ts, end_date=end_ts)
         df_new = flatten_columns(df_new, symbol)
 
@@ -40,7 +42,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         df_existing = flatten_columns(df_existing, symbol)
         last_date = df_existing.index.max()
         if last_date is not None and last_date >= today_ts:
-            logger.info(f"{symbol}: Already have today's data after market close, skipping.")
+            logger.info(
+                f"{symbol}: Already have today's data after market close, skipping."
+            )
             return format_to_df_format(df_existing, symbol)
 
     # 3) Adjust end_ts if before market open
@@ -50,7 +54,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
 
     # Ensure we only update up to the last valid trading day before today
     if effective_end_ts.normalize() >= today_ts.normalize():
-        effective_end_ts = find_valid_trading_date(today_ts - pd.Timedelta(days=1), tz=est, direction="backward")
+        effective_end_ts = find_valid_trading_date(
+            today_ts - pd.Timedelta(days=1), tz=est, direction="backward"
+        )
 
     # 4) Read existing data
     df_existing = pd.read_parquet(pq_file)
@@ -64,7 +70,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
-            df_combined = pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            df_combined = (
+                pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            )
             df_combined.to_parquet(pq_file)
             return format_to_df_format(df_combined, symbol)
         return format_to_df_format(df_existing, symbol)
@@ -72,18 +80,24 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     # 6) Append missing data dynamically
     if last_date is None or last_date < effective_end_ts:
         update_start = last_date + pd.Timedelta(days=1) if last_date else start_ts
-        update_start = find_valid_trading_date(update_start, tz=est, direction="forward")
+        update_start = find_valid_trading_date(
+            update_start, tz=est, direction="forward"
+        )
 
         if update_start >= effective_end_ts:
             logger.debug(f"{symbol}: Data already up-to-date.")
             return format_to_df_format(df_existing, symbol)
 
         logger.info(f"{symbol}: Updating from {update_start} to {effective_end_ts}.")
-        df_new = get_stock_data(symbol, start_date=update_start, end_date=effective_end_ts)
+        df_new = get_stock_data(
+            symbol, start_date=update_start, end_date=effective_end_ts
+        )
         df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
-            df_combined = pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            df_combined = (
+                pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
+            )
             df_combined.to_parquet(pq_file)
             return format_to_df_format(df_combined, symbol)
         else:
@@ -100,7 +114,9 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
     df_all = pd.DataFrame()
 
     for sym in symbols:
-        df_sym = load_or_download_symbol_data(sym, start_date, end_date, data_path, download)
+        df_sym = load_or_download_symbol_data(
+            sym, start_date, end_date, data_path, download
+        )
         if df_sym.empty:
             logger.warning(f"No data for {sym}, skipping.")
             continue
@@ -124,7 +140,9 @@ def process_symbols(symbols, start_date, end_date, data_path, download):
 
     # Drop any remaining nulls
     if df_all.isna().any().any():
-        logger.warning("Data still has missing values after fill. Dropping remaining nulls.")
+        logger.warning(
+            "Data still has missing values after fill. Dropping remaining nulls."
+        )
         df_all.dropna(inplace=True)
 
     return df_all

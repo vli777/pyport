@@ -33,7 +33,9 @@ def output(
     )
 
     # Validate that data contains all required symbols
-    missing_symbols = [symbol for symbol in clean_weights.keys() if symbol not in data.columns]
+    missing_symbols = [
+        symbol for symbol in clean_weights.keys() if symbol not in data.columns
+    ]
     if missing_symbols:
         logger.warning(
             f"The following symbols are missing in the data and will be filled with zeros: {missing_symbols}"

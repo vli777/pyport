@@ -4,14 +4,17 @@ import numpy as np
 import optuna
 import pandas as pd
 
+from utils import logger
+from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
+
 
 def optimize_mean_reversion(
     returns_df: pd.DataFrame,
     window_range=range(5, 31, 5),
     n_trials: int = 50,
-    n_jobs: int = 1,  # Set to 1 to avoid SQLite locking issues, to-do: switch to psql
-    storage_path: str = "optuna_cache/mean_reversion.db",
-    study_name: str = "mean_reversion_thresholds",
+    n_jobs: int = -1,  # All cores
+    cache_filename: str = "optuna_cache/reversion_thresholds.pkl",
+    reoptimize: bool = False,
 ) -> dict:
     """
     Optimize mean reversion strategy using Optuna and cache results.
@@ -21,62 +24,54 @@ def optimize_mean_reversion(
         window_range (range): Range of window sizes.
         n_trials (int, optional): Number of optimization trials. Defaults to 100.
         n_jobs (int, optional): Number of parallel jobs. Defaults to 1.
-        storage_path (str, optional): Path to Optuna SQLite cache.
-        study_name (str, optional): Name of the Optuna study.
+        cache_filename (str, optional): Path to Pickle cache file.
+        reoptimize (bool): Override to reoptimize.
 
     Returns:
         dict: Optimized thresholds per ticker.
     """
-    # Ensure the cache directory exists
-    cache_dir = Path(storage_path).parent
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    # Load cached study results if available and not reoptimizing
+    cached_params = None
+    if not reoptimize:
+        cached_params = load_parameters_from_pickle(cache_filename)
+        if cached_params:
+            logger.info("Using cached parameters.")
+            return cached_params, None
 
-    # Load or create an Optuna study with SQLite storage
+    # Create Optuna study (without SQLite)
     study = optuna.create_study(
-        study_name=study_name,
-        storage=f"sqlite:///{storage_path}",
+        study_name="mean_reversion_thresholds",
         direction="maximize",
-        sampler=optuna.samplers.TPESampler(
-            n_startup_trials=max(5, n_trials // 10)
-        ),  # Dynamic startup trials
-        load_if_exists=True,
+        sampler=optuna.samplers.TPESampler(n_startup_trials=max(5, n_trials // 10)),
     )
 
-    # Determine the number of additional trials needed
-    remaining_trials = n_trials - len(study.trials)
-    if remaining_trials > 0:
-        # Compute rolling std in advance for all window sizes to avoid redundant computations
-        rolling_std_cache = {
-            w: returns_df.rolling(window=w, min_periods=1).std().replace(0, np.nan)
-            for w in window_range
-        }
+    # Precompute rolling standard deviations for all window sizes
+    rolling_std_cache = {
+        w: returns_df.rolling(window=w, min_periods=1).std().replace(0, np.nan)
+        for w in window_range
+    }
 
-        # Run optimization
-        study.optimize(
-            lambda trial: objective(trial, window_range, returns_df, rolling_std_cache),
-            n_trials=remaining_trials,
-            n_jobs=n_jobs,
-        )
+    # Run trials in parallel
+    study.optimize(
+        lambda trial: objective(trial, window_range, returns_df, rolling_std_cache),
+        n_trials=n_trials,
+        n_jobs=n_jobs,  # Use all available CPU cores
+    )
 
-    # Extract best parameters
+    # Save best parameters to cache
+    save_parameters_to_pickle(study, cache_filename)
+
+    # Compute dynamic thresholds using optimized parameters
     best_params = study.best_params
-    window = best_params["window"]
-    base_overbought_multiplier = best_params["overbought_multiplier"]
-    base_oversold_multiplier = best_params["oversold_multiplier"]
-
-    # Compute new dynamic thresholds for each stock
-    rolling_std = rolling_std_cache[window]
-
-    # Apply hybrid per-ticker scaling
     dynamic_thresholds = scale_thresholds_per_ticker(
         returns_df=returns_df,
-        base_overbought_multiplier=base_overbought_multiplier,
-        base_oversold_multiplier=base_oversold_multiplier,
-        rolling_std_cache=rolling_std,
-        window=window,
+        base_overbought_multiplier=best_params["overbought_multiplier"],
+        base_oversold_multiplier=best_params["oversold_multiplier"],
+        rolling_std_cache=rolling_std_cache[best_params["window"]],
+        window=best_params["window"],
     )
 
-    return dynamic_thresholds, study
+    return dynamic_thresholds.study
 
 
 def objective(

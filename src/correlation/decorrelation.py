@@ -9,7 +9,7 @@ from correlation.correlation_utils import (
     hierarchical_clustering,
 )
 from correlation.optimize_correlation import optimize_correlation_threshold
-from utils.caching_utils import load_thresholds_from_pickle, save_thresholds_to_pickle
+from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 from utils import logger
 
 
@@ -35,7 +35,7 @@ def filter_correlated_groups(
     # --------------------------------------------------------------------------
     if correlation_threshold is None or reoptimize:
         # 1. Attempt to load thresholds from your pickle cache
-        thresholds_dict = load_thresholds_from_pickle(cache_filename)
+        thresholds_dict = load_parameters_from_pickle(cache_filename)
 
         # 2. If no cached value or we're forcing re-optimization, call the existing optimization function
         if not thresholds_dict or reoptimize:
@@ -52,7 +52,7 @@ def filter_correlated_groups(
 
             # 3. Update the cache and save to pickle
             thresholds_dict["correlation_threshold"] = correlation_threshold
-            save_thresholds_to_pickle(thresholds_dict, cache_filename)
+            save_parameters_to_pickle(thresholds_dict, cache_filename)
         else:
             # 4. If already cached and no re-opt, use the stored threshold
             correlation_threshold = thresholds_dict.get("correlation_threshold", 0.8)

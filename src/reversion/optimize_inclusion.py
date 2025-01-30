@@ -1,9 +1,15 @@
 import os
 from pathlib import Path
 from typing import Dict, List, Tuple
+from joblib import Parallel, delayed
+import numpy as np
 import optuna
 import pandas as pd
 
+from utils.caching_utils import (
+    load_parameters_from_pickle,
+    save_parameters_to_pickle,
+)
 from utils import logger
 
 
@@ -11,8 +17,9 @@ def find_optimal_inclusion_pct(
     final_signals: pd.DataFrame,
     returns_df: pd.DataFrame,
     n_trials: int = 50,
-    storage_path: str = "optuna_cache/inclusion_thresholds.db",
-    study_name: str = "inclusion_thresholds",
+    n_jobs: int = -1,
+    cache_filename: str = "optuna_cache/reversion_inclusion_thresholds.pkl",
+    reoptimize: bool = False,
 ) -> Dict[str, float]:
     """
     Uses Optuna to optimize the inclusion/exclusion percentiles with persistent caching.
@@ -21,61 +28,43 @@ def find_optimal_inclusion_pct(
         final_signals (pd.DataFrame): Weighted signal scores per ticker.
         returns_df (pd.DataFrame): Log returns DataFrame.
         n_trials (int, optional): Number of trials for Optuna optimization. Defaults to 50.
-        storage_path (str): SQLite storage path for caching.
-        study_name (str): Name of the Optuna study.
+        n_jobs (int): Number of cores to use. Defaults to -1 (all cores)
+        cache_filename (str): Storage path for caching.
+        reoptimize (bool): Override to reoptimize.
 
     Returns:
         Dict[str, float]: A dictionary containing the best inclusion/exclusion percentiles.
     """
-    # Ensure cache directory exists
-    cache_dir = Path(storage_path).parent
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    # Load cached thresholds if available
+    if reoptimize is False:
+        cached_thresholds = load_parameters_from_pickle(cache_filename)
+        if cached_thresholds:
+            logger.info("Using cached thresholds.")
+            return cached_thresholds
 
-    # Define full storage path with SQLite URL format
-    storage_url = f"sqlite:///{os.path.abspath(storage_path)}"
-
-    # Load or create the study
+    # Create Optuna study using in-memory storage
     study = optuna.create_study(
-        study_name=study_name,
-        storage=storage_url,
+        study_name="inclusion_thresholds",
         direction="maximize",
-        load_if_exists=True,
     )
-    logger.info(f"Study '{study_name}' loaded from {storage_url}.")
+    logger.info("Starting optimization...")
 
-    # Calculate remaining trials
-    remaining_trials = n_trials - len(study.trials)
-    if remaining_trials <= 0:
-        logger.info(
-            f"Already completed {len(study.trials)} trials. No additional trials needed."
-        )
-    else:
-        logger.info(f"Starting optimization with {remaining_trials} new trials...")
-        study.optimize(
-            lambda trial: objective(trial, final_signals, returns_df),
-            n_trials=remaining_trials,
-            n_jobs=1,  # Set to 1 to avoid SQLite locking issues
-            timeout=None,  # Optional: set a timeout if needed
-        )
+    # Run trials in parallel
+    study.optimize(
+        lambda trial: objective(trial, final_signals, returns_df),
+        n_trials=n_trials,
+        n_jobs=n_jobs,  # Use all available CPU cores
+    )
 
-    # Retrieve the best parameters from the study
-    if study.best_trial:
-        best_include_pct = study.best_trial.params.get("include_threshold_pct", None)
-        best_exclude_pct = study.best_trial.params.get("exclude_threshold_pct", None)
+    # Retrieve the best parameters
+    best_params = study.best_trial.params if study.best_trial else {}
 
-        optimal_thresholds = {
-            "include_threshold_pct": best_include_pct,
-            "exclude_threshold_pct": best_exclude_pct,
-        }
+    optimal_thresholds = {
+        "include_threshold_pct": best_params.get("include_threshold_pct", None),
+        "exclude_threshold_pct": best_params.get("exclude_threshold_pct", None),
+    }
 
-        logger.info(f"Optimal thresholds found and saved: {optimal_thresholds}")
-    else:
-        logger.warning("No trials have been completed yet.")
-        optimal_thresholds = {
-            "include_threshold_pct": None,
-            "exclude_threshold_pct": None,
-        }
-
+    save_parameters_to_pickle(optimal_thresholds, cache_filename)
     return optimal_thresholds
 
 
@@ -103,72 +92,59 @@ def objective(trial, final_signals: pd.DataFrame, returns_df: pd.DataFrame) -> f
         "exclude_threshold_pct", 0.1, 0.4, step=0.05
     )
 
-    # Initialize positions DataFrame with NaN instead of zeros to allow dynamic updates
-    positions = pd.DataFrame(
-        index=returns_df.index, columns=returns_df.columns, dtype=float
-    )
+    # Convert DataFrames to NumPy arrays for performance
+    dates = returns_df.index.to_numpy()
+    returns_data = returns_df.to_numpy()
+    signal_data = final_signals.reindex(returns_df.index).to_numpy()
 
-    for date in returns_df.index:
-        date = pd.to_datetime(date)  # Ensure correct format
+    positions = np.zeros_like(returns_data, dtype=float)
 
-        # Get available stocks at this date (ignore missing values)
-        available_stocks = returns_df.loc[date].dropna().index
-        if date not in final_signals.index:
-            continue  # Skip if no signal for this date
+    def process_date(idx):
+        if np.isnan(signal_data[idx]).all():
+            return np.zeros(returns_data.shape[1])  # No signals for this date
 
-        current_signals = final_signals.loc[date, available_stocks].dropna()
+        include_threshold = np.nanquantile(signal_data[idx], 1 - include_threshold_pct)
+        exclude_threshold = np.nanquantile(signal_data[idx], exclude_threshold_pct)
 
-        if current_signals.empty:
-            continue  # No valid signals for this date
+        include_mask = signal_data[idx] >= include_threshold
+        exclude_mask = signal_data[idx] <= exclude_threshold
 
-        include_threshold = current_signals.quantile(1 - include_threshold_pct)
-        exclude_threshold = current_signals.quantile(exclude_threshold_pct)
+        include_mask &= ~exclude_mask  # Ensure no overlap
+        exclude_mask &= ~include_mask
 
-        include_tickers = current_signals[
-            current_signals >= include_threshold
-        ].index.tolist()
-        exclude_tickers = current_signals[
-            current_signals <= exclude_threshold
-        ].index.tolist()
+        result = np.zeros(returns_data.shape[1], dtype=float)
+        result[include_mask] = 1
+        result[exclude_mask] = -1
+        return result
 
-        # Ensure no ticker is in both
-        include_tickers = list(set(include_tickers) - set(exclude_tickers))
-        exclude_tickers = list(set(exclude_tickers) - set(include_tickers))
-
-        # Update only available stocks at this date
-        positions.loc[date, include_tickers] = 1
-        positions.loc[date, exclude_tickers] = -1
-
-    # Fill missing values with 0 (stocks with no positions remain neutral)
-    positions.fillna(0, inplace=True)
+    # Parallelize processing across dates
+    results = Parallel(n_jobs=-1)(delayed(process_date)(i) for i in range(len(dates)))
+    positions[:] = np.array(results)
 
     # Simulate strategy
     _, cumulative_return = simulate_strategy(returns_df, positions)
-
-    return cumulative_return  # Optuna maximizes this
+    return cumulative_return
 
 
 def simulate_strategy(
-    returns_df: pd.DataFrame, positions_df: pd.DataFrame
+    returns_df: pd.DataFrame, positions: np.ndarray
 ) -> Tuple[pd.Series, float]:
     """
     Simulates the strategy using positions and calculates cumulative return.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
-        positions_df (pd.DataFrame): Positions DataFrame with tickers as columns and dates as index.
+        positions (np.ndarray): Positions numpy array.
 
     Returns:
         Tuple[pd.Series, float]: A tuple containing:
             - strategy_returns (pd.Series): Daily returns of the strategy.
             - cumulative_return (float): Final cumulative return of the strategy.
     """
-    # Calculate daily strategy returns using previous day's positions to avoid look-ahead bias
-    strategy_returns = (positions_df.shift(1) * returns_df).sum(axis=1)
-
-    # Calculate cumulative return
+    strategy_returns = np.sum(
+        np.roll(positions, shift=1, axis=0) * returns_df.to_numpy(), axis=1
+    )
     cumulative_return = (
-        strategy_returns + 1
-    ).prod() - 1  # More accurate cumulative return
-
-    return strategy_returns, cumulative_return
+        np.prod(strategy_returns + 1) - 1
+    )  # More accurate cumulative return
+    return pd.Series(strategy_returns, index=returns_df.index), cumulative_return

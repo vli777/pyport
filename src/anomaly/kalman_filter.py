@@ -4,7 +4,9 @@ import numpy as np
 from pykalman import KalmanFilter
 
 
-def apply_kalman_filter(returns_series: pd.Series, threshold: float) -> Tuple[pd.Series, np.ndarray]:
+def apply_kalman_filter(
+    returns_series: pd.Series, threshold: float
+) -> Tuple[pd.Series, np.ndarray]:
     """
     Applies the Kalman filter to a series of returns and returns anomaly flags and estimates.
 
@@ -17,14 +19,14 @@ def apply_kalman_filter(returns_series: pd.Series, threshold: float) -> Tuple[pd
     """
     # Initialize Kalman Filter
     kf = KalmanFilter(dim_x=2, dim_z=1)
-    kf.x = np.array([returns_series.mean(), 0.])  # initial state (location and velocity)
-    kf.F = np.array([[1, 1],
-                     [0, 1]])  # state transition matrix
+    kf.x = np.array(
+        [returns_series.mean(), 0.0]
+    )  # initial state (location and velocity)
+    kf.F = np.array([[1, 1], [0, 1]])  # state transition matrix
     kf.H = np.array([[1, 0]])  # Measurement function
-    kf.P *= 1000.  # covariance matrix
+    kf.P *= 1000.0  # covariance matrix
     kf.R = 0.01  # measurement noise
-    kf.Q = np.array([[1, 0],
-                     [0, 1]]) * 0.001  # process noise
+    kf.Q = np.array([[1, 0], [0, 1]]) * 0.001  # process noise
 
     estimates = []
     for z in returns_series:

@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 
 from anomaly.plot_anomalies import plot_anomalies
 from anomaly.kalman_filter import apply_kalman_filter
-from utils.caching_utils import load_thresholds_from_pickle, save_thresholds_to_pickle
+from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
 def remove_anomalous_stocks(
@@ -42,7 +42,7 @@ def remove_anomalous_stocks(
     # Load cached thresholds
     thresholds = {}
     if not reoptimize:
-        thresholds = load_thresholds_from_pickle(cache_filename)
+        thresholds = load_parameters_from_pickle(cache_filename)
 
     anomalous_cols = []
     results = {}
@@ -103,7 +103,7 @@ def remove_anomalous_stocks(
         )
 
     # Save updated thresholds to cache
-    save_thresholds_to_pickle(thresholds, cache_filename)
+    save_parameters_to_pickle(thresholds, cache_filename)
 
     # Filter out anomalous stocks
     filtered_df = returns_df.drop(columns=anomalous_cols)
