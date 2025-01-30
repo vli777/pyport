@@ -25,7 +25,7 @@ def optimize_mean_reversion(
         study_name (str, optional): Name of the Optuna study.
 
     Returns:
-        dict: Optimized thresholds for each ticker.
+        dict: Optimized thresholds per ticker.
     """
     # Ensure the cache directory exists
     cache_dir = Path(storage_path).parent
@@ -34,12 +34,12 @@ def optimize_mean_reversion(
     # Load or create an Optuna study with SQLite storage
     study = optuna.create_study(
         study_name=study_name,
-        storage=f"sqlite:///{storage_path}",  # Use SQLite for persistence
+        storage=f"sqlite:///{storage_path}",
         direction="maximize",
         sampler=optuna.samplers.TPESampler(
             n_startup_trials=max(5, n_trials // 10)
         ),  # Dynamic startup trials
-        load_if_exists=True,  # Load existing study instead of restarting
+        load_if_exists=True,
     )
 
     # Determine the number of additional trials needed
@@ -61,19 +61,20 @@ def optimize_mean_reversion(
     # Extract best parameters
     best_params = study.best_params
     window = best_params["window"]
-    overbought_multiplier = best_params["overbought_multiplier"]
-    oversold_multiplier = best_params["oversold_multiplier"]
+    base_overbought_multiplier = best_params["overbought_multiplier"]
+    base_oversold_multiplier = best_params["oversold_multiplier"]
 
-    # Compute new dynamic thresholds for each stock using cached rolling_std
+    # Compute new dynamic thresholds for each stock
     rolling_std = rolling_std_cache[window]
 
-    dynamic_thresholds = {
-        ticker: (
-            overbought_multiplier * rolling_std[ticker].std(skipna=True),
-            oversold_multiplier * rolling_std[ticker].std(skipna=True),
-        )
-        for ticker in returns_df.columns
-    }
+    # Apply hybrid per-ticker scaling
+    dynamic_thresholds = scale_thresholds_per_ticker(
+        returns_df=returns_df,
+        base_overbought_multiplier=base_overbought_multiplier,
+        base_oversold_multiplier=base_oversold_multiplier,
+        rolling_std_cache=rolling_std,
+        window=window,
+    )
 
     return dynamic_thresholds, study
 
@@ -88,7 +89,7 @@ def objective(
         trial (optuna.trial.Trial): Optuna trial object.
         window_range (range): Range of windows to test.
         returns_df (pd.DataFrame): Log returns DataFrame.
-        rolling_std_cache (dict): Precomputed rolling standard deviations for efficiency.
+        rolling_std_cache (dict): Precomputed rolling standard deviations.
 
     Returns:
         float: Cumulative return.
@@ -112,7 +113,7 @@ def objective(
     # Fetch precomputed rolling standard deviation
     rolling_std = rolling_std_cache[window]
 
-    # Compute rolling mean only for the selected window (avoiding unnecessary recalculations)
+    # Compute rolling mean only for the selected window
     rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
 
     # Calculate Z-scores dynamically based on available history
@@ -136,6 +137,56 @@ def objective(
     _, cumulative_return = simulate_strategy(returns_df, dynamic_thresholds, z_score_df)
 
     return cumulative_return
+
+
+def scale_thresholds_per_ticker(
+    returns_df: pd.DataFrame,
+    base_overbought_multiplier: float,
+    base_oversold_multiplier: float,
+    rolling_std_cache: Dict[int, pd.DataFrame],
+    window: int,
+    alpha: float = 0.42,
+) -> Dict[str, Tuple[float, float]]:
+    """
+    Hybrid approach: Uses historical rolling std but dynamically adjusts for recent volatility.
+
+    Args:
+        returns_df (pd.DataFrame): Log returns DataFrame.
+        base_overbought_multiplier (float): Optimized global overbought Z-score multiplier.
+        base_oversold_multiplier (float): Optimized global oversold Z-score multiplier.
+        rolling_std_cache (dict): Precomputed rolling std for different windows.
+        window (int): Optimized rolling window size.
+        alpha (float): Weight for historical std (higher = more stable, lower = more reactive).
+
+    Returns:
+        dict: Adjusted thresholds per ticker.
+    """
+    # Use precomputed rolling standard deviation (historical)
+    historical_rolling_std = rolling_std_cache[window]
+
+    # Compute recent volatility using an exponentially weighted moving standard deviation (EWMSD)
+    recent_rolling_std = returns_df.ewm(span=window, adjust=False).std()
+
+    # Blend historical and recent volatility based on alpha weighting
+    blended_std = alpha * historical_rolling_std + (1 - alpha) * recent_rolling_std
+
+    # Compute per-ticker deviations
+    std_dev_per_ticker = blended_std.iloc[
+        -1
+    ]  # Use latest period's blended standard deviation
+    global_mean_std = std_dev_per_ticker.mean()  # Average std across all tickers
+
+    # Scale thresholds dynamically
+    scaled_thresholds = {
+        ticker: (
+            base_overbought_multiplier
+            * (1 + std_dev_per_ticker[ticker] / global_mean_std),
+            base_oversold_multiplier
+            * (1 + std_dev_per_ticker[ticker] / global_mean_std),
+        )
+        for ticker in returns_df.columns
+    }
+    return scaled_thresholds
 
 
 def simulate_strategy(
