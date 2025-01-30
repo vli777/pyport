@@ -1,10 +1,10 @@
-import numpy as np
 import pandas as pd
+import numpy as np
+import plotly.figure_factory as ff
+import plotly.graph_objects as go
 from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
-from typing import Dict, List, Optional, Tuple
-import matplotlib.pyplot as plt
-import seaborn as sns
+from scipy.cluster.hierarchy import linkage, fcluster
+from typing import List
 
 
 def validate_matrix(matrix, matrix_name: str):
@@ -60,36 +60,24 @@ def hierarchical_clustering(
     linked = linkage(condensed_distance_matrix, method=linkage_method)
 
     if plot:
-        # Create a clustermap with Seaborn
-        sns.clustermap(
-            corr_matrix,
-            row_cluster=True,
-            col_cluster=True,
-            method=linkage_method,
-            cmap="vlag",  # Diverging colormap
-            linewidths=0.5,
-            figsize=(12, 10),
-            dendrogram_ratio=(0.2, 0.2),  # Adjust dendrogram size
+        fig = ff.create_dendrogram(
+            linked, labels=corr_matrix.index.tolist(), linkagefun=lambda x: linked
         )
-        plt.axhline(
-            y=distance_threshold,
-            color="r",
-            linestyle="--",
-            linewidth=1.5,
-            label="Distance Threshold",
+        fig.add_shape(
+            go.layout.Shape(
+                type="line",
+                x0=0,
+                x1=len(corr_matrix),
+                y0=distance_threshold,
+                y1=distance_threshold,
+                line=dict(color="red", dash="dash"),
+            )
         )
-        plt.legend(loc="upper right")
-        plt.title("Hierarchical Clustering Dendrogram")
-        plt.show()
-
-        plt.figure(figsize=(10, 7))
-        dendrogram(linked, labels=corr_matrix.index.tolist())
-        plt.axhline(
-            y=distance_threshold, color="r", linestyle="--"
-        )  # Visual cutoff line
-        plt.title("Hierarchical Clustering Dendrogram")
-        plt.xlabel("Ticker")
-        plt.ylabel("Distance (1 - Correlation)")
-        plt.show()
+        fig.update_layout(
+            title="Hierarchical Clustering Dendrogram",
+            xaxis_title="Ticker",
+            yaxis_title="Distance (1 - Correlation)",
+        )
+        fig.show()
 
     return fcluster(linked, t=distance_threshold, criterion="distance")
