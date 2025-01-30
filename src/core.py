@@ -14,7 +14,6 @@ from process_symbols import process_symbols
 from result_output import output
 from anomaly.anomaly_detection import remove_anomalous_stocks
 from correlation.decorrelation import filter_correlated_groups
-from correlation.optimize_correlation import optimize_correlation_threshold
 from reversion.multiscale_reversion import apply_mean_reversion_multiscale
 from reversion.optimize_timescale_weights import find_optimal_weights
 from reversion.recommendation import generate_reversion_recommendations
@@ -135,7 +134,7 @@ def run_pipeline(
             filtered_returns_df, removed_symbols, thresholds = remove_anomalous_stocks(
                 returns_df=returns_df,
                 # weight_dict # placeholder for configurable weights based on risk preference
-                cache_filename="optimized_thresholds.pkl",
+                cache_filename="optuna_cache/anomaly_thresholds.pkl",
                 reoptimize=False,
                 plot=config.plot_anomalies,
             )
@@ -242,38 +241,22 @@ def run_pipeline(
                     returns_df[valid_symbols], config.risk_free_rate
                 )
 
-                # Load market returns
-                market_returns = calculate_returns(
-                    load_data(
-                        all_symbols=["SPY"], start_date=start_long, end_date=end_long
-                    )
-                )
-
-                # Optimize correlation threshold
-                best_params, best_value = optimize_correlation_threshold(
-                    returns_df=returns_df[valid_symbols],
-                    performance_df=performance_metrics,
-                    market_returns=market_returns,
-                    risk_free_rate=config.risk_free_rate,
-                )
-
                 # Filter decorrelated tickers
                 decorrelated_tickers = filter_correlated_groups(
                     returns_df=returns_df[valid_symbols],
                     performance_df=performance_metrics,
-                    correlation_threshold=best_params["correlation_threshold"],
+                    correlation_threshold=None,
                     sharpe_threshold=0.005,
                     plot=config.plot_clustering,
                     top_n=config.top_n_candidates,
+                    n_jobs=-1,
+                    cache_filename="optuna_cache/correlation_thresholds.pkl",
+                    reoptimize=False,
                 )
 
                 valid_symbols = [
                     symbol for symbol in valid_symbols if symbol in decorrelated_tickers
                 ]
-
-                logger.info(
-                    f"Optimized correlation threshold: {best_params['correlation_threshold']:.4f}"
-                )
 
             except Exception as e:
                 logger.error(f"Correlation threshold optimization failed: {e}")
