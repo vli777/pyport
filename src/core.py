@@ -196,7 +196,7 @@ def run_pipeline(
             optimal_inclusion_thresholds = find_optimal_inclusion_pct(
                 final_signals, returns_df, n_trials=50
             )
-            print(f"✅ Optimal Inclusion Thresholds: {optimal_inclusion_thresholds}")
+            print(f"Optimal Inclusion Thresholds: {optimal_inclusion_thresholds}")
 
             # Generate Final Recommendations with optimized thresholds
             reversion_recommendations = generate_reversion_recommendations(

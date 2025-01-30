@@ -31,14 +31,13 @@ def apply_mean_reversion_multiscale(
     for timeframe, returns in [("daily", returns_df), ("weekly", resampled["weekly"])]:
         logger.info(f"Optimizing for {timeframe} data...")
 
-        # Optimize parameters using modular function
-        study = optimize_mean_reversion(
+        # Optimize parameters
+        _, study = optimize_mean_reversion(
             returns_df=returns,
             window_range=range(5, 31, 5) if timeframe == "daily" else range(2, 9),
             n_trials=n_trials,
             n_jobs=n_jobs,
         )
-
         optimized_params = study.best_trial.params
         logger.info(
             f"{timeframe.capitalize()} Optimized parameters: {optimized_params}"

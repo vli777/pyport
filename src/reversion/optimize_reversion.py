@@ -8,7 +8,7 @@ import pandas as pd
 def optimize_mean_reversion(
     returns_df: pd.DataFrame,
     window_range=range(5, 31, 5),
-    n_trials: int = 100,
+    n_trials: int = 50,
     n_jobs: int = 1,  # Set to 1 to avoid SQLite locking issues, to-do: switch to psql
     storage_path: str = "optuna_cache/mean_reversion.db",
     study_name: str = "mean_reversion_thresholds",
@@ -22,7 +22,6 @@ def optimize_mean_reversion(
         n_trials (int, optional): Number of optimization trials. Defaults to 100.
         n_jobs (int, optional): Number of parallel jobs. Defaults to 1.
         storage_path (str, optional): Path to Optuna SQLite cache.
-            Defaults to "optuna_cache/mean_reversion.db".
         study_name (str, optional): Name of the Optuna study.
 
     Returns:
@@ -37,15 +36,25 @@ def optimize_mean_reversion(
         study_name=study_name,
         storage=f"sqlite:///{storage_path}",  # Use SQLite for persistence
         direction="maximize",
+        sampler=optuna.samplers.TPESampler(
+            n_startup_trials=max(5, n_trials // 10)
+        ),  # Dynamic startup trials
         load_if_exists=True,  # Load existing study instead of restarting
     )
 
     # Determine the number of additional trials needed
     remaining_trials = n_trials - len(study.trials)
     if remaining_trials > 0:
+        # Compute rolling std in advance for all window sizes to avoid redundant computations
+        rolling_std_cache = {
+            w: returns_df.rolling(window=w, min_periods=1).std().replace(0, np.nan)
+            for w in window_range
+        }
+
+        # Run optimization
         study.optimize(
-            lambda trial: objective(trial, window_range, returns_df),
-            n_trials=remaining_trials,  # Avoid redundant runs
+            lambda trial: objective(trial, window_range, returns_df, rolling_std_cache),
+            n_trials=remaining_trials,
             n_jobs=n_jobs,
         )
 
@@ -55,9 +64,8 @@ def optimize_mean_reversion(
     overbought_multiplier = best_params["overbought_multiplier"]
     oversold_multiplier = best_params["oversold_multiplier"]
 
-    # Compute new dynamic thresholds for each stock
-    rolling_std = returns_df.rolling(window=window, min_periods=1).std()
-    rolling_std = rolling_std.replace(0, np.nan)  # Avoid division by zero
+    # Compute new dynamic thresholds for each stock using cached rolling_std
+    rolling_std = rolling_std_cache[window]
 
     dynamic_thresholds = {
         ticker: (
@@ -67,10 +75,12 @@ def optimize_mean_reversion(
         for ticker in returns_df.columns
     }
 
-    return dynamic_thresholds
+    return dynamic_thresholds, study
 
 
-def objective(trial, window_range: range, returns_df: pd.DataFrame) -> float:
+def objective(
+    trial, window_range: range, returns_df: pd.DataFrame, rolling_std_cache: dict
+) -> float:
     """
     Objective function for Optuna to optimize mean reversion strategy.
 
@@ -78,6 +88,7 @@ def objective(trial, window_range: range, returns_df: pd.DataFrame) -> float:
         trial (optuna.trial.Trial): Optuna trial object.
         window_range (range): Range of windows to test.
         returns_df (pd.DataFrame): Log returns DataFrame.
+        rolling_std_cache (dict): Precomputed rolling standard deviations for efficiency.
 
     Returns:
         float: Cumulative return.
@@ -92,18 +103,17 @@ def objective(trial, window_range: range, returns_df: pd.DataFrame) -> float:
     # Define hyperparameter search space
     window = trial.suggest_int("window", window_min, window_max, step=window_step)
     overbought_multiplier = trial.suggest_float(
-        "overbought_multiplier", 1.5, 2.5, step=0.1
+        "overbought_multiplier", 1.5, 2.5, step=0.05
     )
     oversold_multiplier = trial.suggest_float(
-        "oversold_multiplier", -2.5, -1.5, step=0.1
+        "oversold_multiplier", -2.5, -1.5, step=0.05
     )
 
-    # Calculate rolling mean and std with proper handling for different stock histories
-    rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
-    rolling_std = returns_df.rolling(window=window, min_periods=1).std()
+    # Fetch precomputed rolling standard deviation
+    rolling_std = rolling_std_cache[window]
 
-    # Avoid division by zero when standard deviation is zero
-    rolling_std = rolling_std.replace(0, np.nan)
+    # Compute rolling mean only for the selected window (avoiding unnecessary recalculations)
+    rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
 
     # Calculate Z-scores dynamically based on available history
     z_score_df = (returns_df - rolling_mean) / rolling_std
