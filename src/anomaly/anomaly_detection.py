@@ -18,7 +18,7 @@ def remove_anomalous_stocks(
     weight_dict: Optional[Dict[str, float]] = None,
     plot: bool = False,
     n_jobs: int = -1,
-    cache_filename: str = "optimized_thresholds.pkl",
+    cache_filename: str = "optuna_cache/anomaly_thresholds.pkl",
     reoptimize: bool = False,  # Flag to force re-optimization
 ) -> Tuple[pd.DataFrame, List[str], Dict[str, float]]:
     """
