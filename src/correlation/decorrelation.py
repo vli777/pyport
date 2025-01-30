@@ -1,6 +1,8 @@
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Set, Tuple
 import optuna
+from optuna.pruners import MedianPruner
+from optuna.samplers import TPESampler
 import pandas as pd
 import numpy as np
 import functools
@@ -14,11 +16,14 @@ from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_
 from utils.performance_metrics import calculate_portfolio_alpha
 from utils.logger import logger
 
+
 def filter_correlated_groups(
     returns_df: pd.DataFrame,
     performance_df: pd.DataFrame,
-    correlation_threshold: Optional[float] = None,
-    sharpe_threshold: float = 0.005,
+    market_returns: pd.Series,
+    correlation_threshold: Optional[float] = None,    
+    risk_free_rate: float = 0.042,
+    sharpe_threshold: float = 0.005,    
     linkage_method: str = "average",
     top_n: Optional[int] = None,
     plot: bool = False,
@@ -43,8 +48,8 @@ def filter_correlated_groups(
             best_params, best_value = optimize_correlation_threshold(
                 returns_df=returns_df,
                 performance_df=performance_df,
-                # add any other parameters needed by your optimizer:
-                # market_returns=..., risk_free_rate=..., etc.
+                market_returns=market_returns,
+                risk_free_rate=risk_free_rate,
                 sharpe_threshold=sharpe_threshold,
                 linkage_method=linkage_method,
             )
@@ -199,8 +204,8 @@ def optimize_correlation_threshold(
     linkage_method: str = "average",
     n_trials: int = 50,
     direction: str = "maximize",
-    sampler: Optional[Callable] = None,
-    pruner: Optional[Callable] = None,
+    sampler: Optional[Callable] = TPESampler,
+    pruner: Optional[Callable] = MedianPruner,
     cache_filename: str = "optuna_cache/correlation_thresholds.pkl",
     reoptimize: bool = False,
 ) -> Tuple[Dict[str, float], float]:

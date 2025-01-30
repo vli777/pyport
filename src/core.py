@@ -241,11 +241,20 @@ def run_pipeline(
                     returns_df[valid_symbols], config.risk_free_rate
                 )
 
+                # Load market returns
+                market_returns = calculate_returns(
+                    load_data(
+                        all_symbols=["SPY"], start_date=start_long, end_date=end_long
+                    )
+                )
+
                 # Filter decorrelated tickers
                 decorrelated_tickers = filter_correlated_groups(
                     returns_df=returns_df[valid_symbols],
                     performance_df=performance_metrics,
+                    market_returns=market_returns,
                     correlation_threshold=None,
+                    risk_free_rate=config.risk_free_rate,
                     sharpe_threshold=0.005,
                     plot=config.plot_clustering,
                     top_n=config.top_n_candidates,
