@@ -10,7 +10,7 @@ from joblib import Parallel, delayed
 
 from anomaly.plot_anomalies import plot_anomalies
 from anomaly.kalman_filter import apply_kalman_filter
-from anomaly.caching import load_thresholds_from_pickle, save_thresholds_to_pickle
+from utils.caching_utils import load_thresholds_from_pickle, save_thresholds_to_pickle
 
 
 def remove_anomalous_stocks(
