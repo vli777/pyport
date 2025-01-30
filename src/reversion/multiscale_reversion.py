@@ -22,7 +22,7 @@ def apply_mean_reversion_multiscale(
         n_trials (int): Number of optimization trials.
 
     Returns:
-        Dict[str, Dict[str, List[str]]:
+        Dict[str, Dict[str, Dict[str, int]]]:
             - Signals structured by time scale.
     """
     resampled = resample_returns(returns_df)  # Assume resampling function exists
@@ -32,21 +32,30 @@ def apply_mean_reversion_multiscale(
         logger.info(f"Optimizing for {timeframe} data...")
 
         # Optimize parameters
-        _, study = optimize_mean_reversion(
+        best_params, study = optimize_mean_reversion(
             returns_df=returns,
             window_range=range(5, 31, 5) if timeframe == "daily" else range(2, 9),
+            cache_filename=f"optuna_cache/reversion_window_multiplier_{timeframe}.pkl",
             n_trials=n_trials,
             n_jobs=n_jobs,
         )
-        optimized_params = study.best_trial.params
-        logger.info(
-            f"{timeframe.capitalize()} Optimized parameters: {optimized_params}"
-        )
+
+        if best_params is None:
+            logger.error("Optimization failed or no parameters found.")
+            best_params = {
+                "window": 20,
+                "overbought_multiplier": 2.0,
+                "oversold_multiplier": -2.0,
+            }
+        else:
+            logger.info(
+                f"{timeframe.capitalize()} Optimized reversion parameters: {best_params}"
+            )
 
         # Calculate Z-scores and thresholds
-        window = optimized_params.get("window", 20)
-        overbought_multiplier = optimized_params.get("overbought_multiplier", 2.0)
-        oversold_multiplier = optimized_params.get("oversold_multiplier", -2.0)
+        window = best_params.get("window", 20)
+        overbought_multiplier = best_params.get("overbought_multiplier", 2.0)
+        oversold_multiplier = best_params.get("oversold_multiplier", -2.0)
 
         z_score_df = calculate_z_scores(returns, window)
         dynamic_thresholds = get_dynamic_thresholds(

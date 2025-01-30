@@ -162,8 +162,8 @@ def run_pipeline(
             optimal_weights = find_optimal_weights(
                 reversion_signals, returns_df, n_trials=50
             )
-            print(f"Optimal Weights: {optimal_weights}")
-
+            print(f"Optimal Weights: {optimal_weights}")            
+            
             # Generate Initial Recommendations
             final_recommendations = generate_reversion_recommendations(
                 reversion_signals, optimal_weights, include_pct=0.2, exclude_pct=0.2

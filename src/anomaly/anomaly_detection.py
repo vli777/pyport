@@ -12,6 +12,20 @@ from anomaly.plot_anomalies import plot_anomalies
 from anomaly.kalman_filter import apply_kalman_filter
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
+FANGS = [
+    "AAPL",
+    "META",
+    "AMZN",
+    "GOOG",
+    "GOOGL",
+    "NFLX",
+    "NVDA",
+    "MSFT",
+    "TSM",
+    "BKNG",
+    "TSLA",
+]
+
 
 def remove_anomalous_stocks(
     returns_df: pd.DataFrame,
@@ -60,7 +74,9 @@ def remove_anomalous_stocks(
             threshold = cached_thresholds[stock]
         else:
             # Optimize threshold using Optuna
-            threshold = optimize_threshold_for_ticker(returns_series, weight_dict)
+            threshold = optimize_threshold_for_ticker(
+                returns_series, weight_dict, stock, reference_stocks=FANGS
+            )
             thresholds[stock] = threshold  # Update thresholds dict
 
         # Apply Kalman filter with optimized threshold
@@ -111,10 +127,14 @@ def remove_anomalous_stocks(
 
 
 def optimize_threshold_for_ticker(
-    returns_series: pd.Series, weight_dict: Dict[str, float]
+    returns_series: pd.Series,
+    weight_dict: Dict[str, float],
+    stock: str,
+    reference_stocks: List[str],
 ) -> float:
     """
     Optimize the Kalman filter threshold for a single ticker using Optuna.
+    Ensures that reference stocks are not marked as anomalies.
 
     Args:
         returns_series (pd.Series): Series of returns for the ticker.
@@ -126,7 +146,7 @@ def optimize_threshold_for_ticker(
 
     def objective(trial):
         # Suggest a threshold within a realistic range based on prior knowledge
-        threshold = trial.suggest_float("threshold", 9.0, 13.0, step=0.1)
+        threshold = trial.suggest_float("threshold", 7.0, 12.0, step=0.1)
 
         # Apply Kalman filter and detect anomalies
         anomaly_flags, estimates = apply_kalman_filter(
@@ -135,26 +155,25 @@ def optimize_threshold_for_ticker(
 
         # Compute metrics
         num_anomalies = anomaly_flags.sum()
-        if num_anomalies == 0:
-            return -np.inf  # Penalize no anomalies detected
 
-        # Portfolio return (example metric)
+        # If current stock is a reference stock, heavily penalize if marked as anomaly
+        if stock in reference_stocks and num_anomalies > 0:
+            return (
+                -np.inf
+            )  # Strongly discourage thresholds that mark reference stocks as anomalies
+
+        if num_anomalies == 0 and stock not in reference_stocks:
+            # For non-reference stocks, if no anomalies are detected, assign a minimal score
+            return -np.inf
+
+        # Compute metrics for non-reference stocks with anomalies
         portfolio_return = returns_series.mean()
-
-        # Calculate downside deviation (only negative returns)
         negative_returns = returns_series[returns_series < 0]
         downside_risk = negative_returns.std()
-
-        # Sortino Ratio (risk-adjusted return)
         sortino_ratio = portfolio_return / downside_risk if downside_risk != 0 else 0
-
-        # Rolling volatility
         rolling_volatility = returns_series.rolling(window=30).std().mean()
+        stability_penalty = -rolling_volatility * 0.05
 
-        # Stability penalty
-        stability_penalty = -rolling_volatility * 0.1  # Adjust multiplier as needed
-
-        # Composite score
         composite_score = (weight_dict["sortino"] * sortino_ratio) + (
             weight_dict["stability"] * stability_penalty
         )
@@ -170,16 +189,14 @@ def optimize_threshold_for_ticker(
 
     # Create a study (in-memory for speed; adjust storage for persistence if needed)
     sampler = TPESampler(seed=42)
-    pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=3)
+    pruner = (
+        optuna.pruners.NopPruner()
+        if stock in reference_stocks
+        else MedianPruner(n_startup_trials=5, n_warmup_steps=3)
+    )
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
 
     # Optimize
-    study.optimize(
-        objective, n_trials=20, timeout=60
-    )  # Adjust n_trials and timeout as needed
+    study.optimize(objective, n_trials=50, timeout=60)
 
-    if study.best_trial is None:
-        print("No best trial found. Returning default threshold.")
-        return 10.0  # Default threshold if optimization fails
-
-    return study.best_trial.params["threshold"]
+    return study.best_trial.params["threshold"] if study.best_trial else 10.0

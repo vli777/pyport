@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
@@ -21,9 +21,9 @@ def filter_correlated_groups(
     returns_df: pd.DataFrame,
     performance_df: pd.DataFrame,
     market_returns: pd.Series,
-    correlation_threshold: Optional[float] = None,    
+    correlation_threshold: Optional[float] = None,
     risk_free_rate: float = 0.042,
-    sharpe_threshold: float = 0.005,    
+    sharpe_threshold: float = 0.005,
     linkage_method: str = "average",
     top_n: Optional[int] = None,
     plot: bool = False,
@@ -204,8 +204,6 @@ def optimize_correlation_threshold(
     linkage_method: str = "average",
     n_trials: int = 50,
     direction: str = "maximize",
-    sampler: Optional[Callable] = TPESampler,
-    pruner: Optional[Callable] = MedianPruner,
     cache_filename: str = "optuna_cache/correlation_thresholds.pkl",
     reoptimize: bool = False,
 ) -> Tuple[Dict[str, float], float]:
@@ -223,8 +221,8 @@ def optimize_correlation_threshold(
         linkage_method (str, optional): Method for hierarchical clustering.
         n_trials (int, optional): Number of Optuna trials. Defaults to 50.
         direction (str, optional): Optimization direction ("maximize" or "minimize").
-        sampler (Callable, optional): Optuna sampler.
-        pruner (Callable, optional): Optuna pruner.
+        sampler (Callable, optional): Optuna sampler factory function.
+        pruner (Callable, optional): Optuna pruner factory function.
         cache_filename (str, optional): Where to store best params/value pickle.
         reoptimize (bool, optional): If True, force a new optimization run
                                      even if cache exists.
@@ -254,8 +252,8 @@ def optimize_correlation_threshold(
     # 2. Prepare the Optuna study in memory
     study = optuna.create_study(
         direction=direction,
-        sampler=sampler,
-        pruner=pruner,
+        sampler=TPESampler(),
+        pruner=MedianPruner(),
         storage=None,
     )
 
@@ -334,13 +332,6 @@ def objective(
         sharpe_threshold=sharpe_threshold,
         linkage_method=linkage_method,
     )
-
-    # Prevent empty portfolio issue (return a small penalty instead of -inf)
-    if not filtered_tickers or len(filtered_tickers) < 5:
-        logger.warning(
-            f"Too few tickers ({len(filtered_tickers)}) left after filtering. Applying penalty."
-        )
-        return -100  # Small penalty to discourage empty selections
 
     # Align stock histories before calculating correlation
     filtered_returns = returns_df[filtered_tickers].dropna(how="all")

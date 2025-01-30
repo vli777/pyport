@@ -4,6 +4,7 @@ import numpy as np
 import optuna
 import pandas as pd
 
+from utils.performance_metrics import sharpe_ratio
 from utils import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
@@ -13,7 +14,7 @@ def optimize_mean_reversion(
     window_range=range(5, 31, 5),
     n_trials: int = 50,
     n_jobs: int = -1,  # All cores
-    cache_filename: str = "optuna_cache/reversion_thresholds.pkl",
+    cache_filename: str = "optuna_cache/reversion_window_multiplier.pkl",
     reoptimize: bool = False,
 ) -> dict:
     """
@@ -22,23 +23,22 @@ def optimize_mean_reversion(
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
         window_range (range): Range of window sizes.
-        n_trials (int, optional): Number of optimization trials. Defaults to 100.
-        n_jobs (int, optional): Number of parallel jobs. Defaults to 1.
+        n_trials (int, optional): Number of optimization trials. Defaults to 50.
+        n_jobs (int, optional): Number of parallel jobs. Defaults to -1.
         cache_filename (str, optional): Path to Pickle cache file.
         reoptimize (bool): Override to reoptimize.
 
     Returns:
-        dict: Optimized thresholds per ticker.
+        dict: Optimized parameters.
     """
     # Load cached study results if available and not reoptimizing
-    cached_params = None
     if not reoptimize:
         cached_params = load_parameters_from_pickle(cache_filename)
         if cached_params:
             logger.info("Using cached parameters.")
             return cached_params, None
 
-    # Create Optuna study (without SQLite)
+    # Create Optuna study
     study = optuna.create_study(
         study_name="mean_reversion_thresholds",
         direction="maximize",
@@ -55,23 +55,18 @@ def optimize_mean_reversion(
     study.optimize(
         lambda trial: objective(trial, window_range, returns_df, rolling_std_cache),
         n_trials=n_trials,
-        n_jobs=n_jobs,  # Use all available CPU cores
+        n_jobs=n_jobs,
     )
 
     # Save best parameters to cache
-    save_parameters_to_pickle(study, cache_filename)
+    if study.best_trial:
+        best_params = study.best_trial.params
+        save_parameters_to_pickle(best_params, cache_filename)
+    else:
+        logger.error("No valid optimization results found.")
+        return None, study  # Avoid returning an invalid best_params
 
-    # Compute dynamic thresholds using optimized parameters
-    best_params = study.best_params
-    dynamic_thresholds = scale_thresholds_per_ticker(
-        returns_df=returns_df,
-        base_overbought_multiplier=best_params["overbought_multiplier"],
-        base_oversold_multiplier=best_params["oversold_multiplier"],
-        rolling_std_cache=rolling_std_cache[best_params["window"]],
-        window=best_params["window"],
-    )
-
-    return dynamic_thresholds.study
+    return best_params, study
 
 
 def objective(
@@ -87,7 +82,7 @@ def objective(
         rolling_std_cache (dict): Precomputed rolling standard deviations.
 
     Returns:
-        float: Cumulative return.
+        float: Cumulative return or other performance metric.
     """
     # Extract min, max, and step from the range object
     window_min, window_max, window_step = (
@@ -105,8 +100,17 @@ def objective(
         "oversold_multiplier", -2.5, -1.5, step=0.05
     )
 
-    # Fetch precomputed rolling standard deviation
-    rolling_std = rolling_std_cache[window]
+    logger.debug(
+        f"Trial {trial.number}: window={window}, overbought_multiplier={overbought_multiplier}, oversold_multiplier={oversold_multiplier}"
+    )
+
+    # Fetch precomputed rolling standard deviation with error handling
+    rolling_std = rolling_std_cache.get(window)
+    if rolling_std is None:
+        logger.warning(
+            f"Window size {window} not found in rolling_std_cache. Skipping trial."
+        )
+        return -np.inf  # Assign a poor score to invalidate this trial
 
     # Compute rolling mean only for the selected window
     rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
@@ -114,10 +118,15 @@ def objective(
     # Calculate Z-scores dynamically based on available history
     z_score_df = (returns_df - rolling_mean) / rolling_std
 
-    # Ensure only stocks with valid history are considered
-    valid_stocks = returns_df.dropna(axis=1, how="all").columns
+    # Ensure only stocks with sufficient non-NaN data are considered
+    min_non_na = int(0.5 * len(returns_df))  # Example: at least 50% non-NaN
+    valid_stocks = returns_df.dropna(axis=1, thresh=min_non_na).columns
     z_score_df = z_score_df[valid_stocks]
-    returns_df = returns_df[valid_stocks]
+    returns_df_filtered = returns_df[valid_stocks]
+
+    if z_score_df.empty:
+        logger.warning("No valid stocks after filtering. Skipping trial.")
+        return -np.inf
 
     # Define dynamic thresholds per stock
     dynamic_thresholds = {
@@ -129,9 +138,63 @@ def objective(
     }
 
     # Simulate strategy performance
-    _, cumulative_return = simulate_strategy(returns_df, dynamic_thresholds, z_score_df)
+    strategy_returns, cumulative_return = simulate_strategy(
+        returns_df_filtered, dynamic_thresholds, z_score_df
+    )
+    # Calculate Sharpe Ratio
+    sharpe = sharpe_ratio(strategy_returns)
 
-    return cumulative_return
+    logger.debug(
+        f"Trial {trial.number}: Cumulative Return={cumulative_return} Sharpe Ratio={sharpe}"
+    )
+
+    return 0.5 * (sharpe + cumulative_return)
+
+
+def simulate_strategy(
+    returns_df: pd.DataFrame,
+    dynamic_thresholds: Dict[str, Tuple[float, float]],
+    z_scores_df: pd.DataFrame,
+) -> Tuple[pd.Series, float]:
+    """
+    Simulates the strategy using thresholds and calculates cumulative return.
+
+    Args:
+        returns_df (pd.DataFrame): Log returns DataFrame.
+        dynamic_thresholds (dict): Thresholds for overbought/oversold conditions.
+        z_scores_df (pd.DataFrame): Precomputed Z-scores DataFrame.
+
+    Returns:
+        Tuple[pd.Series, float]: A tuple containing:
+            - strategy_returns (pd.Series): Daily returns of the strategy.
+            - cumulative_return (float): Final cumulative return of the strategy.
+    """
+    # Initialize positions DataFrame with zeros
+    positions = pd.DataFrame(0, index=returns_df.index, columns=returns_df.columns)
+
+    # Vectorized position assignment
+    for ticker in dynamic_thresholds:
+        overbought, oversold = dynamic_thresholds[ticker]
+        z_scores = z_scores_df[ticker]
+
+        # Assign positions based on thresholds
+        positions[ticker] = np.where(
+            z_scores < oversold, 1, np.where(z_scores > overbought, -1, 0)
+        )
+
+    # Ensure no NaN values in positions
+    positions.fillna(0, inplace=True)
+
+    # Shift positions to prevent look-ahead bias
+    shifted_positions = positions.shift(1).fillna(0)
+
+    # Calculate daily strategy returns
+    strategy_returns = (shifted_positions * returns_df).sum(axis=1)
+
+    # Calculate cumulative return
+    cumulative_return = np.exp(strategy_returns.cumsum().iloc[-1]) - 1
+
+    return strategy_returns, cumulative_return
 
 
 def scale_thresholds_per_ticker(
@@ -182,49 +245,3 @@ def scale_thresholds_per_ticker(
         for ticker in returns_df.columns
     }
     return scaled_thresholds
-
-
-def simulate_strategy(
-    returns_df: pd.DataFrame,
-    dynamic_thresholds: Dict[str, Tuple[float, float]],
-    z_scores_df: pd.DataFrame,
-):
-    """
-    Simulates the strategy using thresholds and calculates cumulative return.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        dynamic_thresholds (dict): Thresholds for overbought/oversold conditions.
-        z_scores_df (pd.DataFrame): Precomputed Z-scores DataFrame.
-
-    Returns:
-        Tuple[pd.Series, float]: A tuple containing:
-            - strategy_returns (pd.Series): Daily returns of the strategy.
-            - cumulative_return (float): Final cumulative return of the strategy.
-    """
-    positions = pd.DataFrame(0, index=returns_df.index, columns=returns_df.columns)
-
-    for ticker in returns_df.columns:
-        if ticker not in dynamic_thresholds:
-            continue  # Skip tickers with insufficient data
-
-        overbought, oversold = dynamic_thresholds[ticker]
-        z_scores = z_scores_df[ticker]
-
-        # Buy when oversold, sell when overbought
-        positions[ticker] = np.where(
-            z_scores < oversold,
-            1,  # Long position
-            np.where(z_scores > overbought, -1, 0),  # Short position
-        )
-
-    # Ensure stocks with missing data are handled properly
-    positions.fillna(0, inplace=True)
-
-    # Calculate daily strategy returns using shifted positions to prevent look-ahead bias
-    strategy_returns = (positions.shift(1) * returns_df).sum(axis=1)
-
-    # Calculate cumulative return (log to normal return conversion)
-    cumulative_return = np.exp(strategy_returns.cumsum().iloc[-1]) - 1
-
-    return strategy_returns, cumulative_return

@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
+import sys
 from typing import Dict, List, Tuple
 import optuna
 import pandas as pd
 
+from utils.logger import logger
 from utils.caching_utils import (
     load_parameters_from_pickle,
     save_parameters_to_pickle,
@@ -34,10 +36,9 @@ def find_optimal_weights(
         Dict[str, float]: Best weights for daily and weekly signals.
     """
     # Load cached results if available and reoptimization is not forced
-    cached_weights = None
     if not reoptimize:
         cached_weights = load_parameters_from_pickle(cache_filename)
-        if cached_weights:
+        if isinstance(cached_weights, dict): 
             return cached_weights
 
     # Load or create the study
@@ -45,20 +46,26 @@ def find_optimal_weights(
         study_name="reversion_weights_optimization",
         direction="maximize",
         sampler=optuna.samplers.TPESampler(n_startup_trials=max(5, n_trials // 10)),
+        load_if_exists=True,
     )
 
     # Run optimization in parallel
     study.optimize(
         lambda trial: objective(trial, reversion_signals, returns_df),
         n_trials=n_trials,
-        n_jobs=n_jobs,  # Use all available CPU cores
+        n_jobs=n_jobs,        
     )
 
-    # Save best parameters to cache
-    save_parameters_to_pickle(study, cache_filename)
+    if study.best_trial is None:
+        logger.error("No valid optimization results found.")
+        # Return default weights if optimization fails
+        return {"weight_daily": 0.5, "weight_weekly": 0.5}
 
-    # Extract and return best weights
-    best_weights = study.best_params
+    # Extract best weights
+    best_weights = study.best_trial.params
+
+    # Save best weights (NOT the study object)
+    save_parameters_to_pickle(best_weights, cache_filename)
 
     return best_weights
 
@@ -80,7 +87,7 @@ def objective(
         float: Cumulative return from the optimized strategy.
     """
     # Hyperparameter search space: Weight allocation to each timeframe
-    weight_daily = trial.suggest_float("weight_daily", 0.0, 1.0, step=0.05)
+    weight_daily = trial.suggest_float("weight_daily", 0.0, 1.0, step=0.10)
     weight_weekly = 1.0 - weight_daily  # Ensuring sum = 1.0 for interpretability
 
     # Convert dictionary signals to DataFrames
@@ -98,13 +105,13 @@ def objective(
     returns_df = returns_df.reindex(combined_dates)
 
     # Weighted combination of signals
-    combined_signals = weight_daily * daily_signals + weight_weekly * weekly_signals
+    combined_signals: pd.DataFrame = weight_daily * daily_signals + weight_weekly * weekly_signals
 
     # Ensure signals remain in {-1, 0, 1}
-    combined_signals = combined_signals.applymap(
+    combined_signals = combined_signals.map(
         lambda x: 1 if x > 0.5 else (-1 if x < -0.5 else 0)
     )
-
+    
     # Ensure only stocks with valid history are considered
     valid_stocks = returns_df.dropna(axis=1, how="all").columns
     combined_signals = combined_signals[valid_stocks]
@@ -113,7 +120,7 @@ def objective(
     # Convert signals to positions while ensuring no look-ahead bias
     positions_df = combined_signals.shift(1)  # Shift positions to avoid look-ahead bias
     positions_df.fillna(0, inplace=True)  # Fill missing positions with 0 (neutral)
-
+    
     # Simulate strategy with valid positions
     _, cumulative_return = simulate_strategy(returns_df, positions_df=positions_df)
 
