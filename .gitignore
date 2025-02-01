@@ -21,3 +21,5 @@ build/
 .vscode/
 other/
 *.db
+*.pkl
+optuna_cache/
