@@ -1,70 +1,100 @@
-from typing import Dict, Tuple
-import matplotlib.pyplot as plt
-import math
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 
-def plot_z_scores_grid(
-    z_scores_df: pd.DataFrame,
-    dynamic_thresholds: Dict[
-        str, Tuple[float, float]
-    ],  # Directly use the dict from get_dynamic_thresholds
-    grid_shape=(6, 6),
-    figsize=(20, 20),
+def plot_robust_z_scores(
+    robust_z: pd.DataFrame,
+    z_threshold: float,
+    n_cols: int = 6,
+    title: str = "Robust Z-Scores",
 ):
     """
-    Plot Z-Scores for multiple tickers in a paginated grid layout.
+    Create an interactive Plotly grid of subplots for robust z-scores for multiple tickers.
+    Each subplot displays the z-score time series for one ticker along with horizontal lines
+    at +z_threshold (overbought) and -z_threshold (oversold).
 
     Args:
-        z_scores_df (pd.DataFrame): DataFrame containing Z-Scores for all tickers.
-                                     Columns are tickers, index are dates.
-        dynamic_thresholds (Dict[str, Tuple[float, float]]): Dictionary of overbought/oversold thresholds.
-                                                             Keys should match z_scores_df columns.
-        grid_shape (tuple, optional): Tuple indicating the grid size (rows, cols) per page. Default is (6, 6).
-        figsize (tuple, optional): Size of each figure. Default is (20, 20).
+        robust_z (pd.DataFrame): DataFrame with dates as index and tickers as columns containing robust z-scores.
+        z_threshold (float): The threshold value used for overbought/oversold signals.
+                             Overbought line will be at z_threshold and oversold at -z_threshold.
+        n_cols (int): Number of columns in the grid. The number of rows is computed based on the number of tickers.
+        title (str): Title for the overall figure.
 
     Returns:
-        None
+        None: Displays the Plotly figure.
     """
-    num_tickers = len(z_scores_df.columns)
-    tickers = z_scores_df.columns.tolist()
-    pages = math.ceil(num_tickers / (grid_shape[0] * grid_shape[1]))
+    tickers = robust_z.columns.tolist()
+    n_tickers = len(tickers)
+    n_rows = int(np.ceil(n_tickers / n_cols))
 
-    for page in range(pages):
-        start_idx = page * grid_shape[0] * grid_shape[1]
-        end_idx = start_idx + grid_shape[0] * grid_shape[1]
-        current_tickers = tickers[start_idx:end_idx]
+    # Create a subplot grid with a dynamic number of rows
+    fig = make_subplots(rows=n_rows, cols=n_cols, subplot_titles=tickers)
 
-        fig, axes = plt.subplots(*grid_shape, figsize=figsize)
-        axes = axes.flatten()  # Flatten to 1D for easy iteration
+    # Iterate over each ticker and add its time series and threshold lines
+    for i, ticker in enumerate(tickers):
+        row = i // n_cols + 1
+        col = i % n_cols + 1
 
-        for i, ticker in enumerate(current_tickers):
-            ax = axes[i]
-            z_scores = z_scores_df[ticker]
+        series = robust_z[ticker]
+        x_values = series.index
+        y_values = series.values
 
-            # Retrieve dynamic thresholds
-            overbought, oversold = dynamic_thresholds.get(ticker, (2.0, -2.0))
+        # Add the robust z-score trace
+        fig.add_trace(
+            go.Scatter(
+                x=x_values,
+                y=y_values,
+                mode="lines",
+                name=f"{ticker} Z-Score",
+                line=dict(color="blue"),
+                showlegend=False,
+            ),
+            row=row,
+            col=col,
+        )
 
-            ax.plot(z_scores.index, z_scores, label=f"{ticker} Z-Score", color="blue")
-            ax.axhline(y=overbought, color="r", linestyle="--", label="Overbought")
-            ax.axhline(y=oversold, color="g", linestyle="--", label="Oversold")
-            ax.set_title(f"{ticker}")
-            ax.legend()
-            ax.grid(True)
+        # Determine x-range for the threshold lines
+        if len(x_values) > 0:
+            start_date = x_values.min()
+            end_date = x_values.max()
+        else:
+            start_date, end_date = None, None
 
-            # Set only start and end date ticks
-            start_date = z_scores.index.min()
-            end_date = z_scores.index.max()
-            ax.set_xticks([start_date, end_date])
-            ax.set_xticklabels(
-                [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")]
-            )
+        # Add horizontal overbought threshold line at +z_threshold
+        fig.add_trace(
+            go.Scatter(
+                x=[start_date, end_date],
+                y=[z_threshold, z_threshold],
+                mode="lines",
+                name="Overbought",
+                line=dict(color="red", dash="dash"),
+                showlegend=(i == 0),  # Show legend only for the first subplot
+            ),
+            row=row,
+            col=col,
+        )
 
-        # Hide any unused subplots
-        for j in range(len(current_tickers), len(axes)):
-            fig.delaxes(axes[j])
+        # Add horizontal oversold threshold line at -z_threshold
+        fig.add_trace(
+            go.Scatter(
+                x=[start_date, end_date],
+                y=[-z_threshold, -z_threshold],
+                mode="lines",
+                name="Oversold",
+                line=dict(color="green", dash="dash"),
+                showlegend=(i == 0),
+            ),
+            row=row,
+            col=col,
+        )
 
-        plt.tight_layout()
-        plt.suptitle(f"Z-Scores Grid - Page {page + 1}", fontsize=16, y=1.02)
-        plt.subplots_adjust(top=0.95)
-        plt.show()
+    # Update the layout with an appropriate height to allow scrolling if needed
+    fig.update_layout(
+        height=300 * n_rows,
+        width=1200,
+        title=title,
+        legend=dict(orientation="h", x=0.5, xanchor="center", y=-0.05),
+    )
+    fig.show()
