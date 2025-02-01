@@ -323,17 +323,20 @@ def run_pipeline(
     all_dates = df_all.index  # Keep full range before filtering
     returns_df = preprocess_data(df_all, config)  # apply all pre-optimization filters
 
+    valid_symbols = list(returns_df.columns)
     if not valid_symbols:
         logger.warning("No valid symbols remain after filtering. Aborting pipeline.")
-        return {}
-    
-    # Ensure `valid_symbols` aligns with available trading history
-    valid_symbols = [sym for sym in valid_symbols if sym in returns_df.columns]
+        return None  # Or raise an exception if this is an unrecoverable state
+
     logger.info(f"Symbols selected for optimization: {valid_symbols}")
 
     try:
-        dfs["data"] = df_all.xs("Adj Close", level=1, axis=1)[valid_symbols]
-        logger.debug(f"dfs['data'] shape: {dfs['data'].shape}")
+        if valid_symbols:
+            dfs["data"] = df_all.xs("Adj Close", level=1, axis=1)[valid_symbols]
+            logger.debug(f"dfs['data'] shape: {dfs['data'].shape}")
+        else:
+            logger.warning("No valid symbols available for slicing df_all.")
+            dfs["data"] = pd.DataFrame()  # Or handle gracefully
     except KeyError as e:
         logger.error(f"Error slicing df_all with filtered_decorrelated: {e}")
         raise
