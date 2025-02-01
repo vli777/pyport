@@ -94,6 +94,8 @@ def filter_correlated_groups_dbscan(
             group_perf = perf_series[tickers].sort_values(ascending=False)
             top_candidates = group_perf.index.tolist()[:top_n_per_cluster]
             selected_tickers.extend(top_candidates)
+            logger.info(f"Cluster {label}: {len(tickers)} stocks → Keeping {top_candidates}")
+
 
     removed_tickers = set(returns_df.columns) - set(selected_tickers)
     if removed_tickers:
