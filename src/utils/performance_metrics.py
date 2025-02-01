@@ -1,6 +1,6 @@
 from typing import Any, Dict, Tuple
-import numpy as np
 import pandas as pd
+import numpy as np
 from sklearn.linear_model import LinearRegression
 
 from .logger import logger
@@ -53,85 +53,6 @@ def kappa_ratio(returns: pd.Series, order: int = 3, mar: float = 0.0) -> float:
     if lpm == 0:
         return np.inf
     return mean_excess / (lpm ** (1 / order))
-
-
-def simulate_strategy(
-    returns_df: pd.DataFrame, positions_df: pd.DataFrame
-) -> Tuple[pd.Series, dict]:
-    """
-    Simulates the strategy using positions and calculates performance metrics.
-    Positions are assumed to be shifted (to avoid lookahead bias).
-
-    Args:
-        returns_df (pd.DataFrame): Daily log returns DataFrame.
-        positions_df (pd.DataFrame): Positions DataFrame (tickers as columns, dates as index).
-
-    Returns:
-        tuple: (strategy_returns, metrics)
-            strategy_returns (pd.Series): Daily strategy returns.
-            metrics (dict): Dictionary with cumulative_return, sharpe, and kappa.
-    """
-    # Shift positions to avoid lookahead bias
-    strategy_returns = (positions_df.shift(1) * returns_df).sum(axis=1).fillna(0)
-    cumulative_return = (strategy_returns + 1).prod() - 1
-    sr = sharpe_ratio(strategy_returns)
-    kp = kappa_ratio(strategy_returns, order=3)
-    metrics = {"cumulative_return": cumulative_return, "sharpe": sr, "kappa": kp}
-    return strategy_returns, metrics
-
-
-def composite_score(metrics: dict, weights: dict = None) -> float:
-    """
-    Combines performance metrics into a composite score.
-
-    By default, the composite score is a weighted sum:
-      40% cumulative_return + 30% sharpe_ratio + 30% kappa_ratio.
-
-    Args:
-        metrics (dict): Dictionary with keys "cumulative_return", "sharpe", "kappa".
-        weights (dict, optional): Weights for each metric. Defaults to {"cumulative_return": 0.4, "sharpe": 0.3, "kappa": 0.3}.
-
-    Returns:
-        float: Composite performance score.
-    """
-    if weights is None:
-        weights = {"cumulative_return": 0.4, "sharpe": 0.3, "kappa": 0.3}
-    score = (
-        weights["cumulative_return"] * metrics["cumulative_return"]
-        + weights["sharpe"] * metrics["sharpe"]
-        + weights["kappa"] * metrics["kappa"]
-    )
-    return score
-
-
-def calculate_performance_metrics(
-    returns_df: pd.DataFrame, risk_free_rate: float = 0.0
-):
-    """
-    Compute Sharpe Ratios and Total Returns for each ticker.
-    """
-    daily_rf = risk_free_rate / 252
-    means = returns_df.mean()
-    stds = returns_df.std()
-    excess = means - daily_rf
-
-    # Debug log for a few tickers
-    sample_tickers = returns_df.columns[:5]
-    for ticker in sample_tickers:
-        logger.debug(
-            f"{ticker} - Mean: {means[ticker]:.6f}, Std: {stds[ticker]:.6f}, Excess Return: {excess[ticker]:.6f}"
-        )
-
-    # Handle cases where std is 0 (avoid division errors)
-    sharpe_ratios = np.where(stds > 0, (excess / stds) * np.sqrt(252), np.nan)
-    total_returns = (1 + returns_df).prod() - 1
-
-    performance_df = pd.DataFrame(
-        {"Sharpe Ratio": sharpe_ratios, "Total Return": total_returns},
-        index=returns_df.columns,
-    )
-
-    return performance_df
 
 
 def calculate_portfolio_alpha(
