@@ -49,7 +49,7 @@ def remove_anomalous_stocks(
         Tuple[pd.DataFrame, list, dict]: Filtered DataFrame, list of removed stocks, and thresholds.
     """
     if weight_dict is None:
-        weight_dict = {"sortino": 0.8, "stability": 0.2}
+        weight_dict = {"kappa": 0.8, "stability": 0.2}
 
     # Load cached thresholds if available.
     thresholds = {}
@@ -164,7 +164,7 @@ def optimize_threshold_for_ticker(
 
     def objective(trial):
         # Suggest a threshold in a realistic range for Isolation Forest anomaly detection.
-        threshold = trial.suggest_float("threshold", 1.0, 3.0, step=0.1)
+        threshold = trial.suggest_float("threshold", 1.0, 10.0, step=0.5)
 
         # Apply the Isolation Forest filter with the current threshold.
         anomaly_flags, _ = apply_isolation_forest(returns_series, threshold=threshold)
@@ -206,4 +206,4 @@ def optimize_threshold_for_ticker(
     )
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
     study.optimize(objective, n_trials=50, timeout=60)
-    return study.best_trial.params["threshold"] if study.best_trial else 3.0
+    return study.best_trial.params["threshold"] if study.best_trial else 10.0
