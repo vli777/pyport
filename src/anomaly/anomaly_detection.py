@@ -5,24 +5,20 @@ import optuna
 from optuna.pruners import MedianPruner, NopPruner
 from optuna.samplers import TPESampler
 from joblib import Parallel, delayed
+import json
 
 from anomaly.plot_anomalies import plot_anomalies
 from anomaly.isolation_forest import apply_isolation_forest
+from utils.performance_metrics import kappa_ratio
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
-FANGS = [
-    "AAPL",
-    "META",
-    "AMZN",
-    "GOOG",
-    "GOOGL",
-    "NFLX",
-    "NVDA",
-    "MSFT",
-    "TSM",
-    "BKNG",
-    "TSLA",
-]
+
+# Load the safe reference stocks
+with open("safe_reference.json", "r") as f:
+    reference_stocks = json.load(f)
+
+# Ensure all tickers are in uppercase
+reference_stocks = [ticker.upper() for ticker in reference_stocks]
 
 
 def remove_anomalous_stocks(
@@ -66,7 +62,10 @@ def remove_anomalous_stocks(
         # Use aggregated returns data to optimize a global threshold.
         combined_series = returns_df.stack().dropna()
         global_threshold = optimize_threshold_for_ticker(
-            combined_series, weight_dict, stock="GLOBAL", reference_stocks=FANGS
+            combined_series,
+            weight_dict,
+            stock="GLOBAL",
+            reference_stocks=reference_stocks,
         )
         # Save the same threshold for every stock.
         thresholds = {stock: global_threshold for stock in returns_df.columns}
@@ -97,7 +96,7 @@ def remove_anomalous_stocks(
                 thresh = thresholds[stock]
             else:
                 thresh = optimize_threshold_for_ticker(
-                    series, weight_dict, stock, reference_stocks=FANGS
+                    series, weight_dict, stock, reference_stocks=reference_stocks
                 )
             # Apply the filter.
             anomaly_flags, estimates = apply_isolation_forest(series, threshold=thresh)
@@ -147,42 +146,51 @@ def optimize_threshold_for_ticker(
 ) -> float:
     """
     Optimizes the anomaly detection filter threshold for one ticker using Optuna.
-    Ensures reference stocks (e.g. FANGS) are not flagged as anomalous.
+    Uses the kappa ratio and applies a penalty that is a percentage
+    of the composite score. For reference stocks, any anomaly flags reduce the composite score by 50%.
+    For non-reference stocks, no anomalies trigger a 10% penalty.
 
     Args:
         returns_series (pd.Series): Series of returns.
-        weight_dict (dict): Weights for objective components.
+        weight_dict (dict): Weights for objective components. Expected to contain keys "kappa" and "stability".
         stock (str): Stock symbol.
-        reference_stocks (List[str]): List of reference stocks.
+        reference_stocks (List[str]): List of reference stocks (e.g., safe stocks).
 
     Returns:
         float: The optimal threshold.
     """
 
     def objective(trial):
-        # Choose a threshold in a realistic range.
+        # Suggest a threshold in a realistic range for Isolation Forest anomaly detection.
         threshold = trial.suggest_float("threshold", 1.0, 3.0, step=0.1)
+
+        # Apply the Isolation Forest filter with the current threshold.
         anomaly_flags, _ = apply_isolation_forest(returns_series, threshold=threshold)
         num_anomalies = anomaly_flags.sum()
 
-        # For reference stocks, heavily penalize if any anomaly is flagged.
-        if stock in reference_stocks and num_anomalies > 0:
-            return -np.inf
-        # For non-reference stocks, penalize if no anomalies are found.
-        if stock not in reference_stocks and num_anomalies == 0:
-            return -np.inf
-
-        # Compute portfolio metrics.
-        portfolio_return = returns_series.mean()
-        negative_returns = returns_series[returns_series < 0]
-        downside_risk = negative_returns.std()
-        sortino_ratio = portfolio_return / downside_risk if downside_risk != 0 else 0
+        # Compute portfolio metrics using the kappa ratio.
+        kappa = kappa_ratio(
+            returns_series, order=3
+        )  # Use kappa ratio instead of sortino.
         rolling_volatility = returns_series.rolling(window=30).std().mean()
         stability_penalty = -rolling_volatility * 0.05
 
-        composite_score = (weight_dict["sortino"] * sortino_ratio) + (
+        # Compute composite performance without penalty.
+        composite_without_penalty = (weight_dict["kappa"] * kappa) + (
             weight_dict["stability"] * stability_penalty
         )
+
+        # Determine a penalty as a percentage of the composite score.
+        # For reference stocks, if any anomaly is flagged, apply a 50% penalty.
+        # For non-reference stocks, if no anomalies are found, apply a 10% penalty.
+        if stock in reference_stocks and num_anomalies > 0:
+            penalty_factor = 0.5  # 50% penalty.
+        elif stock not in reference_stocks and num_anomalies == 0:
+            penalty_factor = 0.1  # 10% penalty.
+        else:
+            penalty_factor = 0.0
+
+        composite_score = composite_without_penalty * (1 - penalty_factor)
         trial.report(composite_score, step=int(threshold * 10))
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
@@ -196,4 +204,4 @@ def optimize_threshold_for_ticker(
     )
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
     study.optimize(objective, n_trials=50, timeout=60)
-    return study.best_trial.params["threshold"] if study.best_trial else 10.0
+    return study.best_trial.params["threshold"] if study.best_trial else 3.0
