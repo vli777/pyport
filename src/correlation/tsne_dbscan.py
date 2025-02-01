@@ -117,14 +117,7 @@ def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(corr, index=df.columns, columns=df.columns)
 
 
-def compute_performance_metrics(
-    returns_df: pd.DataFrame, risk_free_rate: float
-) -> dict[str, float]:
-    """
-    For each ticker, compute cumulative return, Sharpe ratio, and Kappa ratio,
-    and then a composite metric combining these (e.g. 40% cumulative return,
-    30% Sharpe, 30% Kappa).
-    """
+def compute_performance_metrics(returns_df: pd.DataFrame, risk_free_rate: float) -> pd.Series:
     metrics = {}
     for ticker in returns_df.columns:
         ticker_returns = returns_df[ticker].dropna()
@@ -133,7 +126,6 @@ def compute_performance_metrics(
         cumulative_return = (ticker_returns + 1).prod() - 1
         sr = sharpe_ratio(ticker_returns, risk_free_rate)
         kp = kappa_ratio(ticker_returns, order=3)
-        # Composite score: adjust weights as needed.
         composite = 0.4 * cumulative_return + 0.3 * sr + 0.3 * kp
         metrics[ticker] = composite
-    return pd.DataFrame(metrics).T
+    return pd.Series(metrics)
