@@ -32,7 +32,7 @@ def remove_anomalous_stocks(
     n_jobs: int = -1,
     cache_filename: str = "optuna_cache/anomaly_thresholds.pkl",
     reoptimize: bool = False,  # Force re-optimization even if cache exists
-    global_filter: bool = False  # If True, use a single threshold for all stocks
+    global_filter: bool = False,  # If True, use a single threshold for all stocks
 ) -> Tuple[pd.DataFrame, List[str], Dict[str, float]]:
     """
     Removes stocks with anomalous returns based on an anomaly detection filter.
@@ -77,7 +77,9 @@ def remove_anomalous_stocks(
             if series.empty:
                 print(f"Warning: No data for stock {stock}. Skipping.")
                 continue
-            anomaly_flags, estimates = apply_isolation_forest(series, threshold=global_threshold)
+            anomaly_flags, estimates = apply_isolation_forest(
+                series, threshold=global_threshold
+            )
             if anomaly_flags.sum() > 0:
                 anomalous_cols.append(stock)
                 results[stock] = anomaly_flags
@@ -136,6 +138,7 @@ def remove_anomalous_stocks(
     filtered_df = returns_df.drop(columns=anomalous_cols)
     return filtered_df, anomalous_cols, thresholds
 
+
 def optimize_threshold_for_ticker(
     returns_series: pd.Series,
     weight_dict: Dict[str, float],
@@ -155,6 +158,7 @@ def optimize_threshold_for_ticker(
     Returns:
         float: The optimal threshold.
     """
+
     def objective(trial):
         # Choose a threshold in a realistic range.
         threshold = trial.suggest_float("threshold", 7.0, 12.0, step=0.1)
@@ -176,14 +180,20 @@ def optimize_threshold_for_ticker(
         rolling_volatility = returns_series.rolling(window=30).std().mean()
         stability_penalty = -rolling_volatility * 0.05
 
-        composite_score = (weight_dict["sortino"] * sortino_ratio) + (weight_dict["stability"] * stability_penalty)
+        composite_score = (weight_dict["sortino"] * sortino_ratio) + (
+            weight_dict["stability"] * stability_penalty
+        )
         trial.report(composite_score, step=int(threshold * 10))
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
         return composite_score
 
     sampler = TPESampler(seed=42)
-    pruner = NopPruner() if stock in reference_stocks else MedianPruner(n_startup_trials=5, n_warmup_steps=3)
+    pruner = (
+        NopPruner()
+        if stock in reference_stocks
+        else MedianPruner(n_startup_trials=5, n_warmup_steps=3)
+    )
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
     study.optimize(objective, n_trials=50, timeout=60)
     return study.best_trial.params["threshold"] if study.best_trial else 10.0
