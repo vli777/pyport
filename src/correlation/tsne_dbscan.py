@@ -9,6 +9,7 @@ import plotly.express as px
 from correlation.correlation_utils import compute_ticker_hash
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 from utils.performance_metrics import kappa_ratio, sharpe_ratio
+from utils.logger import logger
 
 
 def filter_correlated_groups_dbscan(
@@ -77,6 +78,8 @@ def filter_correlated_groups_dbscan(
     for ticker, label in zip(returns_df.columns, cluster_labels):
         clusters.setdefault(label, []).append(ticker)
 
+    logger.info(f"Total clusters found: {len(clusters)}")
+      
     # Compute performance metrics internally.
     perf_series = compute_performance_metrics(returns_df, risk_free_rate)
 
@@ -92,6 +95,12 @@ def filter_correlated_groups_dbscan(
             top_candidates = group_perf.index.tolist()[:top_n_per_cluster]
             selected_tickers.extend(top_candidates)
 
+    removed_tickers = set(returns_df.columns) - set(selected_tickers)
+    if removed_tickers:
+        logger.info(f"Removed {len(removed_tickers)} stocks due to high correlation: {sorted(removed_tickers)}")
+    else:
+        logger.info("No stocks were removed.")
+        
     # Optional t-SNE visualization.
     if plot:
         tsne = TSNE(n_components=2, random_state=42)
