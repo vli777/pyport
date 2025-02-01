@@ -1,3 +1,4 @@
+import hashlib
 import pandas as pd
 import numpy as np
 import plotly.figure_factory as ff
@@ -103,3 +104,9 @@ def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
     corr_matrix = covariance / np.outer(stddev, stddev)
     np.fill_diagonal(corr_matrix, 0)
     return pd.DataFrame(corr_matrix, index=df.columns, columns=df.columns)
+
+
+def compute_ticker_hash(tickers):
+    """Compute a hash of the sorted list of tickers."""
+    ticker_str = ",".join(sorted(tickers))
+    return hashlib.sha256(ticker_str.encode()).hexdigest()[:16]  # Use a short hash

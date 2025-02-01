@@ -178,7 +178,7 @@ def run_pipeline(
                 min_samples=2,
                 top_n_per_cluster=config.top_n_candidates,
                 plot=config.plot_clustering,
-                cache_filename="optuna_cache/correlation_thresholds.pkl",
+                cache_dir="optuna_cache",
                 reoptimize=False,
             )
 
@@ -323,13 +323,12 @@ def run_pipeline(
     all_dates = df_all.index  # Keep full range before filtering
     returns_df = preprocess_data(df_all, config)  # apply all pre-optimization filters
 
-    # Ensure `valid_symbols` aligns with available trading history
-    valid_symbols = [sym for sym in valid_symbols if sym in returns_df.columns]
-
     if not valid_symbols:
         logger.warning("No valid symbols remain after filtering. Aborting pipeline.")
         return {}
-
+    
+    # Ensure `valid_symbols` aligns with available trading history
+    valid_symbols = [sym for sym in valid_symbols if sym in returns_df.columns]
     logger.info(f"Symbols selected for optimization: {valid_symbols}")
 
     try:

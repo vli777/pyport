@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
@@ -5,6 +6,7 @@ from sklearn.manifold import TSNE
 from sklearn.covariance import LedoitWolf
 import plotly.express as px
 
+from correlation.correlation_utils import compute_ticker_hash
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 from utils.performance_metrics import kappa_ratio, sharpe_ratio
 
@@ -16,7 +18,7 @@ def filter_correlated_groups_dbscan(
     min_samples: int = 2,
     top_n_per_cluster: int = 1,
     plot: bool = False,
-    cache_filename: str = "optuna_cache/dbscan_params.pkl",
+    cache_dir: str = "optuna_cache",
     reoptimize: bool = False,
 ) -> list:
     """
@@ -31,13 +33,24 @@ def filter_correlated_groups_dbscan(
         min_samples (int): Minimum samples for a core point in DBSCAN.
         top_n_per_cluster (int): How many top stocks to select from each cluster.
         plot (bool): If True, display a t-SNE visualization of clusters.
-        cache_filename (str): File path to cache optimized DBSCAN parameters.
+        cache_dir (str): Directory path to cache optimized DBSCAN parameters.
         reoptimize (bool): If True, force re-optimization (or re-calculation) of eps.
 
     Returns:
         list: A list of selected ticker symbols after decorrelation.
     """
     # Optionally load cached eps (if optimizing and caching)
+    # Ensure the cache directory exists
+    cache_path = Path(cache_dir)
+    cache_path.mkdir(
+        parents=True, exist_ok=True
+    )  # Create the directory if it doesn't exist
+
+    # Compute unique cache filename based on tickers
+    tickers = returns_df.columns.tolist()
+    ticker_hash = compute_ticker_hash(tickers)
+    cache_filename = cache_path / f"dbscan_epsilon_{ticker_hash}.pkl"  # Path object
+
     cached_params = load_parameters_from_pickle(cache_filename)
     if not reoptimize and "eps" in cached_params:
         eps = cached_params["eps"]
@@ -117,7 +130,9 @@ def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(corr, index=df.columns, columns=df.columns)
 
 
-def compute_performance_metrics(returns_df: pd.DataFrame, risk_free_rate: float) -> pd.Series:
+def compute_performance_metrics(
+    returns_df: pd.DataFrame, risk_free_rate: float
+) -> pd.Series:
     metrics = {}
     for ticker in returns_df.columns:
         ticker_returns = returns_df[ticker].dropna()
