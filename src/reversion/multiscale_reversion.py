@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from reversion.optimize_reversion import optimize_robust_mean_reversion
-from reversion.zscore_plot import plot_robust_z_scores
+from reversion.z_scores import calculate_robust_z_scores, plot_robust_z_scores
 from utils.logger import logger
 
 
@@ -57,22 +57,6 @@ def apply_mean_reversion_multiscale(
     signals["weekly"] = generate_reversion_signals(robust_z_weekly, z_threshold_weekly)
 
     return signals
-
-
-def calculate_robust_z_scores(returns_df: pd.DataFrame, window: int) -> pd.DataFrame:
-    """
-    Calculate rolling robust z-scores using the rolling median and MAD.
-    The MAD is scaled by 1.4826 to approximate the standard deviation.
-    """
-    rolling_median = returns_df.rolling(window=window, min_periods=1).median()
-    # Rolling MAD: use a lambda to compute median absolute deviation over the window
-    mad = returns_df.rolling(window=window, min_periods=1).apply(
-        lambda x: np.median(np.abs(x - np.median(x))), raw=True
-    )
-    # Avoid division by zero by replacing zeros in mad
-    mad.replace(0, np.nan, inplace=True)
-    robust_z = (returns_df - rolling_median) / (mad * 1.4826)
-    return robust_z.fillna(0)
 
 
 def generate_reversion_signals(

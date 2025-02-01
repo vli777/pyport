@@ -2,7 +2,7 @@ from typing import Dict, List, Tuple
 import optuna
 import pandas as pd
 
-from reversion.reversion_utils import composite_score, simulate_strategy
+from reversion.strategy_metrics import composite_score, simulate_strategy
 from utils.logger import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
