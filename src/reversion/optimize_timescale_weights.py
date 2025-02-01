@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple
 import optuna
 import pandas as pd
 
+from utils.performance_metrics import composite_score, simulate_strategy
 from utils.logger import logger
 from utils.caching_utils import (
     load_parameters_from_pickle,
@@ -80,7 +81,7 @@ def reversion_weights_objective(
         returns_df (pd.DataFrame): Log returns DataFrame.
 
     Returns:
-        float: Cumulative return from the optimized strategy.
+        float: composite score from returns and performance ratios for the optimized strategy.
     """
     weight_daily = trial.suggest_float("weight_daily", 0.0, 1.0, step=0.1)
     weight_weekly = 1.0 - weight_daily
@@ -109,27 +110,8 @@ def reversion_weights_objective(
     valid_stocks = returns_df.dropna(axis=1, how="all").columns
     combined_signals = combined_signals[valid_stocks]
     aligned_returns = returns_df[valid_stocks].reindex(combined_signals.index)
-
     positions_df = combined_signals.shift(1).fillna(0)
-    _, cumulative_return = simulate_strategy(aligned_returns, positions_df)
-    return cumulative_return
 
+    _, metrics = simulate_strategy(aligned_returns, positions_df)
 
-def simulate_strategy(
-    returns_df: pd.DataFrame, positions_df: pd.DataFrame
-) -> Tuple[pd.Series, float]:
-    """
-    Simulates the strategy using positions and calculates cumulative return.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        positions_df (pd.DataFrame): Positions DataFrame with tickers as columns and dates as index.
-
-    Returns:
-        Tuple[pd.Series, float]: A tuple containing:
-            - strategy_returns (pd.Series): Daily returns of the strategy.
-            - cumulative_return (float): Final cumulative return of the strategy.
-    """
-    strategy_returns = (positions_df.shift(1) * returns_df).sum(axis=1)
-    cumulative_return = (strategy_returns + 1).prod() - 1
-    return strategy_returns, cumulative_return
+    return composite_score(metrics)

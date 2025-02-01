@@ -1,11 +1,9 @@
-from pathlib import Path
 from typing import Dict, List, Tuple
-import numpy as np
 import optuna
 import pandas as pd
 
 from reversion.multiscale_reversion import calculate_robust_z_scores
-from utils.performance_metrics import sharpe_ratio
+from utils.performance_metrics import composite_score, simulate_strategy
 from utils import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
@@ -79,57 +77,6 @@ def robust_mean_reversion_objective(trial, returns_df: pd.DataFrame) -> float:
     positions_df = positions_df[valid_stocks]
     aligned_returns = returns_df[valid_stocks].reindex(positions_df.index)
 
-    # Calculate Sharpe Ratio
-    sharpe = sharpe_ratio(aligned_returns)
+    _, metrics = simulate_strategy(aligned_returns, positions_df)
 
-    _, cumulative_return = simulate_strategy(aligned_returns, positions_df)
-
-    composite_score = 0.5 * (sharpe + cumulative_return)
-
-    return composite_score
-
-
-def simulate_strategy(
-    returns_df: pd.DataFrame,
-    dynamic_thresholds: Dict[str, Tuple[float, float]],
-    z_scores_df: pd.DataFrame,
-) -> Tuple[pd.Series, float]:
-    """
-    Simulates the strategy using thresholds and calculates cumulative return.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        dynamic_thresholds (dict): Thresholds for overbought/oversold conditions.
-        z_scores_df (pd.DataFrame): Precomputed Z-scores DataFrame.
-
-    Returns:
-        Tuple[pd.Series, float]: A tuple containing:
-            - strategy_returns (pd.Series): Daily returns of the strategy.
-            - cumulative_return (float): Final cumulative return of the strategy.
-    """
-    # Initialize positions DataFrame with zeros
-    positions = pd.DataFrame(0, index=returns_df.index, columns=returns_df.columns)
-
-    # Vectorized position assignment
-    for ticker in dynamic_thresholds:
-        overbought, oversold = dynamic_thresholds[ticker]
-        z_scores = z_scores_df[ticker]
-
-        # Assign positions based on thresholds
-        positions[ticker] = np.where(
-            z_scores < oversold, 1, np.where(z_scores > overbought, -1, 0)
-        )
-
-    # Ensure no NaN values in positions
-    positions.fillna(0, inplace=True)
-
-    # Shift positions to prevent look-ahead bias
-    shifted_positions = positions.shift(1).fillna(0)
-
-    # Calculate daily strategy returns
-    strategy_returns = (shifted_positions * returns_df).sum(axis=1)
-
-    # Calculate cumulative return
-    cumulative_return = np.exp(strategy_returns.cumsum().iloc[-1]) - 1
-
-    return strategy_returns, cumulative_return
+    return composite_score(metrics)
