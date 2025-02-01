@@ -1,11 +1,15 @@
 # PyPort
 Modern Portfolio Optimization 
 
+# WIP
+- Anomaly detection with Isolation Forest
+- Robust Z-score Mean Reversion
+- DBSCAN clustering for de-correlation
+
 # Latest Changes (January 2025) 
 - Reworked implementation of Nested Clustering (https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961) with vector ops => much faster!
 - Added anomaly detection with Kalman Filter and mean reversion filters
-- Integrated Optuna to dynamically find optimal thresholds for maximizing performance metrics and returns
-- WIP: deep learning models e.g. RL, transformers to integrate forecasting 
+- Integrated Optuna to dynamically find optimal thresholds for maximizing performance metrics and returns 
 
 Daily and Cumulative Returns Statistics
 ![image](https://github.com/user-attachments/assets/10fd55c7-728f-454c-a408-95a8fd17f6d7)
