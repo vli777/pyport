@@ -4,21 +4,21 @@ import numpy as np
 import optuna
 import pandas as pd
 
+from reversion.multiscale_reversion import calculate_robust_z_scores
 from utils.performance_metrics import sharpe_ratio
 from utils import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
-def optimize_mean_reversion(
+def optimize_robust_mean_reversion(
     returns_df: pd.DataFrame,
-    window_range=range(5, 31, 5),
     n_trials: int = 50,
-    n_jobs: int = -1,  # All cores
+    n_jobs: int = -1,
     cache_filename: str = "optuna_cache/reversion_window_multiplier.pkl",
     reoptimize: bool = False,
-) -> dict:
+) -> Tuple[Dict[str, float], optuna.study.Study]:
     """
-    Optimize mean reversion strategy using Optuna and cache results.
+    Optimize the rolling window and z_threshold using Optuna.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
@@ -29,7 +29,7 @@ def optimize_mean_reversion(
         reoptimize (bool): Override to reoptimize.
 
     Returns:
-        dict: Optimized parameters.
+        best parameters and the study object.
     """
     # Load cached study results if available and not reoptimizing
     if not reoptimize:
@@ -38,117 +38,55 @@ def optimize_mean_reversion(
             logger.info("Using cached parameters.")
             return cached_params, None
 
-    # Create Optuna study
     study = optuna.create_study(
-        study_name="mean_reversion_thresholds",
-        direction="maximize",
-        sampler=optuna.samplers.TPESampler(n_startup_trials=max(5, n_trials // 10)),
+        direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
     )
-
-    # Precompute rolling standard deviations for all window sizes
-    rolling_std_cache = {
-        w: returns_df.rolling(window=w, min_periods=1).std().replace(0, np.nan)
-        for w in window_range
-    }
-
-    # Run trials in parallel
     study.optimize(
-        lambda trial: objective(trial, window_range, returns_df, rolling_std_cache),
+        lambda trial: robust_mean_reversion_objective(trial, returns_df),
         n_trials=n_trials,
         n_jobs=n_jobs,
     )
-
-    # Save best parameters to cache
-    if study.best_trial:
-        best_params = study.best_trial.params
-        save_parameters_to_pickle(best_params, cache_filename)
-    else:
-        logger.error("No valid optimization results found.")
-        return None, study  # Avoid returning an invalid best_params
-
+    best_params = (
+        study.best_trial.params
+        if study.best_trial
+        else {"window": 20, "z_threshold": 1.5}
+    )
+    save_parameters_to_pickle(best_params, cache_filename)
     return best_params, study
 
 
-def objective(
-    trial, window_range: range, returns_df: pd.DataFrame, rolling_std_cache: dict
-) -> float:
+def robust_mean_reversion_objective(trial, returns_df: pd.DataFrame) -> float:
     """
-    Objective function for Optuna to optimize mean reversion strategy.
-
-    Args:
-        trial (optuna.trial.Trial): Optuna trial object.
-        window_range (range): Range of windows to test.
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        rolling_std_cache (dict): Precomputed rolling standard deviations.
-
-    Returns:
-        float: Cumulative return or other performance metric.
+    Objective function for optimizing the robust mean reversion parameters.
+    The trial suggests a rolling window size and a z_threshold.
+    The resulting signals are used (with a one-day shift to avoid lookahead)
+    to simulate a simple strategy; the cumulative return and sharpe ratio is maximized.
     """
-    # Extract min, max, and step from the range object
-    window_min, window_max, window_step = (
-        window_range.start,
-        window_range.stop - 1,
-        window_range.step,
+    window = trial.suggest_int("window", 10, 30, step=5)
+    z_threshold = trial.suggest_float("z_threshold", 1.0, 3.0, step=0.1)
+
+    robust_z = calculate_robust_z_scores(returns_df, window)
+    # Generate signals on all tickers at once; result is a DataFrame of {date x ticker}
+    signals_df = robust_z.map(
+        lambda x: 1 if x < -z_threshold else (-1 if x > z_threshold else 0)
     )
 
-    # Define hyperparameter search space
-    window = trial.suggest_int("window", window_min, window_max, step=window_step)
-    overbought_multiplier = trial.suggest_float(
-        "overbought_multiplier", 1.5, 2.5, step=0.05
-    )
-    oversold_multiplier = trial.suggest_float(
-        "oversold_multiplier", -2.5, -1.5, step=0.05
-    )
+    # Shift signals to avoid lookahead bias
+    positions_df = signals_df.shift(1).fillna(0)
 
-    logger.debug(
-        f"Trial {trial.number}: window={window}, overbought_multiplier={overbought_multiplier}, oversold_multiplier={oversold_multiplier}"
-    )
+    # Limit analysis to tickers with sufficient data
+    valid_stocks = returns_df.dropna(axis=1, how="all").columns
+    positions_df = positions_df[valid_stocks]
+    aligned_returns = returns_df[valid_stocks].reindex(positions_df.index)
 
-    # Fetch precomputed rolling standard deviation with error handling
-    rolling_std = rolling_std_cache.get(window)
-    if rolling_std is None:
-        logger.warning(
-            f"Window size {window} not found in rolling_std_cache. Skipping trial."
-        )
-        return -np.inf  # Assign a poor score to invalidate this trial
-
-    # Compute rolling mean only for the selected window
-    rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
-
-    # Calculate Z-scores dynamically based on available history
-    z_score_df = (returns_df - rolling_mean) / rolling_std
-
-    # Ensure only stocks with sufficient non-NaN data are considered
-    min_non_na = int(0.5 * len(returns_df))  # Example: at least 50% non-NaN
-    valid_stocks = returns_df.dropna(axis=1, thresh=min_non_na).columns
-    z_score_df = z_score_df[valid_stocks]
-    returns_df_filtered = returns_df[valid_stocks]
-
-    if z_score_df.empty:
-        logger.warning("No valid stocks after filtering. Skipping trial.")
-        return -np.inf
-
-    # Define dynamic thresholds per stock
-    dynamic_thresholds = {
-        ticker: (
-            overbought_multiplier * z_score_df[ticker].std(skipna=True),
-            oversold_multiplier * z_score_df[ticker].std(skipna=True),
-        )
-        for ticker in valid_stocks
-    }
-
-    # Simulate strategy performance
-    strategy_returns, cumulative_return = simulate_strategy(
-        returns_df_filtered, dynamic_thresholds, z_score_df
-    )
     # Calculate Sharpe Ratio
-    sharpe = sharpe_ratio(strategy_returns)
+    sharpe = sharpe_ratio(aligned_returns)
 
-    logger.debug(
-        f"Trial {trial.number}: Cumulative Return={cumulative_return} Sharpe Ratio={sharpe}"
-    )
+    _, cumulative_return = simulate_strategy(aligned_returns, positions_df)
 
-    return 0.5 * (sharpe + cumulative_return)
+    composite_score = 0.5 * (sharpe + cumulative_return)
+
+    return composite_score
 
 
 def simulate_strategy(
@@ -195,53 +133,3 @@ def simulate_strategy(
     cumulative_return = np.exp(strategy_returns.cumsum().iloc[-1]) - 1
 
     return strategy_returns, cumulative_return
-
-
-def scale_thresholds_per_ticker(
-    returns_df: pd.DataFrame,
-    base_overbought_multiplier: float,
-    base_oversold_multiplier: float,
-    rolling_std_cache: Dict[int, pd.DataFrame],
-    window: int,
-    alpha: float = 0.42,
-) -> Dict[str, Tuple[float, float]]:
-    """
-    Hybrid approach: Uses historical rolling std but dynamically adjusts for recent volatility.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        base_overbought_multiplier (float): Optimized global overbought Z-score multiplier.
-        base_oversold_multiplier (float): Optimized global oversold Z-score multiplier.
-        rolling_std_cache (dict): Precomputed rolling std for different windows.
-        window (int): Optimized rolling window size.
-        alpha (float): Weight for historical std (higher = more stable, lower = more reactive).
-
-    Returns:
-        dict: Adjusted thresholds per ticker.
-    """
-    # Use precomputed rolling standard deviation (historical)
-    historical_rolling_std = rolling_std_cache[window]
-
-    # Compute recent volatility using an exponentially weighted moving standard deviation (EWMSD)
-    recent_rolling_std = returns_df.ewm(span=window, adjust=False).std()
-
-    # Blend historical and recent volatility based on alpha weighting
-    blended_std = alpha * historical_rolling_std + (1 - alpha) * recent_rolling_std
-
-    # Compute per-ticker deviations
-    std_dev_per_ticker = blended_std.iloc[
-        -1
-    ]  # Use latest period's blended standard deviation
-    global_mean_std = std_dev_per_ticker.mean()  # Average std across all tickers
-
-    # Scale thresholds dynamically
-    scaled_thresholds = {
-        ticker: (
-            base_overbought_multiplier
-            * (1 + std_dev_per_ticker[ticker] / global_mean_std),
-            base_oversold_multiplier
-            * (1 + std_dev_per_ticker[ticker] / global_mean_std),
-        )
-        for ticker in returns_df.columns
-    }
-    return scaled_thresholds

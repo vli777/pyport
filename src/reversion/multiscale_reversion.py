@@ -3,17 +3,18 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from reversion.optimize_reversion import optimize_mean_reversion
-from reversion.zscore_plot import plot_z_scores_grid
+from reversion.optimize_reversion import optimize_robust_mean_reversion
+from reversion.zscore_plot import plot_robust_z_scores
 from utils import logger
-from utils.portfolio_utils import resample_returns
 
 
 def apply_mean_reversion_multiscale(
     returns_df: pd.DataFrame, plot: bool = False, n_jobs: int = -1, n_trials: int = 50
 ) -> Dict[str, Dict[str, Dict[str, int]]]:
     """
-    Apply mean reversion strategy across multiple time scales with dynamic rolling windows.
+    Apply a robust mean reversion strategy over multiple timeframes.
+    For each timeframe (daily and weekly), optimize the rolling window and
+    z_threshold, compute robust z-scores, and then generate buy/sell signals.
 
     Args:
         returns_df (pd.DataFrame): Daily log returns DataFrame.
@@ -23,104 +24,74 @@ def apply_mean_reversion_multiscale(
 
     Returns:
         Dict[str, Dict[str, Dict[str, int]]]:
-            - Signals structured by time scale.
+        Dict with keys 'daily' and 'weekly', each mapping tickers to a {date: signal} dict.
     """
-    resampled = resample_returns(returns_df)  # Assume resampling function exists
     signals = {}
 
-    for timeframe, returns in [("daily", returns_df), ("weekly", resampled["weekly"])]:
-        logger.info(f"Optimizing for {timeframe} data...")
+    # Daily signals
+    logger.info("Optimizing robust mean reversion for daily data...")
+    best_params_daily, _ = optimize_robust_mean_reversion(
+        returns_df, n_trials=n_trials, n_jobs=n_jobs
+    )
+    window_daily = best_params_daily.get("window", 20)
+    z_threshold_daily = best_params_daily.get("z_threshold", 1.5)
+    robust_z_daily = calculate_robust_z_scores(returns_df, window_daily)
 
-        # Optimize parameters
-        best_params, study = optimize_mean_reversion(
-            returns_df=returns,
-            window_range=range(5, 31, 5) if timeframe == "daily" else range(2, 9),
-            cache_filename=f"optuna_cache/reversion_window_multiplier_{timeframe}.pkl",
-            n_trials=n_trials,
-            n_jobs=n_jobs,
-        )
+    if plot:
+        plot_robust_z_scores(
+            robust_z_daily, z_threshold_daily
+        )  
+    signals["daily"] = generate_reversion_signals(robust_z_daily, z_threshold_daily)
 
-        if best_params is None:
-            logger.error("Optimization failed or no parameters found.")
-            best_params = {
-                "window": 20,
-                "overbought_multiplier": 2.0,
-                "oversold_multiplier": -2.0,
-            }
-        else:
-            logger.info(
-                f"{timeframe.capitalize()} Optimized reversion parameters: {best_params}"
-            )
+    # Weekly signals: resample returns (using last observation of the week)
+    weekly_returns = returns_df.resample("W").last()
+    logger.info("Optimizing robust mean reversion for weekly data...")
+    best_params_weekly, _ = optimize_robust_mean_reversion(
+        weekly_returns, n_trials=n_trials, n_jobs=n_jobs
+    )
+    window_weekly = best_params_weekly.get("window", 4)
+    z_threshold_weekly = best_params_weekly.get("z_threshold", 1.5)
+    robust_z_weekly = calculate_robust_z_scores(weekly_returns, window_weekly)
 
-        # Calculate Z-scores and thresholds
-        window = best_params.get("window", 20)
-        overbought_multiplier = best_params.get("overbought_multiplier", 2.0)
-        oversold_multiplier = best_params.get("oversold_multiplier", -2.0)
+    if plot:
+        plot_robust_z_scores(robust_z_weekly, z_threshold_weekly)
 
-        z_score_df = calculate_z_scores(returns, window)
-        dynamic_thresholds = get_dynamic_thresholds(
-            z_score_df, overbought_multiplier, oversold_multiplier
-        )
-
-        if plot:
-            plot_z_scores_grid(z_score_df, dynamic_thresholds)
-
-        # Generate signals
-        signals[timeframe] = reversion_signals_filter(z_score_df, dynamic_thresholds)
+    signals["weekly"] = generate_reversion_signals(robust_z_weekly, z_threshold_weekly)
 
     return signals
 
 
-def calculate_z_scores(returns_df: pd.DataFrame, window: int) -> pd.DataFrame:
-    """Calculate rolling Z-scores while handling different stock histories."""
-    rolling_mean = returns_df.rolling(window=window, min_periods=1).mean()
-    rolling_std = returns_df.rolling(window=window, min_periods=1).std()
-
-    # Replace zero standard deviation to prevent division errors
-    rolling_std.replace(0, np.nan, inplace=True)
-
-    return (returns_df - rolling_mean) / rolling_std
-
-
-def get_dynamic_thresholds(
-    z_score_df: pd.DataFrame, overbought_multiplier: float, oversold_multiplier: float
-) -> Dict[str, Tuple[float, float]]:
-    """Compute dynamic overbought/oversold thresholds per stock."""
-    return {
-        ticker: (
-            overbought_multiplier * z_score_df[ticker].std(skipna=True),
-            oversold_multiplier * z_score_df[ticker].std(skipna=True),
-        )
-        for ticker in z_score_df.columns
-    }
+def calculate_robust_z_scores(returns_df: pd.DataFrame, window: int) -> pd.DataFrame:
+    """
+    Calculate rolling robust z-scores using the rolling median and MAD.
+    The MAD is scaled by 1.4826 to approximate the standard deviation.
+    """
+    rolling_median = returns_df.rolling(window=window, min_periods=1).median()
+    # Rolling MAD: use a lambda to compute median absolute deviation over the window
+    mad = returns_df.rolling(window=window, min_periods=1).apply(
+        lambda x: np.median(np.abs(x - np.median(x))), raw=True
+    )
+    # Avoid division by zero by replacing zeros in mad
+    mad.replace(0, np.nan, inplace=True)
+    robust_z = (returns_df - rolling_median) / (mad * 1.4826)
+    return robust_z.fillna(0)
 
 
-def reversion_signals_filter(
-    z_score_df: pd.DataFrame, dynamic_thresholds: Dict[str, Tuple[float, float]]
+def generate_reversion_signals(
+    robust_z: pd.DataFrame, z_threshold: float
 ) -> Dict[str, Dict[str, int]]:
     """
-    Generate mean reversion signals based on Z-Score and dynamic thresholds.
-
-    Args:
-        z_score_df (pd.DataFrame): Z-Score DataFrame with tickers as columns and dates as index.
-        dynamic_thresholds (dict): {ticker: (overbought_threshold, oversold_threshold)}
-
-    Returns:
-        dict: {ticker: {date: signal}}
+    Generate buy/sell signals based on robust z-scores.
+    For each ticker, assign:
+      - +1 (buy) if z-score < -z_threshold (oversold)
+      - -1 (sell) if z-score > z_threshold (overbought)
+      -  0 otherwise
+    Returns a dict mapping tickers to a dict of {date: signal}.
     """
     signals = {}
-
-    for ticker in z_score_df.columns:
-        overbought, oversold = dynamic_thresholds.get(ticker, (2.0, -2.0))
-
-        # Generate buy/sell signals while preserving stock history
-        signals[ticker] = (
-            (
-                (z_score_df[ticker] < oversold).astype(int)  # Buy
-                - (z_score_df[ticker] > overbought).astype(int)  # Sell
-            )
-            .dropna()
-            .to_dict()
-        )  # Convert to dict with date as key
-
+    for ticker in robust_z.columns:
+        signal_series = robust_z[ticker].apply(
+            lambda x: 1 if x < -z_threshold else (-1 if x > z_threshold else 0)
+        )
+        signals[ticker] = signal_series.dropna().to_dict()
     return signals
