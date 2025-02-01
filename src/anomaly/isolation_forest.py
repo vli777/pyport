@@ -1,40 +1,54 @@
 from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
+from typing import Tuple
 
-def apply_isolation_forest(returns_series: pd.Series, threshold: float):
+
+def apply_isolation_forest(
+    returns_series: pd.Series, threshold: float = 1.5, contamination: float = "auto"
+) -> Tuple[pd.Series, pd.Series]:
     """
-    Applies IsolationForest fit to the data and flags points as anomalous if their 
-    decision function scores fall well below the norm.
+    Applies IsolationForest to detect anomalies in a stock's return series.
 
     Args:
         returns_series (pd.Series): Series of returns for a single stock.
-        threshold (float): Multiplier for the standard deviation of decision function scores.
-                           (Typical tuned values might be in the range 1-3.)
+        threshold (float): Multiplier for standard deviation below the median anomaly score.
+                           Higher values make anomaly detection stricter.
+        contamination (float): Expected fraction of anomalies (default is 'auto').
 
     Returns:
-        Tuple[pd.Series, np.ndarray]: A boolean series of anomaly flags (True indicates an anomaly)
-                                       and the corresponding anomaly scores from the IsolationForest.
+        Tuple[pd.Series, pd.Series]:
+            - A boolean series of anomaly flags (True = anomaly).
+            - A series of anomaly scores (lower = more likely to be an anomaly).
     """
-    # Reshape the returns data to 2D (IsolationForest expects a 2D array)
+    if returns_series.isna().all():
+        raise ValueError("All values in returns_series are NaN.")
+
+    # Convert to 2D array for Isolation Forest
     X = returns_series.values.reshape(-1, 1)
 
-    # Fit IsolationForest (a modern, ensemble-based anomaly detector)
-    clf = IsolationForest(contamination='auto', random_state=42)
-    clf.fit(X)
+    # Scale data to avoid biasing IsolationForest due to magnitude differences
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
 
-    # Obtain anomaly scores.
-    # Note: Higher decision_function scores imply more normal observations,
-    # while lower scores indicate potential anomalies.
-    scores = clf.decision_function(X)
+    # Fit Isolation Forest
+    clf = IsolationForest(
+        n_estimators=100, contamination=contamination, random_state=42
+    )
+    clf.fit(X_scaled)
 
-    # Compute a cutoff: anomalies are defined as points whose score falls below
-    # (median - threshold * standard_deviation). Adjust the threshold multiplier as needed.
+    # Get anomaly scores (higher scores = more normal, lower = more anomalous)
+    scores = clf.decision_function(X_scaled)
+
+    # Compute threshold: median - (threshold * standard deviation)
     median_score = np.median(scores)
     std_score = np.std(scores)
-    cutoff = median_score - threshold * std_score
+    anomaly_cutoff = median_score - threshold * std_score
 
     # Flag anomalies
-    anomaly_flags = scores < cutoff
+    anomaly_flags = scores < anomaly_cutoff
 
-    return pd.Series(anomaly_flags, index=returns_series.index), scores
+    return pd.Series(anomaly_flags, index=returns_series.index), pd.Series(
+        scores, index=returns_series.index
+    )

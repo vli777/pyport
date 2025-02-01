@@ -1,7 +1,7 @@
 import pickle
 
-file_name = "epsilon"
-with open(f"optuna_cache/{file_name}.pkl", "rb") as f:
+file_path = "optuna_cache/anomaly_thresholds.pkl"
+with open(file_path, "rb") as f:
     thresholds = pickle.load(f)
 
 print(thresholds)
