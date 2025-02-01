@@ -13,13 +13,11 @@ from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
 from anomaly.anomaly_detection import remove_anomalous_stocks
-from correlation.decorrelation import filter_correlated_groups
 from reversion.multiscale_reversion import apply_mean_reversion_multiscale
 from reversion.optimize_timescale_weights import find_optimal_weights
 from reversion.recommendation import generate_reversion_recommendations
-from reversion.optimize_inclusion import find_optimal_inclusion_pct
 from boxplot import generate_boxplot_data
-from utils.performance_metrics import calculate_performance_metrics
+from correlation.tsne_dbscan import filter_correlated_groups_dbscan
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -162,8 +160,8 @@ def run_pipeline(
             optimal_weights = find_optimal_weights(
                 reversion_signals, returns_df, n_trials=50
             )
-            print(f"Optimal Weights: {optimal_weights}")            
-            
+            print(f"Optimal Weights: {optimal_weights}")
+
             # Generate Initial Recommendations
             final_recommendations = generate_reversion_recommendations(
                 reversion_signals, optimal_weights, include_pct=0.2, exclude_pct=0.2
@@ -189,26 +187,11 @@ def run_pipeline(
             # Compute weighted signal strength
             weight_daily = optimal_weights.get("weight_daily", 0.5)
             weight_weekly = 1.0 - weight_daily
-            final_signals = (
-                weight_daily * daily_signals + weight_weekly * weekly_signals
-            )
-
-            # Optimize Inclusion/Exclusion Thresholds
-            optimal_inclusion_thresholds = find_optimal_inclusion_pct(
-                final_signals, returns_df, n_trials=50
-            )
-            print(f"Optimal Inclusion Thresholds: {optimal_inclusion_thresholds}")
 
             # Generate Final Recommendations with optimized thresholds
             reversion_recommendations = generate_reversion_recommendations(
-                reversion_signals,
-                optimal_weights,
-                include_pct=optimal_inclusion_thresholds.get(
-                    "include_threshold_pct", 0.2
-                ),
-                exclude_pct=optimal_inclusion_thresholds.get(
-                    "exclude_threshold_pct", 0.2
-                ),
+                reversion_signals=reversion_signals,
+                optimal_weights=optimal_weights,
             )
 
             # Modify Trading Universe
@@ -236,29 +219,13 @@ def run_pipeline(
         # Apply correlation filter (if enabled)
         if config.use_correlation_filter and valid_symbols:
             try:
-                # Calculate performance metrics
-                performance_metrics = calculate_performance_metrics(
-                    returns_df[valid_symbols], config.risk_free_rate
-                )
-
-                # Load market returns
-                market_returns = calculate_returns(
-                    load_data(
-                        all_symbols=["SPY"], start_date=start_long, end_date=end_long
-                    )
-                )
-
-                # Filter decorrelated tickers
-                decorrelated_tickers = filter_correlated_groups(
+                decorrelated_tickers = filter_correlated_groups_dbscan(
                     returns_df=returns_df[valid_symbols],
-                    performance_df=performance_metrics,
-                    market_returns=market_returns,
-                    correlation_threshold=None,
-                    risk_free_rate=config.risk_free_rate,
-                    sharpe_threshold=0.005,
+                    risk_free_rate=config.risk_free_rate,                    
+                    eps=0.2,
+                    min_samples=2,
+                    top_n_per_cluster=config.top_n_candidates,
                     plot=config.plot_clustering,
-                    top_n=config.top_n_candidates,
-                    n_jobs=-1,
                     cache_filename="optuna_cache/correlation_thresholds.pkl",
                     reoptimize=False,
                 )
