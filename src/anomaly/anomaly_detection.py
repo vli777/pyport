@@ -6,6 +6,7 @@ from optuna.pruners import MedianPruner, NopPruner
 from optuna.samplers import TPESampler
 from joblib import Parallel, delayed
 import json
+from pathlib import Path
 
 from anomaly.plot_anomalies import plot_anomalies
 from anomaly.isolation_forest import apply_isolation_forest
@@ -14,7 +15,8 @@ from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_
 
 
 # Load the safe reference stocks
-with open("safe_reference.json", "r") as f:
+safe_reference_file_path = Path(__file__).parent / "safe_reference.json"
+with safe_reference_file_path.open("r") as f:
     reference_stocks = json.load(f)
 
 # Ensure all tickers are in uppercase
