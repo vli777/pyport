@@ -6,7 +6,7 @@ def calculate_composite_signal(
     reversion_signals: Dict[str, Dict[str, Dict[str, int]]],
     weight_daily: float = 0.5,
     weight_weekly: float = 0.5,
-):
+) -> Dict[str, float]:
     """
     Compute a composite stat arb signal from reversion signals.
     For each ticker, use the latest available signal from the daily and weekly signals.
@@ -53,7 +53,7 @@ def adjust_allocation_with_stat_arb(
     composite_signals: Dict[str, float],
     alpha: float = 0.2,
     allow_short: bool = False,
-):
+) -> pd.Series:
     """
     Adjust the baseline allocation weights using the composite stat arb signal.
     The adjustment is multiplicative:
