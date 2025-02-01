@@ -161,7 +161,7 @@ def optimize_threshold_for_ticker(
 
     def objective(trial):
         # Choose a threshold in a realistic range.
-        threshold = trial.suggest_float("threshold", 7.0, 12.0, step=0.1)
+        threshold = trial.suggest_float("threshold", 1.0, 3.0, step=0.1)
         anomaly_flags, _ = apply_isolation_forest(returns_series, threshold=threshold)
         num_anomalies = anomaly_flags.sum()
 
