@@ -3,8 +3,8 @@ import optuna
 import pandas as pd
 
 from reversion.multiscale_reversion import calculate_robust_z_scores
-from utils.performance_metrics import composite_score, simulate_strategy
-from utils import logger
+from reversion.reversion_utils import composite_score, simulate_strategy
+from utils.logger import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 

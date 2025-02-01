@@ -2,12 +2,9 @@ from typing import Dict, List, Tuple
 import optuna
 import pandas as pd
 
-from utils.performance_metrics import composite_score, simulate_strategy
+from reversion.reversion_utils import composite_score, simulate_strategy
 from utils.logger import logger
-from utils.caching_utils import (
-    load_parameters_from_pickle,
-    save_parameters_to_pickle,
-)
+from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
 def find_optimal_weights(

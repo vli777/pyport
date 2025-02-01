@@ -5,7 +5,7 @@ import pandas as pd
 
 from reversion.optimize_reversion import optimize_robust_mean_reversion
 from reversion.zscore_plot import plot_robust_z_scores
-from utils import logger
+from utils.logger import logger
 
 
 def apply_mean_reversion_multiscale(
@@ -38,9 +38,7 @@ def apply_mean_reversion_multiscale(
     robust_z_daily = calculate_robust_z_scores(returns_df, window_daily)
 
     if plot:
-        plot_robust_z_scores(
-            robust_z_daily, z_threshold_daily
-        )  
+        plot_robust_z_scores(robust_z_daily, z_threshold_daily)
     signals["daily"] = generate_reversion_signals(robust_z_daily, z_threshold_daily)
 
     # Weekly signals: resample returns (using last observation of the week)
