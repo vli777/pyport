@@ -28,6 +28,82 @@ def sharpe_ratio(
     return sharpe_r
 
 
+def kappa_ratio(returns: pd.Series, order: int = 3, mar: float = 0.0) -> float:
+    """
+    Calculate the Kappa ratio of a return series.
+    Kappa_n = (mean(returns - MAR)) / (LPM_n)^(1/n)
+    where LPM_n is the lower partial moment of order n (only returns below MAR contribute).
+
+    Args:
+        returns (pd.Series): Daily strategy returns.
+        order (int): The order of the Kappa ratio (default 3, i.e. Kappa-3).
+        mar (float): Minimum acceptable return (default 0).
+
+    Returns:
+        float: Kappa ratio. Returns np.inf if there is no downside risk.
+    """
+    excess_returns = returns - mar
+    mean_excess = excess_returns.mean()
+    # Compute lower partial moment (only include negative deviations)
+    negative_returns = excess_returns[excess_returns < 0]
+    if len(negative_returns) == 0:
+        return np.inf
+    lpm = np.mean(np.abs(negative_returns) ** order)
+    # Avoid division by zero
+    if lpm == 0:
+        return np.inf
+    return mean_excess / (lpm ** (1 / order))
+
+
+def simulate_strategy(
+    returns_df: pd.DataFrame, positions_df: pd.DataFrame
+) -> Tuple[pd.Series, dict]:
+    """
+    Simulates the strategy using positions and calculates performance metrics.
+    Positions are assumed to be shifted (to avoid lookahead bias).
+
+    Args:
+        returns_df (pd.DataFrame): Daily log returns DataFrame.
+        positions_df (pd.DataFrame): Positions DataFrame (tickers as columns, dates as index).
+
+    Returns:
+        tuple: (strategy_returns, metrics)
+            strategy_returns (pd.Series): Daily strategy returns.
+            metrics (dict): Dictionary with cumulative_return, sharpe, and kappa.
+    """
+    # Shift positions to avoid lookahead bias
+    strategy_returns = (positions_df.shift(1) * returns_df).sum(axis=1).fillna(0)
+    cumulative_return = (strategy_returns + 1).prod() - 1
+    sr = sharpe_ratio(strategy_returns)
+    kp = kappa_ratio(strategy_returns, order=3)
+    metrics = {"cumulative_return": cumulative_return, "sharpe": sr, "kappa": kp}
+    return strategy_returns, metrics
+
+
+def composite_score(metrics: dict, weights: dict = None) -> float:
+    """
+    Combines performance metrics into a composite score.
+
+    By default, the composite score is a weighted sum:
+      40% cumulative_return + 30% sharpe_ratio + 30% kappa_ratio.
+
+    Args:
+        metrics (dict): Dictionary with keys "cumulative_return", "sharpe", "kappa".
+        weights (dict, optional): Weights for each metric. Defaults to {"cumulative_return": 0.4, "sharpe": 0.3, "kappa": 0.3}.
+
+    Returns:
+        float: Composite performance score.
+    """
+    if weights is None:
+        weights = {"cumulative_return": 0.4, "sharpe": 0.3, "kappa": 0.3}
+    score = (
+        weights["cumulative_return"] * metrics["cumulative_return"]
+        + weights["sharpe"] * metrics["sharpe"]
+        + weights["kappa"] * metrics["kappa"]
+    )
+    return score
+
+
 def calculate_performance_metrics(
     returns_df: pd.DataFrame, risk_free_rate: float = 0.0
 ):
