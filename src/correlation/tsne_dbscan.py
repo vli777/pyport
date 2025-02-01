@@ -1,0 +1,139 @@
+import numpy as np
+import pandas as pd
+from sklearn.cluster import DBSCAN
+from sklearn.manifold import TSNE
+from sklearn.covariance import LedoitWolf
+import plotly.express as px
+
+from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
+from utils.performance_metrics import kappa_ratio, sharpe_ratio
+
+
+def filter_correlated_groups_dbscan(
+    returns_df: pd.DataFrame,
+    risk_free_rate: float = 0.0,
+    eps: float = 0.2,
+    min_samples: int = 2,
+    top_n_per_cluster: int = 1,
+    plot: bool = False,
+    cache_filename: str = "optuna_cache/dbscan_params.pkl",
+    reoptimize: bool = False,
+) -> list:
+    """
+    Uses DBSCAN to cluster stocks based on the distance (1 - correlation) matrix.
+    Then, for each cluster, selects the top performing stock(s) based on a composite
+    performance metric computed internally.
+
+    Args:
+        returns_df (pd.DataFrame): DataFrame with dates as index and stocks as columns.
+        risk_free_rate (float): Risk-free rate for performance metric calculation.
+        eps (float): The eps parameter for DBSCAN (distance threshold).
+        min_samples (int): Minimum samples for a core point in DBSCAN.
+        top_n_per_cluster (int): How many top stocks to select from each cluster.
+        plot (bool): If True, display a t-SNE visualization of clusters.
+        cache_filename (str): File path to cache optimized DBSCAN parameters.
+        reoptimize (bool): If True, force re-optimization (or re-calculation) of eps.
+
+    Returns:
+        list: A list of selected ticker symbols after decorrelation.
+    """
+    # Optionally load cached eps (if optimizing and caching)
+    cached_params = load_parameters_from_pickle(cache_filename)
+    if not reoptimize and "eps" in cached_params:
+        eps = cached_params["eps"]
+    else:
+        cached_params["eps"] = eps
+        save_parameters_to_pickle(cached_params, cache_filename)
+
+    # Compute correlation matrix (robust if needed)
+    if returns_df.shape[1] > 50:
+        corr_matrix = compute_lw_correlation(returns_df)
+    else:
+        corr_matrix = returns_df.corr().abs()
+        np.fill_diagonal(corr_matrix.values, 1.0)
+
+    # Convert correlation to distance: distance = 1 - correlation.
+    distance_matrix = 1 - corr_matrix
+
+    # Cluster stocks with DBSCAN using the precomputed distance matrix.
+    dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
+    cluster_labels = dbscan.fit_predict(distance_matrix)
+
+    # Group tickers by cluster label.
+    clusters = {}
+    for ticker, label in zip(returns_df.columns, cluster_labels):
+        clusters.setdefault(label, []).append(ticker)
+
+    # Compute performance metrics internally.
+    perf_series = compute_performance_metrics(returns_df, risk_free_rate)
+
+    # Select best-performing ticker(s) in each cluster.
+    selected_tickers = []
+    for label, tickers in clusters.items():
+        # If label == -1 (noise), simply include them.
+        if label == -1:
+            selected_tickers.extend(tickers)
+        else:
+            # From each cluster, sort by composite score.
+            group_perf = perf_series[tickers].sort_values(ascending=False)
+            top_candidates = group_perf.index.tolist()[:top_n_per_cluster]
+            selected_tickers.extend(top_candidates)
+
+    # Optional t-SNE visualization.
+    if plot:
+        tsne = TSNE(n_components=2, random_state=42)
+        embeddings = tsne.fit_transform(returns_df.T)
+        tsne_df = pd.DataFrame(embeddings, columns=["x", "y"])
+        tsne_df["ticker"] = returns_df.columns
+        tsne_df["cluster"] = cluster_labels.astype(str)
+        fig = px.scatter(
+            tsne_df,
+            x="x",
+            y="y",
+            color="cluster",
+            hover_data=["ticker"],
+            title="t-SNE Visualization of Stock Clusters (DBSCAN)",
+        )
+        fig.show()
+
+    return selected_tickers
+
+
+def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Computes a robust correlation matrix using the Ledoit-Wolf covariance estimate.
+
+    Args:
+        df (pd.DataFrame): DataFrame of returns with stocks as columns.
+
+    Returns:
+        pd.DataFrame: Correlation matrix with stocks as both index and columns.
+    """
+    lw = LedoitWolf()
+    covariance = lw.fit(df).covariance_
+    std_dev = np.sqrt(np.diag(covariance))
+    corr = covariance / np.outer(std_dev, std_dev)
+    np.fill_diagonal(corr, 1.0)
+    return pd.DataFrame(corr, index=df.columns, columns=df.columns)
+
+
+def compute_performance_metrics(
+    returns_df: pd.DataFrame, risk_free_rate: float
+) -> dict[str, float]:
+    """
+    For each ticker, compute cumulative return, Sharpe ratio, and Kappa ratio,
+    and then a composite metric combining these (e.g. 40% cumulative return,
+    30% Sharpe, 30% Kappa).
+    """
+    metrics = {}
+    for ticker in returns_df.columns:
+        ticker_returns = returns_df[ticker].dropna()
+        if ticker_returns.empty:
+            continue
+        cumulative_return = (ticker_returns + 1).prod() - 1
+        sr = sharpe_ratio(ticker_returns, risk_free_rate)
+        kp = kappa_ratio(ticker_returns, order=3)
+        # Composite score: adjust weights as needed.
+        composite = 0.4 * cumulative_return + 0.3 * sr + 0.3 * kp
+        metrics[ticker] = composite
+    return pd.DataFrame(metrics).T
