@@ -9,7 +9,7 @@ def plot_optimization_summary(optimization_summary: List[Dict[str, float]]):
     Visualizes the optimization summary using a bar and line chart.
     """
     df = pd.DataFrame(optimization_summary)
-    df.sort_values("threshold", inplace=True, ascending=True)
+    df.sort_values("stock", inplace=True, ascending=True)
 
     fig = make_subplots(
         rows=2,
@@ -20,9 +20,28 @@ def plot_optimization_summary(optimization_summary: List[Dict[str, float]]):
         specs=[[{}], [{"secondary_y": True}]],
     )
 
-    fig.add_trace(go.Bar(x=df["stock"], y=df["threshold"], name="Threshold"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df["stock"], y=df["best_score"], mode="lines+markers", name="Best Score"), row=2, col=1, secondary_y=False)
-    fig.add_trace(go.Scatter(x=df["stock"], y=df["anomaly_fraction"], mode="lines+markers", name="Anomaly Fraction"), row=2, col=1, secondary_y=True)
+    fig.add_trace(
+        go.Bar(x=df["stock"], y=df["threshold"], name="Threshold"), row=1, col=1
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["stock"], y=df["best_score"], mode="lines+markers", name="Best Score"
+        ),
+        row=2,
+        col=1,
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df["stock"],
+            y=df["anomaly_fraction"],
+            mode="lines+markers",
+            name="Anomaly Fraction",
+        ),
+        row=2,
+        col=1,
+        secondary_y=True,
+    )
 
     fig.update_xaxes(title_text="Stock Ticker", row=2, col=1)
     fig.update_yaxes(title_text="Threshold", row=1, col=1)
