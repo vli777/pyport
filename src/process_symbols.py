@@ -62,6 +62,16 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     df_existing = pd.read_parquet(pq_file)
     df_existing = flatten_columns(df_existing, symbol)
     last_date = df_existing.index.max() if not df_existing.empty else None
+    first_date = df_existing.index.min() if not df_existing.empty else None
+    
+    # 5) Prepend missing historical data
+    if first_date is None or start_ts < first_date:
+        logger.info(f"{symbol}: Fetching missing history from {start_ts} to {first_date}.")
+        df_history = get_stock_data(symbol, start_date=start_ts, end_date=first_date)
+        df_history = flatten_columns(df_history, symbol)
+
+        if not df_history.empty:
+            df_existing = pd.concat([df_history, df_existing]).sort_index().drop_duplicates()
 
     # 5) Handle forced download
     if download:
