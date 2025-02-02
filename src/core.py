@@ -131,35 +131,30 @@ def run_pipeline(
 
         if config.use_anomaly_filter:
             logger.debug("Applying anomaly filter.")
-            filtered_returns_df, removed_anomalous, thresholds = (
-                remove_anomalous_stocks(
-                    returns_df=returns_df,
-                    cache_filename="optuna_cache/anomaly_thresholds.pkl",
-                    reoptimize=False,
-                    plot=config.plot_anomalies,
-                )
+            valid_symbols = remove_anomalous_stocks(
+                returns_df=returns_df,
+                cache_filename="optuna_cache/anomaly_thresholds.pkl",
+                reoptimize=False,
+                plot=config.plot_anomalies,
+                contamination=0.02,
+                max_anomaly_fraction=0.02,
             )
-            if removed_anomalous:
-                logger.info(f"Anomalous symbols removed: {removed_anomalous}")
+            filtered_returns_df = returns_df[valid_symbols]
         else:
-            logger.debug("Skipping anomaly filter.")
-            filtered_returns_df = returns_df  # Ensure this is always defined
+            filtered_returns_df = returns_df
 
         # Apply decorrelation filter if enabled
         if config.use_decorrelation:
             logger.info("Filtering correlated assets...")
-            valid_symbols = filter_correlated_assets(
-                filtered_returns_df, config
-            )  # Use filtered data
+            valid_symbols = filter_correlated_assets(filtered_returns_df, config)
 
-            # Ensure only valid symbols that exist in the filtered DataFrame are kept
             valid_symbols = [
                 symbol
                 for symbol in valid_symbols
                 if symbol in filtered_returns_df.columns
             ]
 
-            return filtered_returns_df[valid_symbols]  # Return only selected symbols
+            return filtered_returns_df[valid_symbols]
 
         return filtered_returns_df
 
