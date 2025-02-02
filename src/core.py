@@ -136,8 +136,6 @@ def run_pipeline(
                 cache_filename="optuna_cache/anomaly_thresholds.pkl",
                 reoptimize=False,
                 plot=config.plot_anomalies,
-                contamination=0.02,
-                max_anomaly_fraction=0.02,
             )
             filtered_returns_df = returns_df[valid_symbols]
         else:

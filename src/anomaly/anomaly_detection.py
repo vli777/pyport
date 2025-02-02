@@ -11,6 +11,7 @@ from pathlib import Path
 from anomaly.plot_anomalies import plot_anomalies
 from anomaly.isolation_forest import apply_isolation_forest
 from anomaly.plot_optimization_summary import plot_optimization_summary
+from anomaly.anomaly_utils import detect_meme_stocks
 from utils.performance_metrics import kappa_ratio
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
@@ -30,10 +31,10 @@ def remove_anomalous_stocks(
     cache_filename: str = "optuna_cache/anomaly_thresholds.pkl",
     reoptimize: bool = False,  # Force re-optimization even if cache exists.
     global_filter: bool = False,  # If True, use one threshold for all stocks.
-    max_anomaly_fraction: float = 0.02,  # Maximum allowed fraction of anomalies.
+    max_anomaly_fraction: float = 0.03,  # Maximum allowed fraction of anomalies.
     contamination: Union[
-        float, str
-    ] = 0.02,  # Contamination value for Isolation Forest.
+        float, str, None
+    ] = None,  # Contamination value for Isolation Forest.
 ) -> List[str]:
     """
     Filters out stocks with anomalous returns and returns a list of valid tickers.
@@ -57,6 +58,21 @@ def remove_anomalous_stocks(
     """
     if weight_dict is None:
         weight_dict = {"kappa": 0.8, "stability": 0.2}
+
+    if contamination is None:
+        meme_candidates = detect_meme_stocks(returns_df)
+        # Adaptive contamination: Adjust based on % of flagged stocks
+        contamination = min(
+            0.02 + len(meme_candidates) / len(returns_df.columns) * 0.03, 0.05
+        )
+    elif contamination == "auto":
+        # If explicitly set to "auto", allow it
+        contamination = "auto"
+    else:
+        # Ensure it's a float within (0, 0.5]
+        contamination = float(contamination)
+        if not (0 < contamination <= 0.5):
+            raise ValueError("contamination must be in the range (0, 0.5] or 'auto'.")
 
     # Load cached ticker info if available (cache is a dict keyed by ticker).
     cache: Dict[str, dict] = {}
