@@ -62,37 +62,50 @@ def get_stock_data(symbol, start_date, end_date):
 def update_store(data_path, symbol, start_date, end_date):
     """
     Reads existing data for `symbol` from a Parquet file (if present).
-    Fetches new data from Yahoo Finance for the date range.
-    Merges old and new data, drops duplicates.
+    Fetches missing data from Yahoo Finance if required (both past and future data).
+    Merges old and new data, ensuring completeness.
     Writes the combined dataset back to a Parquet file.
-
     Returns:
         pd.DataFrame: The updated DataFrame (in memory).
     """
-    # 1) Locate the Parquet file
     pq_filename = Path(data_path) / f"{symbol}.parquet"
 
-    # 2) Load existing data if file exists
+    # Load existing data if available
     if pq_filename.is_file():
         old_df = pd.read_parquet(pq_filename)
+        if not old_df.empty:
+            earliest_stored_date = old_df.index.min().date()
+            latest_stored_date = old_df.index.max().date()
+        else:
+            earliest_stored_date, latest_stored_date = None, None
     else:
         old_df = pd.DataFrame()
+        earliest_stored_date, latest_stored_date = None, None
 
-    # 3) Download new data
-    logger.info(f"Downloading {symbol} {start_date} - {end_date} ...")
-    new_df = yf.download(symbol, start=start_date, end=end_date)
+    # Determine missing historical data (prepend missing records)
+    if earliest_stored_date is None or start_date < earliest_stored_date:
+        logger.info(f"Fetching missing history for {symbol} from {start_date} to {earliest_stored_date}...")
+        new_history_df = yf.download(symbol, start=start_date, end=earliest_stored_date)
+    else:
+        new_history_df = pd.DataFrame()
 
-    if new_df.empty:
-        logger.info(f"No new data found for {symbol}. Skipping update.")
-        return old_df
+    # Determine missing future data (append missing records)
+    if latest_stored_date is None or end_date > latest_stored_date:
+        logger.info(f"Fetching recent data for {symbol} from {latest_stored_date} to {end_date}...")
+        new_recent_df = yf.download(symbol, start=latest_stored_date + timedelta(days=1), end=end_date)
+    else:
+        new_recent_df = pd.DataFrame()
 
-    if not isinstance(new_df.index, pd.DatetimeIndex):
-        new_df.index = pd.to_datetime(new_df.index)
+    # Ensure datetime index for merging
+    for df in [new_history_df, new_recent_df]:
+        if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+            df.index = pd.to_datetime(df.index)
 
-    # Merge, drop duplicates
-    combined_df = pd.concat([old_df, new_df]).sort_index().drop_duplicates()
+    # Merge all data, ensuring chronological order
+    combined_df = pd.concat([new_history_df, old_df, new_recent_df]).sort_index().drop_duplicates()
+    
+    # Save the updated dataset back to Parquet
     combined_df.to_parquet(pq_filename, index=True)
-
     return combined_df
 
 
