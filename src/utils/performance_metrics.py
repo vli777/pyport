@@ -40,18 +40,26 @@ def kappa_ratio(returns: pd.Series, order: int = 3, mar: float = 0.0) -> float:
         mar (float): Minimum acceptable return (default 0).
 
     Returns:
-        float: Kappa ratio. Returns np.inf if there is no downside risk.
+        float: Kappa ratio. Returns np.nan if there is no downside risk.
     """
+    if returns.empty:
+        return np.nan  # No returns available
+
     excess_returns = returns - mar
     mean_excess = excess_returns.mean()
+
     # Compute lower partial moment (only include negative deviations)
     negative_returns = excess_returns[excess_returns < 0]
-    if len(negative_returns) == 0:
-        return np.inf
+
+    if negative_returns.empty:
+        return np.nan  # No downside risk, return NaN to avoid bias
+
     lpm = np.mean(np.abs(negative_returns) ** order)
-    # Avoid division by zero
+
+    # Avoid division by zero issues
     if lpm == 0:
-        return np.inf
+        return np.nan
+
     return mean_excess / (lpm ** (1 / order))
 
 
