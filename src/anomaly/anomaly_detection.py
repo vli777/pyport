@@ -17,13 +17,6 @@ from utils.performance_metrics import kappa_ratio
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
-# Load the safe reference stocks
-safe_reference_file_path = Path(__file__).parent / "safe_reference.json"
-with safe_reference_file_path.open("r") as f:
-    reference_stocks = json.load(f)
-reference_stocks = [ticker.upper() for ticker in reference_stocks]
-
-
 def remove_anomalous_stocks(
     returns_df: pd.DataFrame,
     weight_dict: Optional[Dict[str, float]] = None,
@@ -61,11 +54,6 @@ def remove_anomalous_stocks(
         weight_dict = {"kappa": 0.8, "stability": 0.2}
 
     if contamination is None:
-        # Adaptive contamination: Adjust based on % of flagged stocks
-        # meme_candidates = detect_meme_stocks(returns_df)
-        # contamination = min(
-        #     len(meme_candidates) / len(returns_df.columns) * 0.03, 0.01
-        # )
         contamination = min(0.01 + np.log1p(len(returns_df.columns)) * 0.002, 0.01)
 
     elif contamination == "auto":
@@ -90,9 +78,7 @@ def remove_anomalous_stocks(
             combined_series,
             weight_dict,
             stock="GLOBAL",
-            reference_stocks=reference_stocks,
             contamination=contamination,
-            max_anomaly_fraction=max_anomaly_fraction,
         )
         global_threshold = global_info["threshold"]
 
@@ -137,9 +123,7 @@ def remove_anomalous_stocks(
                     series,
                     weight_dict,
                     stock,
-                    reference_stocks=reference_stocks,
                     contamination=contamination,
-                    max_anomaly_fraction=max_anomaly_fraction,
                 )
                 thresh = ticker_info["threshold"]
 
@@ -167,12 +151,14 @@ def remove_anomalous_stocks(
     # Save the updated cache.
     save_parameters_to_pickle(cache, cache_filename)
 
-    # Determine surviving tickers (those not flagged as anomalous).    
+    # Determine surviving tickers (those not flagged as anomalous).
     if anomalous_cols:
-        logger.info(f"Removed {len(anomalous_cols)} stocks due to high anomaly fraction: {sorted(anomalous_cols)}")
+        logger.info(
+            f"Removed {len(anomalous_cols)} stocks due to high anomaly fraction: {sorted(anomalous_cols)}"
+        )
     else:
         logger.info("No stocks were removed.")
-        
+
     valid_tickers = [
         stock for stock in returns_df.columns if stock not in anomalous_cols
     ]
@@ -192,7 +178,7 @@ def remove_anomalous_stocks(
         # For the optimization summary, you could pass the list of all ticker info dicts.
         optimization_summary = list(cache.values())
         plot_optimization_summary(optimization_summary)
-        
+
     return valid_tickers
 
 
@@ -200,49 +186,96 @@ def optimize_threshold_for_ticker(
     returns_series: pd.Series,
     weight_dict: Dict[str, float],
     stock: str,
-    reference_stocks: List[str],
     contamination: float = "auto",
-    max_anomaly_fraction: float = 0.02,
-) -> float:
+) -> dict:
     """
     Optimizes the anomaly detection filter threshold for one ticker using Optuna.
-    Uses the kappa ratio and applies a penalty that is a percentage
-    of the composite score. For reference stocks, any anomaly flags reduce the composite score by 50%.
-    For non-reference stocks, no anomalies trigger a 10% penalty.
-
-    Args:
-        returns_series (pd.Series): Series of returns.
-        weight_dict (dict): Weights for objective components. Expected to contain keys "kappa" and "stability".
-        stock (str): Stock symbol.
-        reference_stocks (List[str]): List of reference stocks (e.g., safe stocks).
-        contamination (float): Expected % of anomalies
-        max_anomaly_fraction (float): Anomaly fraction threshold to be flagged
+    Uses the kappa ratio and applies a penalty that is a percentage of the composite score.
+    For reference stocks, any anomaly flags reduce the composite score by 50%.
+    For non-reference stocks, if the adjusted anomaly fraction is below the maximum, a 10% penalty is applied.
+    Additionally, stocks with high volatility relative to a median benchmark receive an extra penalty,
+    so that meme stocks (which tend to be very volatile) are not rewarded with high composite scores.
 
     Returns:
-        dict: The optimal threshold and other study trial results
+        dict: A dictionary with keys "stock", "threshold", "best_score", and "anomaly_fraction".
     """
 
     def objective(trial):
         threshold = trial.suggest_float("threshold", 4.2, 6.9, step=0.1)
+
         anomaly_flags, scores = apply_isolation_forest(
             returns_series, threshold=threshold, contamination=contamination
         )
         anomaly_fraction = anomaly_flags.mean()
 
+        # Compute kappa; if NaN, set to 0.
         kappa = kappa_ratio(returns_series, order=3)
-        rolling_volatility = returns_series.rolling(window=30).std().mean()
+        if np.isnan(kappa):
+            kappa = 0.0
+
+        # Compute rolling volatility (30-day window with minimum 5 periods).
+        rolling_std_series = returns_series.rolling(window=30, min_periods=5).std()
+        # Use nanmean and nanmedian to be safe.
+        rolling_volatility = np.nanmean(rolling_std_series)
+        median_volatility = np.nanmedian(rolling_std_series)
+        if np.isnan(rolling_volatility):
+            rolling_volatility = 0.0
+        if np.isnan(median_volatility) or median_volatility == 0:
+            median_volatility = 1.0
+
+        # Stability penalty: more volatility is worse.
         stability_penalty = -rolling_volatility * 0.05
 
-        composite_without_penalty = (
-            weight_dict["kappa"] * kappa + weight_dict["stability"] * stability_penalty
+        # Extreme volatility penalty: use 95th percentile of daily absolute pct changes.
+        pct_changes = returns_series.pct_change().abs().dropna()
+        if len(pct_changes) > 0:
+            extreme_vol = np.percentile(pct_changes, 95)
+            if np.isnan(extreme_vol):
+                extreme_volatility_penalty = 0.0
+            else:
+                extreme_volatility_penalty = -extreme_vol * 0.5
+        else:
+            extreme_volatility_penalty = 0.0
+
+        # Meme stock penalty: based on the 95th percentile of absolute rolling z-scores.
+        rolling_mean = returns_series.rolling(window=30, min_periods=5).mean()
+        rolling_std = returns_series.rolling(window=30, min_periods=5).std()
+        z_score_series = (returns_series - rolling_mean) / (rolling_std + 1e-8)
+        z_score_series = z_score_series.abs().fillna(0)
+        if len(z_score_series) > 0:
+            perc_z = np.percentile(z_score_series, 95)
+            if np.isnan(perc_z):
+                meme_stock_penalty = 0.0
+            else:
+                meme_stock_penalty = -perc_z * 1.5
+        else:
+            meme_stock_penalty = 0.0
+
+        # Anomaly fraction penalty: directly penalize higher anomaly fractions.
+        anomaly_fraction_penalty = anomaly_fraction * 10
+
+        # Composite score as a sum of weighted components.
+        composite_score = (
+            weight_dict["kappa"] * kappa
+            + weight_dict["stability"] * stability_penalty
+            + extreme_volatility_penalty
+            + meme_stock_penalty
+            - anomaly_fraction_penalty
         )
 
-        if stock in reference_stocks:
-            penalty_factor = min(0.5, anomaly_fraction * 0.5)
-        else:
-            penalty_factor = 0.1 if anomaly_fraction < max_anomaly_fraction else 0.0
+        # Optional: Normalize by a volatility ratio.
+        vol_penalty_ratio = (
+            rolling_volatility / median_volatility if median_volatility > 0 else 1.0
+        )
+        composite_score /= vol_penalty_ratio + 1e-8
 
-        composite_score = composite_without_penalty * (1 - penalty_factor)
+        # Debug print.
+        print(
+            f"[DEBUG] Stock: {stock}, Threshold: {threshold:.2f}, "
+            f"Score: {composite_score:.4f}, Anomaly Fraction: {anomaly_fraction:.4f}"
+        )
+
+        trial.set_user_attr("anomaly_fraction", anomaly_fraction)
         trial.report(composite_score, step=int(threshold * 10))
         if trial.should_prune():
             raise optuna.exceptions.TrialPruned()
@@ -253,12 +286,12 @@ def optimize_threshold_for_ticker(
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
     study.optimize(objective, n_trials=50, timeout=60)
 
-    if not study.best_trial:
+    if not study.best_trial or study.best_value == -np.inf:
         return {
             "stock": stock,
             "threshold": 5.0,
             "best_score": 0.0,
-            "anomaly_fraction": 0.0,
+            "anomaly_fraction": 1.0,
         }
 
     best_threshold = study.best_trial.params["threshold"]
