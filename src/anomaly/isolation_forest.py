@@ -41,10 +41,13 @@ def apply_isolation_forest(
     # Get anomaly scores (higher scores = more normal, lower = more anomalous)
     scores = clf.decision_function(X_scaled)
 
-    # Compute threshold: median - (threshold * standard deviation)
-    median_score = np.median(scores)
-    std_score = np.std(scores)
-    anomaly_cutoff = median_score - threshold * std_score
+    # Determine threshold dynamically if not provided
+    if threshold is None:
+        anomaly_cutoff = np.percentile(scores, 5)  # Bottom 5% as anomalies
+    else:
+        median_score = np.median(scores)
+        std_score = np.std(scores)
+        anomaly_cutoff = median_score - threshold * std_score
 
     # Flag anomalies
     anomaly_flags = scores < anomaly_cutoff

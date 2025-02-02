@@ -29,6 +29,10 @@ def plot_anomalies(
         cols (int): Number of columns in the grid (default is 6).
     """
     total_stocks = len(stocks)
+    if total_stocks == 0:
+        logger.info("No anomalous stocks to plot.")
+        return
+    
     rows = math.ceil(total_stocks / cols)  # Adjust rows based on total stocks
 
     # Create a subplot figure with dynamic rows
