@@ -2,9 +2,12 @@
 Modern Portfolio Optimization 
 
 # WIP
-- Anomaly detection with Isolation Forest
-- Robust Z-score Mean Reversion
-- DBSCAN clustering for de-correlation
+- [x] Anomaly detection with Isolation Forest
+![image](https://github.com/user-attachments/assets/cbbbad01-8886-4516-ba50-f88bab486ba4)
+![image](https://github.com/user-attachments/assets/8dbf7f0b-8408-469b-9e29-b41923e7f330)
+
+- [ ] Robust Z-score Mean Reversion
+- [ ] DBSCAN clustering for de-correlation
 
 # Latest Changes (January 2025) 
 - Reworked implementation of Nested Clustering (https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961) with vector ops => much faster!
