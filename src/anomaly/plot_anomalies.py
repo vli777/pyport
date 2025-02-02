@@ -32,7 +32,7 @@ def plot_anomalies(
     if total_stocks == 0:
         logger.info("No anomalous stocks to plot.")
         return
-    
+
     rows = math.ceil(total_stocks / cols)  # Adjust rows based on total stocks
 
     # Create a subplot figure with dynamic rows

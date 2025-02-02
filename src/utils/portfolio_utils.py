@@ -267,6 +267,3 @@ def limit_portfolio_size(
         limited_weights = limited_weights / current_sum * target_sum
 
     return limited_weights
-
-
-

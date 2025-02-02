@@ -20,7 +20,9 @@ def apply_kalman_filter(returns_series: pd.Series, threshold: float):
     kf = KalmanFilter(
         transition_matrices=[[1, 1], [0, 1]],  # Same as your F matrix
         observation_matrices=[[1, 0]],  # Same as your H matrix
-        transition_covariance=np.array([[1e-5, 0], [0, 1e-4]]),  # Q matrix (process noise)
+        transition_covariance=np.array(
+            [[1e-5, 0], [0, 1e-4]]
+        ),  # Q matrix (process noise)
         observation_covariance=np.array([[1e-2]]),  # R matrix (measurement noise)
         initial_state_mean=[returns_series.iloc[0], 0],
         n_dim_obs=1,
@@ -38,7 +40,9 @@ def apply_kalman_filter(returns_series: pd.Series, threshold: float):
     rolling_std_dev = pd.Series(residuals).rolling(window=30, min_periods=10).std()
 
     # Identify anomalies
-    anomaly_flags = np.abs(residuals) > (threshold * rolling_std_dev.fillna(rolling_std_dev.mean()))
+    anomaly_flags = np.abs(residuals) > (
+        threshold * rolling_std_dev.fillna(rolling_std_dev.mean())
+    )
 
     return (
         pd.Series(anomaly_flags, index=returns_series.index),
