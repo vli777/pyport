@@ -6,8 +6,11 @@ Modern Portfolio Optimization
 ![image](https://github.com/user-attachments/assets/cbbbad01-8886-4516-ba50-f88bab486ba4)
 ![image](https://github.com/user-attachments/assets/8dbf7f0b-8408-469b-9e29-b41923e7f330)
 
-- [ ] Robust Z-score Mean Reversion
 - [ ] DBSCAN clustering for de-correlation
+![image](https://github.com/user-attachments/assets/77242ffc-f2e9-44da-9218-db7f8346897a)
+
+- [ ] Robust Z-score Mean Reversion
+
 
 # Latest Changes (January 2025) 
 - Reworked implementation of Nested Clustering (https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961) with vector ops => much faster!
