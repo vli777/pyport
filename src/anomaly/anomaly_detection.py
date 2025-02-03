@@ -45,8 +45,9 @@ def remove_anomalous_stocks(
     """
     weight_dict = weight_dict or {"kappa": 0.8, "stability": 0.2}
     n_stocks = len(returns_df.columns)
+    # Use "auto" if contamination is None to avoid sklearn errors.
+    contamination_val = contamination if contamination is not None else "auto"
 
-    # Dynamically choose the anomaly detection method.
     if n_stocks > 20:
         method = "IF"
         use_isolation_forest, use_kalman_filter, use_fixed_zscore = True, False, False
@@ -72,16 +73,17 @@ def remove_anomalous_stocks(
             if stock in cache and not reoptimize:
                 ticker_info = cache[stock]
             else:
+                # Optimize threshold dynamically for the given method.
                 ticker_info = optimize_threshold_for_ticker(
-                    series, weight_dict, stock, contamination=contamination
+                    series, weight_dict, stock, method, contamination=contamination_val
                 )
             thresh = ticker_info["threshold"]
             anomaly_flags, estimates = apply_isolation_forest(
-                series, threshold=thresh, contamination=contamination
+                series, threshold=thresh, contamination=contamination_val
             )
 
         elif use_kalman_filter:
-            thresh = 7.0  # Empirically determined threshold.
+            thresh = 7.0
             anomaly_flags, estimates = apply_kalman_filter(series, threshold=thresh)
 
         elif use_fixed_zscore:
