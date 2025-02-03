@@ -11,7 +11,7 @@ from anomaly.plot_anomalies import plot_anomaly_overview
 from anomaly.isolation_forest import apply_isolation_forest
 from anomaly.plot_optimization_summary import plot_optimization_summary
 from anomaly.kalman_filter import apply_kalman_filter
-from src.anomaly.anomaly_utils import apply_fixed_zscore, get_cache_filename
+from anomaly.anomaly_utils import apply_fixed_zscore, get_cache_filename
 from utils.logger import logger
 from utils.performance_metrics import kappa_ratio
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
