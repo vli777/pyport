@@ -1,18 +1,23 @@
 # PyPort
 Modern Portfolio Optimization 
 
-# WIP
+# February 2025 Latest
+- Updated features with more modern techniques: (VAE for anomaly detection would be considered more SOTA, but due to our data sample size and the marginal benefit vs computational resources required, isolation forest was selected.
+- Overall the results are very similar to the previous version
+
 - [x] Anomaly detection with Isolation Forest
 ![image](https://github.com/user-attachments/assets/cbbbad01-8886-4516-ba50-f88bab486ba4)
 ![image](https://github.com/user-attachments/assets/8dbf7f0b-8408-469b-9e29-b41923e7f330)
 
-- [ ] DBSCAN clustering for de-correlation
+- [x] DBSCAN clustering for de-correlation
 ![image](https://github.com/user-attachments/assets/77242ffc-f2e9-44da-9218-db7f8346897a)
+![image](https://github.com/user-attachments/assets/f27be7ef-85c1-460f-9928-63a17f3ea36d)
 
-- [ ] Robust Z-score Mean Reversion
+- [x] Robust Z-score Mean Reversion
+![image](https://github.com/user-attachments/assets/1ab4d752-e68f-4935-aaad-5965ffe39b13)
 
 
-# Latest Changes (January 2025) 
+# January 2025
 - Reworked implementation of Nested Clustering (https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961) with vector ops => much faster!
 - Added anomaly detection with Kalman Filter and mean reversion filters
 - Integrated Optuna to dynamically find optimal thresholds for maximizing performance metrics and returns 
