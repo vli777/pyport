@@ -60,20 +60,24 @@ def run_optimization_and_save(
             save_model_results_to_cache(cache_key, final_weights.to_dict())
         else:
             # Fix: Ensure shorter-history stocks are retained
-            asset_returns = np.log(df[symbols]).diff().fillna(0)
+            asset_returns = np.log(df[symbols]).diff().dropna(how="all")
 
             # Ensure covariance matrix is computed only on valid assets
             valid_assets = asset_returns.dropna(
-                thresh=int(len(df) * 0.5), axis=1
+                thresh=int(len(asset_returns) * 0.5), axis=1
             ).columns
             asset_returns = asset_returns[valid_assets]
 
             # Compute covariance with aligned data
-            lw = LedoitWolf()
-            cov_daily = lw.fit(asset_returns).covariance_
-            cov_daily = pd.DataFrame(
-                cov_daily, index=valid_assets, columns=valid_assets
-            )
+            try:
+                lw = LedoitWolf()
+                cov_daily = lw.fit(asset_returns).covariance_
+                cov_daily = pd.DataFrame(
+                    cov_daily, index=valid_assets, columns=valid_assets
+                )
+            except ValueError as e:
+                logger.error(f"Covariance computation failed: {e}")
+                return pd.Series(dtype=float)
 
             trading_days_per_year = 252
             mu_daily = asset_returns.mean()
@@ -95,9 +99,20 @@ def run_optimization_and_save(
                     args=model_args,
                 )
 
-                # Explicitly convert weights to a Pandas Series if it's a dictionary
+                # Ensure weights are correctly aligned with asset names
                 if isinstance(weights, dict):
                     weights = pd.Series(weights)
+
+                elif isinstance(weights, np.ndarray):
+                    if len(weights) == len(mu_annual):  # Ensure alignment
+                        weights = pd.Series(weights, index=mu_annual.index)
+                    else:
+                        logger.error(
+                            f"Mismatch in weights length ({len(weights)}) and assets ({len(mu_annual)})"
+                        )
+                        weights = pd.Series(
+                            dtype=float
+                        )  # Return empty Series if mismatch
 
                 normalized_weights = normalize_weights(weights, config.min_weight)
 
@@ -112,9 +127,7 @@ def run_optimization_and_save(
                 stack[model + str(years)] = final_weights.to_dict()
 
             except Exception as e:
-                logger.error(
-                    f"Error processing weights for {model} with {years} years: {e}"
-                )
+                logger.error(f"Error processing weights for {model} {years} years: {e}")
                 final_weights = pd.Series(dtype=float)
 
         # Ensure final_weights is valid
