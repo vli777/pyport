@@ -1,6 +1,9 @@
 # PyPort
 Modern Portfolio Optimization 
 
+# WIP
+- Z-score-based arbitrage on cointegrated baskets
+
 # February 2025 Latest
 - Updated features with more modern techniques: (VAE for anomaly detection would be considered more SOTA, but due to our data sample size and the marginal benefit vs computational resources required, isolation forest was selected.
 - Changed the data processing to use the full available history for various computations vs slicing to the latest data range available among newer assets first.
