@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 import optuna
@@ -8,10 +8,11 @@ from joblib import Parallel, delayed
 import json
 from pathlib import Path
 
-from anomaly.plot_anomalies import plot_anomalies
+from anomaly.plot_anomalies import plot_anomaly_overview
 from anomaly.isolation_forest import apply_isolation_forest
 from anomaly.plot_optimization_summary import plot_optimization_summary
-from anomaly.anomaly_utils import detect_meme_stocks
+from anomaly.kalman_filter import apply_kalman_filter
+from src.anomaly.anomaly_utils import get_cache_filename
 from utils.logger import logger
 from utils.performance_metrics import kappa_ratio
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
@@ -22,162 +23,112 @@ def remove_anomalous_stocks(
     weight_dict: Optional[Dict[str, float]] = None,
     plot: bool = False,
     n_jobs: int = -1,
-    cache_filename: str = "optuna_cache/anomaly_thresholds.pkl",
-    reoptimize: bool = False,  # Force re-optimization even if cache exists.
-    global_filter: bool = False,  # If True, use one threshold for all stocks.
-    max_anomaly_fraction: float = 0.01,  # Maximum allowed fraction of anomalies.
-    contamination: Union[
-        float, str, None
-    ] = None,  # Contamination value for Isolation Forest.
+    reoptimize: bool = False,
+    max_anomaly_fraction: float = 0.01,
+    contamination: Union[float, str, None] = None,
 ) -> List[str]:
     """
-    Filters out stocks with anomalous returns and returns a list of valid tickers.
-    Uses per-ticker optimization to determine the threshold and caches all optimization
-    results in a dictionary keyed by ticker. If a ticker’s anomaly fraction exceeds
-    max_anomaly_fraction, it is removed.
+    Filters out stocks with anomalous returns using Isolation Forest (IF),
+    Kalman Filter (KF), or Z-score, based on the number of stocks in the dataset.
+    Uses per-ticker optimization and caches method-specific parameters.
 
     Args:
-        returns_df (pd.DataFrame): Daily returns (columns are stocks).
-        weight_dict (dict, optional): Objective function weights.
-        plot (bool): If True, plot anomalies and optimization summary.
-        n_jobs (int): Number of parallel jobs for per-ticker processing.
-        cache_filename (str): File name for caching ticker info.
-        reoptimize (bool): If True, force recalculation even if cached info exists.
-        global_filter (bool): If True, optimize a single threshold using aggregated data.
-        max_anomaly_fraction (float): Maximum allowed fraction of anomalies before dropping a ticker.
-        contamination (float or str): Contamination parameter for Isolation Forest.
+        returns_df (pd.DataFrame): DataFrame where each column corresponds to a stock's returns.
+        weight_dict (Optional[Dict[str, float]]): Weights for optimization criteria.
+        plot (bool): If True, generate anomaly and optimization plots.
+        n_jobs (int): Number of parallel jobs to run.
+        reoptimize (bool): If True, bypass cache and reoptimize thresholds.
+        max_anomaly_fraction (float): Maximum fraction of anomalous data allowed per stock.
+        contamination (Union[float, str, None]): Contamination parameter for Isolation Forest.
 
     Returns:
-        List[str]: List of surviving (non-anomalous) ticker symbols.
+        List[str]: List of tickers that are not flagged as anomalous.
     """
-    if weight_dict is None:
-        weight_dict = {"kappa": 0.8, "stability": 0.2}
+    weight_dict = weight_dict or {"kappa": 0.8, "stability": 0.2}
+    n_stocks = len(returns_df.columns)
 
-    if contamination is None:
-        contamination = min(0.01 + np.log1p(len(returns_df.columns)) * 0.002, 0.01)
-
-    elif contamination == "auto":
-        contamination = "auto"
+    # Dynamically choose the anomaly detection method.
+    if n_stocks > 20:
+        method = "IF"
+        use_isolation_forest, use_kalman_filter, use_fixed_zscore = True, False, False
+    elif 5 < n_stocks <= 20:
+        method = "KF"
+        use_kalman_filter, use_isolation_forest, use_fixed_zscore = True, False, False
     else:
-        contamination = float(contamination)
-        if not (0 < contamination <= 0.5):
-            raise ValueError("contamination must be in the range (0, 0.5] or 'auto'.")
+        method = "Z-score"
+        use_fixed_zscore, use_isolation_forest, use_kalman_filter = True, False, False
 
-    # Load cached ticker info if available (cache is a dict keyed by ticker).
-    cache: Dict[str, dict] = {}
-    if not reoptimize:
-        cache = load_parameters_from_pickle(cache_filename) or {}
+    cache_filename = get_cache_filename(method)
+    cache: Dict[str, Any] = (
+        {} if reoptimize else load_parameters_from_pickle(cache_filename) or {}
+    )
 
-    anomalous_cols = []  # Tickers flagged as anomalous
+    # Process each ticker individually.
+    def process_ticker(stock: str) -> Optional[Dict[str, Any]]:
+        series = returns_df[stock].dropna()
+        if series.empty:
+            logger.warning(f"No data for stock {stock}. Skipping.")
+            return None
 
-    # Global filtering: use a single threshold for all stocks.
-    if global_filter:
-        # Optimize a global threshold using all return data.
-        combined_series = returns_df.stack().dropna()
-        global_info = optimize_threshold_for_ticker(
-            combined_series,
-            weight_dict,
-            stock="GLOBAL",
-            contamination=contamination,
-        )
-        global_threshold = global_info["threshold"]
-
-        # Apply the global threshold to each ticker.
-        for stock in returns_df.columns:
-            series = returns_df[stock].dropna()
-            if series.empty:
-                print(f"Warning: No data for stock {stock}. Skipping.")
-                continue
-
-            anomaly_flags, estimates = apply_isolation_forest(
-                series,
-                threshold=global_threshold,
-                contamination=contamination,
-            )
-            ticker_info = {
-                "threshold": global_threshold,
-                "anomaly_flags": anomaly_flags,
-                "estimates": estimates,
-                "anomaly_fraction": anomaly_flags.mean(),
-            }
-            cache[stock] = ticker_info
-
-            if ticker_info["anomaly_fraction"] > max_anomaly_fraction:
-                anomalous_cols.append(stock)
-
-    else:
-        # Process each ticker individually.
-        def process_ticker(stock: str):
-            series = returns_df[stock].dropna()
-            if series.empty:
-                print(f"Warning: No data for stock {stock}. Skipping.")
-                return None
-
-            # Use cached info if available and not reoptimizing.
-            if (stock in cache) and not reoptimize:
+        if use_isolation_forest:
+            # Optimize threshold if not cached or if reoptimization is requested.
+            if stock in cache and not reoptimize:
                 ticker_info = cache[stock]
-                thresh = ticker_info["threshold"]
             else:
-                # Run optimization for this ticker.
                 ticker_info = optimize_threshold_for_ticker(
-                    series,
-                    weight_dict,
-                    stock,
-                    contamination=contamination,
+                    series, weight_dict, stock, contamination=contamination
                 )
-                thresh = ticker_info["threshold"]
-
+            thresh = ticker_info["threshold"]
             anomaly_flags, estimates = apply_isolation_forest(
                 series, threshold=thresh, contamination=contamination
             )
-            ticker_info["anomaly_flags"] = anomaly_flags
-            ticker_info["estimates"] = estimates
-            ticker_info["anomaly_fraction"] = anomaly_flags.mean()
 
-            return (stock, ticker_info)
+        elif use_kalman_filter:
+            thresh = 7.0  # Empirically determined threshold.
+            anomaly_flags, estimates = apply_kalman_filter(series, threshold=thresh)
 
-        # Process tickers in parallel.
-        parallel_results = Parallel(n_jobs=n_jobs)(
-            delayed(process_ticker)(stock) for stock in returns_df.columns
-        )
+        else:  # Z-score method for very small datasets.
+            thresh = 3.0
+            residuals = (series - series.mean()) / series.std()
+            anomaly_flags = (np.abs(residuals) > thresh).astype(bool)
+            estimates = series.copy()
 
-        for res in parallel_results:
-            if res is not None:
-                stock, ticker_info = res
-                cache[stock] = ticker_info
-                if ticker_info["anomaly_fraction"] > max_anomaly_fraction:
-                    anomalous_cols.append(stock)
+        ticker_info = {
+            "stock": stock,
+            "threshold": thresh,
+            "anomaly_flags": anomaly_flags,
+            "estimates": estimates,
+            "anomaly_fraction": float(anomaly_flags.mean()),
+        }
+        return ticker_info
 
-    # Save the updated cache.
+    # Parallel processing of each stock.
+    processed_info = Parallel(n_jobs=n_jobs)(
+        delayed(process_ticker)(stock) for stock in returns_df.columns
+    )
+
+    anomalous_stocks: List[str] = []
+    for info in processed_info:
+        if info is None:
+            continue
+        cache[info["stock"]] = info
+        if info["anomaly_fraction"] > max_anomaly_fraction:
+            anomalous_stocks.append(info["stock"])
+
     save_parameters_to_pickle(cache, cache_filename)
-
-    # Determine surviving tickers (those not flagged as anomalous).
-    if anomalous_cols:
-        logger.info(
-            f"Removed {len(anomalous_cols)} stocks due to high anomaly fraction: {sorted(anomalous_cols)}"
-        )
-    else:
-        logger.info("No stocks were removed.")
-
     valid_tickers = [
-        stock for stock in returns_df.columns if stock not in anomalous_cols
+        stock for stock in returns_df.columns if stock not in anomalous_stocks
     ]
+    logger.info(
+        f"Removed {len(anomalous_stocks)} stocks due to high anomaly fraction: {sorted(anomalous_stocks)}"
+        if anomalous_stocks
+        else "No stocks were removed."
+    )
 
     if plot and cache:
-        plot_anomalies(
-            stocks=anomalous_cols,
-            returns_data=returns_df.to_dict(orient="series"),
-            anomaly_flags_data={
-                stock: cache[stock]["anomaly_flags"] for stock in anomalous_cols
-            },
-            estimates_data={
-                stock: cache[stock]["estimates"] for stock in anomalous_cols
-            },
-            thresholds={stock: cache[stock]["threshold"] for stock in cache},
-        )
-        # For the optimization summary, you could pass the list of all ticker info dicts.
-        optimization_summary = list(cache.values())
-        plot_optimization_summary(optimization_summary)
+        # Plot anomalies using method-specific plotting function.
+        plot_anomaly_overview(cache, returns_df)
+        plot_optimization_summary(list(cache.values()))
 
     return valid_tickers
 

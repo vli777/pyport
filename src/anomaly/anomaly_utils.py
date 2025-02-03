@@ -30,3 +30,13 @@ def detect_meme_stocks(
     # Combine both anomaly sets
     meme_candidates = high_flyers | crashing_stocks  # Union of sets
     return meme_candidates
+
+
+def get_cache_filename(method: str) -> str:
+    """Return the correct cache filename based on the anomaly detection method."""
+    cache_map = {
+        "IF": "optuna_cache/anomaly_thresholds_IF.pkl",
+        "KF": "optuna_cache/anomaly_thresholds_KF.pkl",
+        "Z-score": "optuna_cache/anomaly_thresholds_Z.pkl",
+    }
+    return cache_map.get(method, "optuna_cache/anomaly_thresholds_IF.pkl")  # Default to IF
