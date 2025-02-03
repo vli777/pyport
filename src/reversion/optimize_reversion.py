@@ -3,7 +3,7 @@ import optuna
 import pandas as pd
 
 from reversion.strategy_metrics import composite_score, simulate_strategy
-from reversion.z_scores import calculate_robust_z_scores
+from utils.z_scores import calculate_robust_zscores
 from utils.logger import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
@@ -63,7 +63,7 @@ def robust_mean_reversion_objective(trial, returns_df: pd.DataFrame) -> float:
     window = trial.suggest_int("window", 10, 30, step=5)
     z_threshold = trial.suggest_float("z_threshold", 1.0, 3.0, step=0.1)
 
-    robust_z = calculate_robust_z_scores(returns_df, window)
+    robust_z = calculate_robust_zscores(returns_df, window)
     # Generate signals on all tickers at once; result is a DataFrame of {date x ticker}
     signals_df = robust_z.map(
         lambda x: 1 if x < -z_threshold else (-1 if x > z_threshold else 0)

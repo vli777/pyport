@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from reversion.optimize_reversion import optimize_robust_mean_reversion
-from reversion.z_scores import calculate_robust_z_scores, plot_robust_z_scores
+from utils.z_scores import calculate_robust_zscores, plot_robust_z_scores
 from utils.logger import logger
 
 
@@ -35,7 +35,7 @@ def apply_mean_reversion_multiscale(
     )
     window_daily = best_params_daily.get("window", 20)
     z_threshold_daily = best_params_daily.get("z_threshold", 1.5)
-    robust_z_daily = calculate_robust_z_scores(returns_df, window_daily)
+    robust_z_daily = calculate_robust_zscores(returns_df, window_daily)
 
     if plot:
         plot_robust_z_scores(robust_z_daily, z_threshold_daily)
@@ -49,7 +49,7 @@ def apply_mean_reversion_multiscale(
     )
     window_weekly = best_params_weekly.get("window", 4)
     z_threshold_weekly = best_params_weekly.get("z_threshold", 1.5)
-    robust_z_weekly = calculate_robust_z_scores(weekly_returns, window_weekly)
+    robust_z_weekly = calculate_robust_zscores(weekly_returns, window_weekly)
 
     if plot:
         plot_robust_z_scores(robust_z_weekly, z_threshold_weekly)
