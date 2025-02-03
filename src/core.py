@@ -128,7 +128,7 @@ def run_pipeline(
             pd.DataFrame: Processed DataFrame with daily returns, with optional anomaly filtering and decorrelation applied.
         """
         returns_df = calculate_returns(df)
-
+     
         if config.use_anomaly_filter:
             logger.debug("Applying anomaly filter.")
             valid_symbols = remove_anomalous_stocks(
@@ -153,7 +153,9 @@ def run_pipeline(
             ]
 
             return filtered_returns_df[valid_symbols]
-
+        # Remove rows where all columns are NaN after all filtering steps
+        filtered_returns_df = filtered_returns_df.dropna(how="all")
+        
         return filtered_returns_df
 
     def filter_correlated_assets(returns_df: pd.DataFrame, config: Config) -> List[str]:
@@ -176,7 +178,7 @@ def run_pipeline(
             )
 
             valid_symbols = [
-                symbol for symbol in valid_symbols if symbol in decorrelated_tickers
+                symbol for symbol in original_symbols if symbol in decorrelated_tickers
             ]
 
         except Exception as e:
@@ -331,9 +333,9 @@ def run_pipeline(
             logger.warning("No valid symbols available for slicing df_all.")
             dfs["data"] = pd.DataFrame()  # Or handle gracefully
     except KeyError as e:
-        logger.error(f"Error slicing df_all with filtered_decorrelated: {e}")
+        logger.error(f"Error slicing df_all: {e}")
         raise
-
+    
     # Iterate through each time period and perform optimization
     logger.info("Running optimization...")
     for period in sorted_time_periods:
@@ -375,7 +377,8 @@ def run_pipeline(
             logger.info(
                 f"Test mode active: saved full_df.csv and limited data to {visible_length} records."
             )
-
+   
+        logger.info(f"Running optimization with {valid_symbols}")
         run_optimization_and_save(
             df=df_period,
             config=config,
