@@ -1,116 +1,82 @@
-from typing import List, Tuple
-import numpy as np
+from typing import Dict, List, Tuple
 import optuna
 import pandas as pd
 
-
-def objective(trial, window_range: range, returns_df: pd.DataFrame) -> float:
-    """
-    Objective function for Optuna to optimize mean reversion strategy.
-
-    Args:
-        trial (optuna.trial.Trial): Optuna trial object.
-        window_range (range): Range of windows to test.
-        returns_df (pd.DataFrame): Log returns DataFrame.
-
-    Returns:
-        float: Cumulative return.
-    """
-    # Extract min, max, and step from the range object
-    window_min, window_max, window_step = (
-        window_range.start,
-        window_range.stop - 1,
-        window_range.step,
-    )
-
-    # Define hyperparameter search space
-    window = trial.suggest_int("window", window_min, window_max, step=window_step)
-    overbought_multiplier = trial.suggest_float(
-        "overbought_multiplier", 1.5, 2.5, step=0.1
-    )
-    oversold_multiplier = trial.suggest_float(
-        "oversold_multiplier", -2.5, -1.5, step=0.1
-    )
-
-    # Calculate Z-scores
-    rolling_mean = returns_df.shift(1).rolling(window=window, min_periods=1).mean()
-    rolling_std = returns_df.shift(1).rolling(window=window, min_periods=1).std()
-    z_score_df = (returns_df - rolling_mean) / rolling_std.replace(0, np.nan)
-
-    # Define dynamic thresholds
-    dynamic_thresholds = {
-        ticker: (
-            overbought_multiplier * z_score_df[ticker].std(),
-            oversold_multiplier * z_score_df[ticker].std(),
-        )
-        for ticker in returns_df.columns
-    }
-
-    # Simulate strategy performance
-    _, cumulative_return = simulate_strategy(returns_df, dynamic_thresholds, z_score_df)
-
-    return cumulative_return
+from reversion.strategy_metrics import composite_score, simulate_strategy
+from reversion.z_scores import calculate_robust_z_scores
+from utils.logger import logger
+from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
-def optimize_mean_reversion(
+def optimize_robust_mean_reversion(
     returns_df: pd.DataFrame,
-    window_range=range(5, 31, 5),
-    n_trials: int = 100,
+    n_trials: int = 50,
     n_jobs: int = -1,
-) -> optuna.Study:
+    cache_filename: str = "optuna_cache/reversion_window_multiplier.pkl",
+    reoptimize: bool = False,
+) -> Tuple[Dict[str, float], optuna.study.Study]:
     """
-    Optimize mean reversion strategy using Optuna.
+    Optimize the rolling window and z_threshold using Optuna.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
-        n_trials (int, optional): Number of optimization trials. Defaults to 100.
+        window_range (range): Range of window sizes.
+        n_trials (int, optional): Number of optimization trials. Defaults to 50.
+        n_jobs (int, optional): Number of parallel jobs. Defaults to -1.
+        cache_filename (str, optional): Path to Pickle cache file.
+        reoptimize (bool): Override to reoptimize.
 
     Returns:
-        optuna.Study: The optimization study.
+        best parameters and the study object.
     """
-    study = optuna.create_study(direction="maximize")
+    # Load cached study results if available and not reoptimizing
+    if not reoptimize:
+        cached_params = load_parameters_from_pickle(cache_filename)
+        if cached_params:
+            logger.info("Using cached parameters.")
+            return cached_params, None
+
+    study = optuna.create_study(
+        direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
+    )
     study.optimize(
-        lambda trial: objective(
-            trial=trial, window_range=window_range, returns_df=returns_df
-        ),
+        lambda trial: robust_mean_reversion_objective(trial, returns_df),
         n_trials=n_trials,
         n_jobs=n_jobs,
     )
-    return study
+    best_params = (
+        study.best_trial.params
+        if study.best_trial
+        else {"window": 20, "z_threshold": 1.5}
+    )
+    save_parameters_to_pickle(best_params, cache_filename)
+    return best_params, study
 
 
-def simulate_strategy(returns_df, dynamic_thresholds, z_scores_df):
+def robust_mean_reversion_objective(trial, returns_df: pd.DataFrame) -> float:
     """
-    Simulates the strategy using thresholds and calculates cumulative return.
-
-    Args:
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        dynamic_thresholds (dict): Thresholds for overbought/oversold conditions.
-        z_scores_df (pd.DataFrame): Precomputed Z-scores DataFrame.
-
-    Returns:
-        Tuple[pd.Series, float]: A tuple containing:
-            - strategy_returns (pd.Series): Daily returns of the strategy.
-            - cumulative_return (float): Final cumulative return of the strategy.
+    Objective function for optimizing the robust mean reversion parameters.
+    The trial suggests a rolling window size and a z_threshold.
+    The resulting signals are used (with a one-day shift to avoid lookahead)
+    to simulate a simple strategy; the cumulative return and sharpe ratio is maximized.
     """
-    positions = pd.DataFrame(0, index=returns_df.index, columns=returns_df.columns)
+    window = trial.suggest_int("window", 10, 30, step=5)
+    z_threshold = trial.suggest_float("z_threshold", 1.0, 3.0, step=0.1)
 
-    # Generate signals based on thresholds
-    for ticker in returns_df.columns:
-        overbought, oversold = dynamic_thresholds[ticker]
-        z_scores = z_scores_df[ticker]
+    robust_z = calculate_robust_z_scores(returns_df, window)
+    # Generate signals on all tickers at once; result is a DataFrame of {date x ticker}
+    signals_df = robust_z.map(
+        lambda x: 1 if x < -z_threshold else (-1 if x > z_threshold else 0)
+    )
 
-        # Buy when oversold, sell when overbought
-        positions[ticker] = np.where(
-            z_scores < oversold,
-            1,  # Long position
-            np.where(z_scores > overbought, -1, 0),  # Short position
-        )
+    # Shift signals to avoid lookahead bias
+    positions_df = signals_df.shift(1).fillna(0)
 
-    # Calculate daily strategy returns
-    strategy_returns = (positions.shift(1) * returns_df).sum(axis=1)
+    # Limit analysis to tickers with sufficient data
+    valid_stocks = returns_df.dropna(axis=1, how="all").columns
+    positions_df = positions_df[valid_stocks]
+    aligned_returns = returns_df[valid_stocks].reindex(positions_df.index)
 
-    # Calculate cumulative return
-    cumulative_return = np.exp(strategy_returns.cumsum().iloc[-1])
+    _, metrics = simulate_strategy(aligned_returns, positions_df)
 
-    return strategy_returns, cumulative_return
+    return composite_score(metrics)

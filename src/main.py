@@ -137,4 +137,4 @@ if __name__ == "__main__":
         run_local=True,
     )
 
-    print("\nFinal result:", final_result)
+    print("\nFinal allocation:", final_result["normalized_avg"])

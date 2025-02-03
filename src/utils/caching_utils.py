@@ -2,10 +2,11 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
+import pickle
 from typing import Dict, Optional, Any
-
 import pandas as pd
 import pytz
 
@@ -87,3 +88,39 @@ def save_model_results_to_cache(cache_key, weights_dict):
     cache_file = Path("cache") / cache_key
     with open(cache_file, "w") as f:
         json.dump(weights_dict, f, indent=4)
+
+
+def save_parameters_to_pickle(
+    parameters: Dict[str, float], filename: str = "optimized_parameters.pkl"
+):
+    """
+    Saves the parameters dictionary to a Pickle file.
+
+    Args:
+        parameters (Dict[str, float]): Dictionary of optimized parameters per ticker.
+        filename (str): Filename for the Pickle file.
+    """
+    with open(filename, "wb") as f:
+        pickle.dump(parameters, f)
+    print(f"Saved optimized parameters to {filename}")
+
+
+def load_parameters_from_pickle(
+    filename: str = "optimized_parameters.pkl",
+) -> Dict[str, float]:
+    """
+    Loads the parameters dictionary from a Pickle file.
+
+    Args:
+        filename (str): Filename of the Pickle file.
+
+    Returns:
+        Dict[str, float]: Dictionary of optimized parameters per ticker.
+    """
+    if not os.path.exists(filename):
+        print(f"No cache file found at {filename}. Starting fresh optimization.")
+        return {}
+    with open(filename, "rb") as f:
+        parameters = pickle.load(f)
+    print(f"Loaded optimized parameters from {filename}")
+    return parameters

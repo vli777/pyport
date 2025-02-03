@@ -3,7 +3,6 @@ from config import Config
 
 import json
 import colorsys
-import warnings
 from typing import Dict, List, Tuple
 
 import numpy as np
@@ -78,68 +77,39 @@ def generate_color_map(
     or a default gradient. Symbols are sorted by their final cumulative
     return value (ascending).
 
-    Parameters
-    ----------
-    symbols : List[str]
-        List of symbols to plot.
-    cumulative_returns : pd.DataFrame
-        DataFrame containing cumulative returns, indexed by dates and
-        columns as symbols.
-    palette : str, optional
-        Key for the color palette in `color_dict`, by default "default".
-    color_dict : Dict[str, List[str]], optional
-        A dictionary of color palettes, each containing a list of hex colors.
-        By default None.
-
-    Returns
-    -------
-    Tuple[Dict[str, str], List[str]]
-        - A dict mapping each symbol to its assigned color.
-        - A sorted list of valid symbols (in ascending order of final returns).
+    - Ensures symbols are only selected if they exist in cumulative_returns
+    - Handles missing values correctly to avoid sorting issues
     """
-    # Warn if symbols are missing
-    missing_symbols = [s for s in symbols if s not in cumulative_returns.columns]
-    if missing_symbols:
-        warnings.warn(
-            f"The following symbols are missing in cumulative_returns "
-            f"and will be skipped: {missing_symbols}"
-        )
-        # Exclude missing symbols
-        symbols = [s for s in symbols if s in cumulative_returns.columns]
+    valid_symbols = list(set(symbols).intersection(cumulative_returns.columns))
 
-    if not symbols:
+    if not valid_symbols:
         raise ValueError("No valid symbols provided for plotting.")
 
-    # Sort symbols by final cumulative return (ascending)
-    sorted_symbols = sorted(symbols, key=lambda x: cumulative_returns[x].iloc[-1])
+    # Handle missing data by filling NaN with 0 before sorting
+    sorted_symbols = sorted(
+        valid_symbols, key=lambda x: cumulative_returns[x].fillna(0).iloc[-1]
+    )
     num_symbols = len(sorted_symbols)
 
     colors = []
     if color_dict and palette in color_dict:
-        # Use custom colors from the specified palette
         base_colors = color_dict[palette]
         for i in range(num_symbols):
-            # Cycle through the base colors
             base_color = base_colors[i % len(base_colors)]
-            # Lighten further each time we wrap around the palette
             lightened_color = lighten_color(
                 base_color, factor=0.2 * (i // len(base_colors))
             )
             colors.append(lightened_color)
     else:
-        # Default color generation via hue sweep
-        if num_symbols > 1:
-            hues = np.linspace(0, 270, num_symbols, endpoint=False)
-        else:
-            # Only one symbol, default to red
-            hues = [0]
+        hues = (
+            np.linspace(0, 270, num_symbols, endpoint=False) if num_symbols > 1 else [0]
+        )
         colors = [f"hsl({int(h)}, 70%, 50%)" for h in hues]
 
-    # Build the color map
     color_map = {symbol: color for symbol, color in zip(sorted_symbols, colors)}
 
-    # Force SIM_PORT to gold if present
-    if "SIM_PORT" in color_map:
+    # Ensure SIM_PORT is always assigned a color
+    if "SIM_PORT" in cumulative_returns.columns:
         color_map["SIM_PORT"] = "hsl(50, 100%, 50%)"
 
     return color_map, sorted_symbols
@@ -230,25 +200,20 @@ def plot_daily_returns(
     plot_bgcolor: str,
 ) -> None:
     """
-    Plots daily returns as box plots for each symbol.
+    Plots daily returns as box plots for each symbol, handling missing data correctly.
 
-    Parameters
-    ----------
-    daily_returns : pd.DataFrame
-        DataFrame containing daily returns for each symbol.
-    color_map : Dict[str, str]
-        Mapping of symbols to colors.
-    config : Config
-        Configuration object controlling whether to plot daily returns.
-    paper_bgcolor : str
-        Background color for the figure.
-    plot_bgcolor : str
-        Background color for the plot area.
+    - Ensures all stocks are plotted, even if missing in `daily_returns`
+    - Assigns a default color only for missing stocks
     """
     if not config.plot_daily_returns:
         return
 
     fig = go.Figure()
+
+    # Reindex to unify time range across stocks
+    all_dates = daily_returns.index
+    daily_returns = daily_returns.reindex(index=all_dates, fill_value=np.nan)
+
     for col in daily_returns.columns:
         fig.add_trace(
             go.Box(
@@ -275,51 +240,33 @@ def plot_cumulative_returns(
     plot_bgcolor: str,
 ) -> None:
     """
-    Plots cumulative returns as time-series lines, optionally showing difference
-    vs. SIM_PORT in hover info.
+    Plots cumulative returns as time-series lines, handling missing data correctly.
 
-    Parameters
-    ----------
-    cumulative_returns : pd.DataFrame
-        DataFrame containing cumulative returns for each symbol.
-    color_map : Dict[str, str]
-        Mapping of symbols to colors.
-    config : Config
-        Configuration object controlling whether to plot cumulative returns and sorting.
-    paper_bgcolor : str
-        Background color for the figure.
-    plot_bgcolor : str
-        Background color for the plot area.
+    - Ensures all stocks are aligned on the same timeline (unified index)
+    - Handles missing `SIM_PORT` properly
     """
     if not config.plot_cumulative_returns:
         return
 
     fig = go.Figure()
 
-    # Retrieve SIM_PORT column if present
+    # Ensure a common time range for all tickers
+    all_dates = cumulative_returns.index
+    cumulative_returns = cumulative_returns.reindex(index=all_dates, fill_value=np.nan)
+
     sim_port_data = cumulative_returns.get("SIM_PORT")
 
-    # Sort columns by final value if required
+    for col in cumulative_returns.columns:
+        col_data = cumulative_returns[col]
 
-    # last_row = cumulative_returns.iloc[-1]  # final row (Series)
-    # sorted_cols = last_row.sort_values(ascending=False).index
-    # df_sorted = cumulative_returns[sorted_cols]
-
-    df_sorted = cumulative_returns
-
-    for col in df_sorted.columns:
-        is_sim_port = col == "SIM_PORT"
-        col_data = df_sorted[col]
-
-        if not is_sim_port and sim_port_data is not None:
-            # Show difference relative to SIM_PORT
+        if col != "SIM_PORT" and sim_port_data is not None:
             diff = col_data - sim_port_data
             diff_color = ["green" if d >= 0 else "red" for d in diff]
             customdata = np.array([diff.values, diff_color], dtype=object).T
 
             fig.add_trace(
                 go.Scatter(
-                    x=df_sorted.index,
+                    x=cumulative_returns.index,
                     y=col_data,
                     mode="lines",
                     meta=col,
@@ -330,10 +277,9 @@ def plot_cumulative_returns(
                 )
             )
         else:
-            # For SIM_PORT or if SIM_PORT is not available
             fig.add_trace(
                 go.Scatter(
-                    x=df_sorted.index,
+                    x=cumulative_returns.index,
                     y=col_data,
                     mode="lines",
                     meta=col,

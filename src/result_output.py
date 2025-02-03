@@ -3,10 +3,9 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from config import Config
+from utils.performance_metrics import calculate_portfolio_performance, sharpe_ratio
 from utils import logger
 from utils.portfolio_utils import (
-    calculate_portfolio_performance,
-    sharpe_ratio,
     trim_weights,
 )
 
@@ -34,7 +33,9 @@ def output(
     )
 
     # Validate that data contains all required symbols
-    missing_symbols = [symbol for symbol in clean_weights.keys() if symbol not in data.columns]
+    missing_symbols = [
+        symbol for symbol in clean_weights.keys() if symbol not in data.columns
+    ]
     if missing_symbols:
         logger.warning(
             f"The following symbols are missing in the data and will be filled with zeros: {missing_symbols}"

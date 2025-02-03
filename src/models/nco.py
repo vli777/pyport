@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples
-from scipy.linalg import block_diag
 from scipy.optimize import minimize
 
 from utils import logger
@@ -55,36 +54,28 @@ def optimize_weights(cov, mu=None, max_weight=1.0, allow_short=False):
 
 
 def optimize_weights_sharpe(cov, mu, max_weight=1.0, allow_short=False, target_sum=1.0):
-    """
-    Compute portfolio weights that maximize the Sharpe ratio.
+    """Compute portfolio weights that maximize the Sharpe ratio."""
+    if cov.shape[0] == 1:
+        return pd.Series([1.0], index=cov.index)  # Single asset gets full allocation
 
-    Args:
-        cov (np.ndarray): Covariance matrix of asset returns.
-        mu (np.ndarray): Expected returns of assets.
-        max_weight (float): Maximum allowed weight per asset (between 0 and 1).
+    valid_assets = cov.index.intersection(mu.index)  # Align mu and covariance
+    mu = mu.loc[valid_assets]
 
-    Returns:
-        np.ndarray: Optimal weights that maximize the Sharpe ratio.
-    """
-    # Number of assets
-    n = cov.shape[0]
-
-    # Define the objective function (negative Sharpe ratio)
     def negative_sharpe(weights):
         portfolio_return = weights @ mu
         portfolio_volatility = np.sqrt(weights.T @ cov @ weights)
         return -portfolio_return / portfolio_volatility
 
-    # Initial guess: Equal weights
-    init_weights = np.clip(np.ones(n) / n, -max_weight, max_weight)
+    init_weights = np.clip(
+        np.ones(len(valid_assets)) / len(valid_assets), -max_weight, max_weight
+    )
 
-    # Choose lower bound based on allow_short
     bounds = [
-        (-max_weight, max_weight) if allow_short else (0, max_weight) for _ in range(n)
+        (-max_weight, max_weight) if allow_short else (0, max_weight)
+        for _ in valid_assets
     ]
     constraints = {"type": "eq", "fun": lambda w: np.sum(w) - target_sum}
 
-    # Optimize
     result = minimize(
         negative_sharpe,
         init_weights,
@@ -94,15 +85,10 @@ def optimize_weights_sharpe(cov, mu, max_weight=1.0, allow_short=False, target_s
     )
 
     if not result.success:
-        logger.error(f"Optimization failed: {result.message}")
-        logger.debug(f"Initial weights: {init_weights}")
-        logger.debug(f"Bounds: {bounds}")
-        logger.debug(f"Constraints: {constraints}")
-        logger.debug(f"Covariance matrix: {cov}")
-        logger.debug(f"Expected returns: {mu}")
         raise ValueError("Optimization failed:", result.message)
 
-    return result.x
+    # Convert the result to a Series using valid_assets as the index
+    return pd.Series(result.x, index=valid_assets)
 
 
 def cluster_kmeans(corr: np.ndarray, max_clusters: int = 10) -> np.ndarray:
@@ -159,6 +145,21 @@ def nested_clustered_optimization(
     """
     Implement Nested Clustered Optimization with support for short positions.
     """
+    # **Filter assets with insufficient historical data**
+    min_data_threshold = cov.shape[0] * 0.5  # At least 50% valid history
+    valid_assets = cov.index[cov.notna().sum(axis=1) >= min_data_threshold]
+
+    if len(valid_assets) < 2:
+        logger.warning(
+            "Not enough valid assets after filtering. Skipping optimization."
+        )
+        return pd.Series(dtype=float)  # Return empty portfolio
+
+    # Reduce covariance & expected returns to valid assets
+    cov = cov.loc[valid_assets, valid_assets]
+    if mu is not None:
+        mu = mu.loc[valid_assets]
+
     # Correlation matrix and clustering
     corr = cov_to_corr(cov)
     labels = cluster_kmeans(corr, max_clusters)
@@ -170,8 +171,8 @@ def nested_clustered_optimization(
     )
     for cluster in unique_clusters:
         cluster_assets = cov.index[labels == cluster]
-        cluster_cov = cov.loc[cluster_assets, cluster_assets].values
-        cluster_mu = None if mu is None else mu.loc[cluster_assets].values
+        cluster_cov = cov.loc[cluster_assets, cluster_assets]
+        cluster_mu = None if mu is None else mu.loc[cluster_assets]
 
         # Pass `allow_short` to the optimization functions
         if sharpe:
@@ -208,5 +209,9 @@ def nested_clustered_optimization(
 
     # Apply a minimum weight threshold (preserves sign for shorts)
     final_weights = final_weights[final_weights.abs() >= 0.01]
+
+    # Ensure final_weights is a pandas Series
+    if not isinstance(final_weights, pd.Series):
+        final_weights = pd.Series(final_weights, index=intra_weights.index)
 
     return final_weights

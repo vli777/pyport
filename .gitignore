@@ -20,3 +20,5 @@ venv/
 build/
 .vscode/
 other/
+*.db
+**/*/*.pkl

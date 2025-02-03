@@ -4,7 +4,6 @@ from typing import Any, Dict, Tuple
 from collections import defaultdict
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LinearRegression
 
 from .logger import logger
 
@@ -103,7 +102,9 @@ def normalize_weights(weights, min_weight: float) -> pd.Series:
         logger.warning(
             "No weights meet the minimum threshold. Returning scaled original weights."
         )
-        filtered_weights = weights  # Retain original weights if all are below min_weight
+        filtered_weights = (
+            weights  # Retain original weights if all are below min_weight
+        )
 
     # Normalize the weights so they sum to 1
     total_weight = filtered_weights.sum()
@@ -111,7 +112,9 @@ def normalize_weights(weights, min_weight: float) -> pd.Series:
 
     if total_weight == 0:
         logger.error("Total weight is zero after filtering. Cannot normalize weights.")
-        raise ValueError("Total weight is zero after filtering. Cannot normalize weights.")
+        raise ValueError(
+            "Total weight is zero after filtering. Cannot normalize weights."
+        )
 
     normalized_weights = filtered_weights / total_weight
     logger.debug(f"Normalized weights before rounding: {normalized_weights}")
@@ -240,116 +243,6 @@ def trim_weights(weights: Dict[str, float], max_size: int) -> Dict[str, float]:
     return trimmed
 
 
-def calculate_portfolio_performance(
-    data: pd.DataFrame, weights: Dict[str, float]
-) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.DataFrame]:
-    """
-    Given price data (rows = dates, columns = tickers) and a dict of weights,
-    compute:
-      1) daily log returns of each ticker
-      2) weighted sum (i.e. portfolio daily returns)
-      3) portfolio cumulative returns
-      4) combined daily/cumulative returns for each ticker and the portfolio
-
-    Returns:
-      (returns, portfolio_returns, portfolio_cumulative_returns, combined_df)
-    """
-    # 1) Compute log returns
-    returns = np.log(data) - np.log(data.shift(1))
-    # Drop the first NaN row
-    returns = returns.iloc[1:, :]
-
-    # 2) Weighted returns and sum
-    weights_vector = list(weights.values())
-    
-    logger.debug(f"Returns shape: {returns.shape}")
-    logger.debug(f"Weights vector length: {len(weights_vector)}")
-
-    if returns.shape[1] != len(weights_vector):
-        error_msg = (
-            f"Number of columns in returns ({returns.shape[1]}) does not match "
-            f"length of weights_vector ({len(weights_vector)})."
-        )
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-    
-    weighted_returns = returns.mul(weights_vector, axis="columns")
-    portfolio_returns = weighted_returns.sum(axis=1)
-
-    # 3) Portfolio cumulative returns
-    portfolio_cumulative_returns = (portfolio_returns + 1).cumprod()
-
-    # 4) Combine daily & cumulative returns for optional plotting
-    #    - daily returns of each ticker -> returns
-    #    - daily returns of portfolio -> portfolio_returns
-    #    - cumulative returns of each ticker -> returns.add(1).cumprod()
-    #    - cumulative returns of portfolio -> portfolio_cumulative_returns
-
-    portfolio_returns_df = portfolio_returns.to_frame(name="SIM_PORT")
-    portfolio_cumulative_df = portfolio_cumulative_returns.to_frame(name="SIM_PORT")
-
-    all_daily_returns = returns.join(portfolio_returns_df)
-    all_cumulative_returns = (portfolio_cumulative_df - 1).join(
-        returns.add(1).cumprod() - 1
-    )
-
-    return (
-        returns,
-        portfolio_returns,
-        portfolio_cumulative_returns,
-        (all_daily_returns, all_cumulative_returns),
-    )
-
-
-def sharpe_ratio(
-    returns: pd.Series, entries_per_year: int = 252, risk_free_rate: float = 0.0
-) -> float:
-    """
-    Calculates annualized Sharpe ratio for pd.Series of normal or log returns.
-
-    Risk-free rate should be given for the same period the returns are given.
-    For example, if the input returns are observed in 3 months, the risk-free
-    rate given should be the 3-month risk-free rate.
-
-    :param returns: (pd.Series) Returns - normal or log
-    :param entries_per_year: (int) Times returns are recorded per year (252 by default)
-    :param risk_free_rate: (float) Risk-free rate (0 by default)
-    :return: (float) Annualized Sharpe ratio
-    """
-    excess_return = returns.mean() - risk_free_rate
-    annualized_volatility = returns.std() * np.sqrt(entries_per_year)
-    sharpe_r = excess_return / annualized_volatility
-
-    return sharpe_r
-
-
-def calculate_performance_metrics(returns_df, risk_free_rate=0.0):
-    daily_rf = risk_free_rate / 252
-    means = returns_df.mean()
-    stds = returns_df.std()
-    excess = means - daily_rf
-
-    sample_tickers = returns_df.columns[:5]
-    for ticker in sample_tickers:
-        logger.debug(
-            f"{ticker} - Mean: {means[ticker]:.6f}, Std: {stds[ticker]:.6f}, Excess Return: {excess[ticker]:.6f}"
-        )
-
-    sharpe_ratios = (excess / stds) * np.sqrt(252)
-    total_returns = (1 + returns_df).prod() - 1
-
-    for ticker in sample_tickers:
-        logger.debug(
-            f"{ticker} - Sharpe Ratio: {sharpe_ratios[ticker]:.4f}, Total Return: {total_returns[ticker]:.4f}"
-        )
-
-    performance_df = pd.DataFrame(
-        {"Sharpe Ratio": sharpe_ratios, "Total Return": total_returns}
-    )
-
-    return performance_df
-
-
 def limit_portfolio_size(
     weights: pd.Series, max_holdings: int, target_sum: float
 ) -> pd.Series:
@@ -374,70 +267,3 @@ def limit_portfolio_size(
         limited_weights = limited_weights / current_sum * target_sum
 
     return limited_weights
-
-
-def calculate_portfolio_alpha(
-    filtered_returns: pd.DataFrame,
-    market_returns: pd.Series,
-    risk_free_rate: float = 0.0,
-) -> float:
-    """
-    Calculate the portfolio's alpha using the CAPM model.
-
-    Args:
-        filtered_returns (pd.DataFrame): DataFrame containing returns of filtered tickers.
-        market_returns (pd.Series): Series containing market returns.
-        risk_free_rate (float, optional): Risk-free rate. Defaults to 0.0.
-
-    Returns:
-        float: Calculated alpha of the portfolio.
-    """
-    if filtered_returns.empty or market_returns.empty:
-        logger.warning(
-            "Filtered returns or market returns are empty. Returning alpha=0.0"
-        )
-        return 0.0
-
-    # Calculate portfolio returns as the mean of filtered tickers
-    portfolio_returns = filtered_returns.mean(axis=1)
-
-    # Align market_returns with portfolio_returns
-    portfolio_returns = portfolio_returns.reindex(market_returns.index).dropna()
-    market_returns = market_returns.reindex(portfolio_returns.index)
-
-    if portfolio_returns.empty or market_returns.empty:
-        logger.warning(
-            "After alignment, portfolio returns or market returns are empty. Returning alpha=0.0"
-        )
-        return 0.0
-
-    # Calculate excess returns
-    excess_portfolio_returns = portfolio_returns - risk_free_rate
-    excess_market_returns = market_returns - risk_free_rate
-
-    # Fit CAPM model
-    model = LinearRegression()
-    model.fit(
-        excess_market_returns.values.reshape(-1, 1), excess_portfolio_returns.values
-    )
-    alpha = model.intercept_
-
-    logger.debug(f"Calculated alpha: {alpha}")
-
-    return alpha
-
-
-def resample_returns(returns_df):
-    """
-    Resample daily returns to weekly and monthly frequencies.
-
-    Args:
-        returns_df (pd.DataFrame): Daily log returns DataFrame with tickers as columns and dates as index.
-
-    Returns:
-        dict: Dictionary containing resampled DataFrames longer time periods.
-    """
-    resampled_data = {
-        'weekly': returns_df.resample('W').sum(),        
-    }
-    return resampled_data

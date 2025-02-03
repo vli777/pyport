@@ -1,37 +1,35 @@
-data_dir: str  # Path to the data folder
-input_files_dir: str  # Folder for input files
+data_dir: str # Path to the data folder
+input_files_dir: str # Folder for input files
 input_files:
-  - str  # Name of the input file
+  - str # Name of the input file
   # - str  # Additional file names for switching
 
 models:
-  float:  # Time period in years, default 1.0
-    - str  # Model name, default nested_clustering
+  float: # Time period in years, default 1.0
+    - str # Model name, default nested_clustering
     # - str  # Other model names
 
-download: bool  # Whether to download data
+download: bool # Whether to download data
 include_etf_top_holdings: bool # Whether to include the top holdings of etf inputs
-min_weight: float  # Minimum weight for inclusion in final weights
+min_weight: float # Minimum weight for inclusion in final weights
 max_weight: float # Maximum weight allowed for any individual hodling
-portfolio_max_size: int  # Maximum number of assets in the portfolio
-risk_free_rate: float 
+portfolio_max_size: int # Maximum number of assets in the portfolio
+risk_free_rate: float
 
-plot_daily_returns: bool  # Whether to plot daily returns
-plot_cumulative_returns: bool  # Whether to plot cumulative returns
+plot_daily_returns: bool # Whether to plot daily returns
+plot_cumulative_returns: bool # Whether to plot cumulative returns
 plot_clustering: bool # Where to plot hierarchical clustering dendrogram
 plot_anomalies: bool # Whether to plot anomalies detected by Kalman filter
 plot_reversion_threshold: bool # Whether to plot mean reversion z scores
 
-anomaly_detection_deviation_threshold: float # Kalman filter sd multiplier
 top_n_candidates: int # Optional fixed number of top candidates to select from cluster groups
 
-use_reversion_filter: bool # Whether to use mean reversion asset filtering
-use_signal_filter: bool # Whether to use signal asset filtering
+use_mean_reversion: bool # Whether to adjust allocation weights with zscore signals
 use_anomaly_filter: bool # Whether to filter assets with anomalous returns
-use_correlation_filter: bool # Whether to filter correlated assets
+use_decorrelation: bool # Whether to filter correlated assets
 
-test_mode: bool  # Whether to enable test mode
-test_data_visible_pct: float  # Percentage of test data to show
+test_mode: bool # Whether to enable test mode
+test_data_visible_pct: float # Percentage of test data to show
 
 model_config:
   nested_clustering:

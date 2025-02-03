@@ -1,10 +1,12 @@
-import numpy as np
+import hashlib
 import pandas as pd
+import numpy as np
+import plotly.figure_factory as ff
+import plotly.graph_objects as go
 from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import linkage, fcluster, dendrogram
-from typing import Dict, List, Optional, Tuple
-import matplotlib.pyplot as plt
-import seaborn as sns
+from scipy.cluster.hierarchy import linkage, fcluster
+from typing import List
+from sklearn.covariance import LedoitWolf
 
 
 def validate_matrix(matrix, matrix_name: str):
@@ -39,7 +41,6 @@ def calculate_condensed_distance_matrix(corr_matrix):
 
 def hierarchical_clustering(
     corr_matrix: pd.DataFrame,
-    condensed_distance_matrix: np.ndarray,
     distance_threshold: float,
     linkage_method: str,
     plot: bool,
@@ -49,47 +50,63 @@ def hierarchical_clustering(
 
     Args:
         corr_matrix (pd.DataFrame): Correlation matrix.
-        condensed_distance_matrix (np.ndarray): Condensed distance matrix.
         distance_threshold (float): Threshold for forming clusters.
         linkage_method (str): Method for hierarchical clustering.
-        plot (bool): Whether to plot the clustering dendrogram
+        plot (bool): Whether to plot the clustering dendrogram.
 
     Returns:
         List[int]: Cluster assignments for each item.
     """
+    # Convert correlation to distance
+    distance_matrix = 1 - corr_matrix
+    np.fill_diagonal(distance_matrix.values, 0)
+
+    # Ensure no NaNs/Infs exist
+    validate_matrix(distance_matrix, "Distance matrix")
+
+    # Convert to condensed format for clustering
+    condensed_distance_matrix = squareform(distance_matrix)
+
+    # Perform hierarchical clustering
     linked = linkage(condensed_distance_matrix, method=linkage_method)
 
     if plot:
-        # Create a clustermap with Seaborn
-        sns.clustermap(
-            corr_matrix,
-            row_cluster=True,
-            col_cluster=True,
-            method=linkage_method,
-            cmap="vlag",  # Diverging colormap
-            linewidths=0.5,
-            figsize=(12, 10),
-            dendrogram_ratio=(0.2, 0.2),  # Adjust dendrogram size
+        fig = ff.create_dendrogram(
+            linked, labels=corr_matrix.index.tolist(), linkagefun=lambda x: linked
         )
-        plt.axhline(
-            y=distance_threshold,
-            color="r",
-            linestyle="--",
-            linewidth=1.5,
-            label="Distance Threshold",
+        fig.add_shape(
+            go.layout.Shape(
+                type="line",
+                x0=0,
+                x1=len(corr_matrix),
+                y0=distance_threshold,
+                y1=distance_threshold,
+                line=dict(color="red", dash="dash"),
+            )
         )
-        plt.legend(loc="upper right")
-        plt.title("Hierarchical Clustering Dendrogram")
-        plt.show()
-
-        plt.figure(figsize=(10, 7))
-        dendrogram(linked, labels=corr_matrix.index.tolist())
-        plt.axhline(
-            y=distance_threshold, color="r", linestyle="--"
-        )  # Visual cutoff line
-        plt.title("Hierarchical Clustering Dendrogram")
-        plt.xlabel("Ticker")
-        plt.ylabel("Distance (1 - Correlation)")
-        plt.show()
+        fig.update_layout(
+            title="Hierarchical Clustering Dendrogram",
+            xaxis_title="Ticker",
+            yaxis_title="Distance (1 - Correlation)",
+        )
+        fig.show()
 
     return fcluster(linked, t=distance_threshold, criterion="distance")
+
+
+def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Computes a Ledoit-Wolf covariance and converts it to a correlation matrix.
+    """
+    lw = LedoitWolf()
+    covariance = lw.fit(df).covariance_
+    stddev = np.sqrt(np.diag(covariance))
+    corr_matrix = covariance / np.outer(stddev, stddev)
+    np.fill_diagonal(corr_matrix, 0)
+    return pd.DataFrame(corr_matrix, index=df.columns, columns=df.columns)
+
+
+def compute_ticker_hash(tickers):
+    """Compute a hash of the sorted list of tickers."""
+    ticker_str = ",".join(sorted(tickers))
+    return hashlib.sha256(ticker_str.encode()).hexdigest()[:16]  # Use a short hash

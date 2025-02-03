@@ -4,6 +4,7 @@ from pathlib import Path
 import logging
 import sys
 from typing import Any, Dict, List, Optional, Tuple
+import numpy as np
 import pandas as pd
 
 from config import Config
@@ -11,19 +12,19 @@ from plotly_graphs import plot_graphs
 from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
-from anomaly_detection import remove_anomalous_stocks
-
-from correlation.decorrelation import filter_correlated_groups
-from correlation.optimize_correlation import optimize_correlation_threshold
+from anomaly.anomaly_detection import remove_anomalous_stocks
 from reversion.multiscale_reversion import apply_mean_reversion_multiscale
 from reversion.optimize_timescale_weights import find_optimal_weights
-from reversion.recommendation import generate_reversion_recommendations
-from reversion.optimize_inclusion import find_optimal_inclusion_pct
+from boxplot import generate_boxplot_data
+from correlation.tsne_dbscan import filter_correlated_groups_dbscan
+from stat_arb.stat_arb_adjust import (
+    adjust_allocation_with_stat_arb,
+    calculate_composite_signal,
+)
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
 from utils.portfolio_utils import (
-    calculate_performance_metrics,
     normalize_weights,
     stacked_output,
 )
@@ -97,15 +98,25 @@ def run_pipeline(
             pd.DataFrame: DataFrame containing daily returns for each stock.
         """
         try:
+            # Extract only 'Adj Close' level
             adj_close = df.xs("Adj Close", level=1, axis=1)
-            returns = adj_close.pct_change().dropna()
+
+            # Calculate daily returns while preserving different stock histories
+            returns = adj_close.pct_change()
+
+            # Fill only leading NaNs for stocks with different start dates
+            returns = returns.ffill().dropna(how="all")
+
             logger.debug("Calculated daily returns.")
             return returns
-        except KeyError:
-            logger.error("Adjusted close prices not found in the DataFrame.")
+
+        except KeyError as e:
+            logger.error(
+                f"Adjusted close prices not found in the DataFrame. Error: {e}"
+            )
             raise
 
-    def preprocess_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
+    def preprocess_data(df: pd.DataFrame, config: Config) -> pd.DataFrame:
         """
         Preprocess the input DataFrame to calculate returns and optionally remove anomalous stocks.
 
@@ -114,160 +125,68 @@ def run_pipeline(
             config: Configuration object with settings like anomaly detection threshold and plotting options.
 
         Returns:
-            pd.DataFrame: Processed DataFrame with daily returns and optional anomaly filtering applied.
+            pd.DataFrame: Processed DataFrame with daily returns, with optional anomaly filtering and decorrelation applied.
         """
-        returns = calculate_returns(df)
+        returns_df = calculate_returns(df)
 
-        removed_symbols = []
         if config.use_anomaly_filter:
             logger.debug("Applying anomaly filter.")
-            returns, removed_symbols = remove_anomalous_stocks(
-                returns,
-                threshold=config.anomaly_detection_deviation_threshold,
+            valid_symbols = remove_anomalous_stocks(
+                returns_df=returns_df,
+                cache_filename="optuna_cache/anomaly_thresholds.pkl",
+                reoptimize=False,
                 plot=config.plot_anomalies,
             )
+            filtered_returns_df = returns_df[valid_symbols]
         else:
-            logger.debug("Skipping anomaly filter.")
+            filtered_returns_df = returns_df
 
-        return returns, removed_symbols
+        # Apply decorrelation filter if enabled
+        if config.use_decorrelation:
+            logger.info("Filtering correlated assets...")
+            valid_symbols = filter_correlated_assets(filtered_returns_df, config)
 
-    def filter_symbols(returns_df: pd.DataFrame, config: Config) -> List[str]:
+            valid_symbols = [
+                symbol
+                for symbol in valid_symbols
+                if symbol in filtered_returns_df.columns
+            ]
+
+            return filtered_returns_df[valid_symbols]
+        # Remove rows where all columns are NaN after all filtering steps
+        filtered_returns_df = filtered_returns_df.dropna(how="all")
+
+        return filtered_returns_df
+
+    def filter_correlated_assets(returns_df: pd.DataFrame, config: Config) -> List[str]:
         """
-        Apply mean reversion and decorrelation filters to return valid symbols.
+        Apply mean reversion and decorrelation filters to return valid asset symbols.
         Falls back to the original returns_df columns if filtering results in an empty list.
         """
         original_symbols = list(returns_df.columns)  # Preserve original symbols
 
-        # Step 1: Optimize mean reversion signals
-        if config.use_reversion_filter:
-            # Step 1: Generate Reversion Signals
-            reversion_signals = apply_mean_reversion_multiscale(
-                returns_df, n_trials=50, n_jobs=-1, plot=config.plot_reversion_threshold
-            )
-            print("Reversion Signals Generated.")
-
-            # Step 2: Optimize Weights
-            optimal_weights = find_optimal_weights(
-                reversion_signals, returns_df, n_trials=50
-            )
-            print(f"Optimal Weights: {optimal_weights}")
-
-            # Step 3: Generate Final Recommendations based on initial thresholds
-            final_recommendations = generate_reversion_recommendations(
-                reversion_signals, optimal_weights, include_pct=0.2, exclude_pct=0.2
-            )
-            print("Initial Tickers to include:", final_recommendations["include"])
-            print("Initial Tickers to exclude:", final_recommendations["exclude"])
-
-            # Step 4: Optimize Inclusion/Exclusion Thresholds
-            # Compute final_signals
-            daily_signals = pd.DataFrame.from_dict(
-                reversion_signals["daily"], orient="index"
-            ).T
-            weekly_signals = pd.DataFrame.from_dict(
-                reversion_signals["weekly"], orient="index"
-            ).T
-
-            # Ensure both DataFrames have the same index (dates)
-            combined_dates = daily_signals.index.union(weekly_signals.index)
-            daily_signals = daily_signals.reindex(combined_dates).fillna(0)
-            weekly_signals = weekly_signals.reindex(combined_dates).fillna(0)
-
-            # Compute weighted signal strength
-            weight_daily = optimal_weights.get("weight_daily", 0.5)
-            weight_weekly = 1.0 - weight_daily
-            final_signals = weight_daily * daily_signals + weight_weekly * weekly_signals
-
-            # Optimize inclusion/exclusion thresholds
-            optimal_inclusion_thresholds = find_optimal_inclusion_pct(
-                final_signals, returns_df, n_trials=50
-            )
-            print(f"✅ Optimal Inclusion Thresholds: {optimal_inclusion_thresholds}")
-
-            # Step 5: Generate Final Recommendations with optimized thresholds
-            reversion_recommendations = generate_reversion_recommendations(
-                reversion_signals,
-                optimal_weights,
-                include_pct=optimal_inclusion_thresholds.get(
-                    "include_threshold_pct", 0.2
-                ),
-                exclude_pct=optimal_inclusion_thresholds.get(
-                    "exclude_threshold_pct", 0.2
-                ),
+        try:
+            decorrelated_tickers = filter_correlated_groups_dbscan(
+                returns_df=returns_df,
+                risk_free_rate=config.risk_free_rate,
+                eps=0.2,
+                min_samples=2,
+                top_n_per_cluster=config.top_n_candidates,
+                plot=config.plot_clustering,
+                cache_dir="optuna_cache",
+                reoptimize=False,
             )
 
-            # Step 6: Modify Trading Universe
-            include_tickers = set(reversion_recommendations["include"])
-            exclude_tickers = set(reversion_recommendations["exclude"])
+            valid_symbols = [
+                symbol for symbol in original_symbols if symbol in decorrelated_tickers
+            ]
 
-            # Ensure exclusions are applied and inclusions are added
-            filtered_symbols = (
-                set(original_symbols) - exclude_tickers
-            ) | include_tickers
-            filtered_symbols = sorted(filtered_symbols)  # Ensure consistency
+        except Exception as e:
+            logger.error(f"Correlation threshold optimization failed: {e}")
+            # Fall back to original symbols if optimization fails
+            valid_symbols = original_symbols
 
-        else:
-            filtered_symbols = original_symbols
-
-        # Fallback to original symbols if filtering results in an empty list
-        if not filtered_symbols:
-            filtered_symbols = original_symbols
-
-        # Step 2: Validate filtered symbols against returns_df columns
-        valid_symbols = [
-            symbol for symbol in filtered_symbols if symbol in original_symbols
-        ]
-        if len(valid_symbols) < len(filtered_symbols):
-            missing_symbols = set(filtered_symbols) - set(valid_symbols)
-            logger.warning(f"Filtered symbols not in returns_df: {missing_symbols}")
-
-        # Step 3: Apply correlation filter (if enabled)
-        if config.use_correlation_filter and valid_symbols:
-            try:
-                # Calculate performance metrics
-                performance_metrics = calculate_performance_metrics(
-                    returns_df[valid_symbols], config.risk_free_rate
-                )
-
-                # Load market returns
-                market_returns = calculate_returns(
-                    load_data(
-                        all_symbols=["SPY"], start_date=start_long, end_date=end_long
-                    )
-                )
-
-                # Optimize correlation threshold
-                best_params, best_value = optimize_correlation_threshold(
-                    returns_df=returns_df[valid_symbols],
-                    performance_df=performance_metrics,
-                    market_returns=market_returns,
-                    risk_free_rate=config.risk_free_rate,
-                )
-
-                # Filter decorrelated tickers
-                decorrelated_tickers = filter_correlated_groups(
-                    returns_df=returns_df[valid_symbols],
-                    performance_df=performance_metrics,
-                    correlation_threshold=best_params["correlation_threshold"],
-                    sharpe_threshold=0.005,
-                    plot=config.plot_clustering,
-                    top_n=config.top_n_candidates,
-                )
-
-                valid_symbols = [
-                    symbol for symbol in valid_symbols if symbol in decorrelated_tickers
-                ]
-
-                logger.info(
-                    f"Optimized correlation threshold: {best_params['correlation_threshold']:.4f}"
-                )
-
-            except Exception as e:
-                logger.error(f"Correlation threshold optimization failed: {e}")
-                # Fall back to original symbols if optimization fails
-                valid_symbols = original_symbols
-
-        # Step 4: Ensure a non-empty list of symbols is returned
+        # Ensure a non-empty list of symbols is returned
         if not valid_symbols:
             logger.warning(
                 "No valid symbols after filtering. Returning original symbols."
@@ -276,12 +195,60 @@ def run_pipeline(
 
         return valid_symbols
 
-    def perform_post_processing(stack_data: Dict[str, Any]) -> Dict[str, Any]:
+    def stat_arb_adjust(
+        baseline_allocation: pd.Series, returns_df: pd.DataFrame, config: Config
+    ) -> pd.Series:
+        """
+        Apply z-score based allocation weight adjustments
+        Args:
+            baseline_allocation (pd.Series) Original weight allocation after optimization
+            returns_df (pd.DataFrame): The returns dataframe of all selected stocks in the portfolio
+            config (Config): yaml config loader object
+
+        Returns:
+            final_allocation (pd.Series)
+        """
+        # Apply z-score based allocation weight adjustments
+
+        # Step 1. Generate reversion signals (using your multiscale implementation)
+        reversion_signals = apply_mean_reversion_multiscale(
+            returns_df, n_trials=50, n_jobs=-1, plot=config.plot_reversion_threshold
+        )
+        print("Reversion Signals Generated.")
+
+        # Step 2. Optimize weights for the reversion signals (for example, the daily/weekly weighting)
+        optimal_weights = find_optimal_weights(
+            reversion_signals, returns_df, n_trials=50
+        )
+        print(f"Optimal Weights: {optimal_weights}")
+
+        # Step 3. Compute the composite stat arb signal from the reversion signals.
+        # (This gives a continuous signal for each ticker.)
+        composite_signals = calculate_composite_signal(
+            reversion_signals,
+            weight_daily=optimal_weights.get("weight_daily", 0.5),
+            weight_weekly=1.0 - optimal_weights.get("weight_daily", 0.5),
+        )
+        print(f"Composite Signals: {composite_signals}")
+
+        final_allocation = adjust_allocation_with_stat_arb(
+            baseline_allocation=baseline_allocation,
+            composite_signals=composite_signals,
+            alpha=0.2,  # e.g. 0.2 or another value determined by testing
+            allow_short=False,  # config.allow_short,
+        )
+
+        return final_allocation
+
+    def perform_post_processing(
+        stack_weights: Dict[str, Any], returns_df: pd.DataFrame
+    ) -> Dict[str, any]:
         """
         Perform post-processing on the stack data to calculate normalized weights.
 
         Args:
-            stack_data (Dict[str, Any]): The stack data containing optimization results.
+            stack_weights (Dict[str, Any]): The stack weights data containing optimization results.
+            returns_df (pd.DataFrame): Returns of the assets in the portfolio
 
         Returns:
             Dict[str, Any]: Normalized weights as a dictionary.
@@ -289,7 +256,7 @@ def run_pipeline(
         # Convert pd.Series to dictionaries if necessary
         processed_stack = {
             key: (value.to_dict() if isinstance(value, pd.Series) else value)
-            for key, value in stack_data.items()
+            for key, value in stack_weights.items()
         }
 
         # Compute averaged weights
@@ -308,13 +275,20 @@ def run_pipeline(
         # Normalize weights and convert to a dictionary if necessary
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
 
+        if config.use_mean_reversion:
+            normalized_weights = stat_arb_adjust(
+                baseline_allocation=normalized_weights,
+                returns_df=returns_df,
+                config=config,
+            )
+
         # Ensure output is a dictionary
         if isinstance(normalized_weights, pd.Series):
             normalized_weights = normalized_weights.to_dict()
 
         return normalized_weights
 
-    # Step 1: Load and validate symbols
+    # Load and validate symbols
     try:
         all_symbols = load_symbols()
         if not all_symbols:
@@ -324,67 +298,78 @@ def run_pipeline(
         logger.error(f"Symbol override validation failed: {e}")
         return {}
 
-    # Step 2: Initialize structures
+    # Initialize structures
     stack: Dict[str, Any] = {}
     dfs: Dict[str, Any] = {}
     active_models = [k for k, v in config.models.items() if v]
     sorted_time_periods = sorted(active_models, reverse=True)
 
-    # Step 3: Determine date range based on the longest period
+    # Determine date range based on the longest period
     longest_period = sorted_time_periods[0]
     start_long, end_long = calculate_start_end_dates(longest_period)
     dfs["start"] = start_long
     dfs["end"] = end_long
 
-    # Step 4: Load and preprocess data
+    # Load and preprocess data
     logger.info("Loading and preprocessing data...")
     df_all = load_data(all_symbols, start_long, end_long)
-    returns_df, removed_anomalous = preprocess_data(df_all)
-    # Log removed anomalous symbols
-    if removed_anomalous:
-        logger.info(f"Anomalous symbols removed: {removed_anomalous}")
 
-    # Step 5: Filter symbols based on mean reversion only if required
-    logger.info("Filtering symbols...")
-    valid_symbols = filter_symbols(returns_df, config)
+    # Ensure we use the **largest valid date range** for returns_df
+    all_dates = df_all.index  # Keep full range before filtering
+    returns_df = preprocess_data(df_all, config)  # apply all pre-optimization filters
+
+    valid_symbols = list(returns_df.columns)
     if not valid_symbols:
         logger.warning("No valid symbols remain after filtering. Aborting pipeline.")
-        return {}
+        return None  # Or raise an exception if this is an unrecoverable state
+
     logger.info(f"Symbols selected for optimization: {valid_symbols}")
 
     try:
-        dfs["data"] = df_all.xs("Adj Close", level=1, axis=1)[valid_symbols]
-        logger.debug(f"dfs['data'] shape: {dfs['data'].shape}")
+        if valid_symbols:
+            dfs["data"] = df_all.xs("Adj Close", level=1, axis=1)[valid_symbols]
+            logger.debug(f"dfs['data'] shape: {dfs['data'].shape}")
+        else:
+            logger.warning("No valid symbols available for slicing df_all.")
+            dfs["data"] = pd.DataFrame()  # Or handle gracefully
     except KeyError as e:
-        logger.error(f"Error slicing df_all with filtered_decorrelated: {e}")
+        logger.error(f"Error slicing df_all: {e}")
         raise
 
-    # Step 6: Iterate through each time period and perform optimization
+    # Iterate through each time period and perform optimization
     logger.info("Running optimization...")
     for period in sorted_time_periods:
         start, end = calculate_start_end_dates(period)
         logger.debug(f"Processing period: {period} from {start} to {end}")
 
-        # Slice price data for the period
+        # Preserve full available date range
         df_period = df_all.loc[start:end].copy()
 
         # Flatten df_period for optimization
         if isinstance(
             df_period.columns, pd.MultiIndex
         ) and "Adj Close" in df_period.columns.get_level_values(1):
-            df_period = df_period.xs("Adj Close", level=1, axis=1)
+            try:
+                df_period = df_period.xs("Adj Close", level=1, axis=1)
 
-        # Ensure the DataFrame is flat with symbols as columns and dates as the index
+                # Ensure stocks with shorter histories remain in the dataset
+                all_tickers = df_period.columns.get_level_values(0).unique()
+                df_period = df_period.reindex(columns=all_tickers, fill_value=np.nan)
+
+                df_period.columns.name = None  # Flatten MultiIndex properly
+            except KeyError:
+                logger.warning(
+                    "Adj Close column not found. Returning original DataFrame."
+                )
+
+        # Align stocks with different start dates properly
+        df_period = df_period.reindex(
+            index=all_dates, columns=valid_symbols, fill_value=np.nan
+        )
         df_period.columns.name = None  # Remove column name (Ticker)
         df_period.index.name = "Date"  # Set index name for clarity
 
-        # Filter df_period to include only valid_symbols
-        df_period = df_period[valid_symbols]
-
-        # Update dfs with the new start and end dates
-        dfs["start"] = min(dfs["start"], start)
-        dfs["end"] = max(dfs["end"], end)
-
+        # Prevent removal of stocks due to shorter histories
         if config.test_mode:
             df_period.to_csv("full_df.csv")
             visible_length = int(len(df_period) * config.test_data_visible_pct)
@@ -393,6 +378,7 @@ def run_pipeline(
                 f"Test mode active: saved full_df.csv and limited data to {visible_length} records."
             )
 
+        logger.info(f"Running optimization with {valid_symbols}")
         run_optimization_and_save(
             df=df_period,
             config=config,
@@ -409,12 +395,12 @@ def run_pipeline(
         logger.warning("No optimization results found.")
         return {}
 
-    # Step 7: Post-processing of optimization results
-    normalized_avg_weights = perform_post_processing(stack)
+    # Post-processing of optimization results
+    normalized_avg_weights = perform_post_processing(stack, returns_df)
     if not normalized_avg_weights:
         return {}
 
-    # Step 8: Prepare output data
+    # Prepare output data
     valid_models = [
         model for models in config.models.values() if models for model in models
     ]
@@ -429,13 +415,14 @@ def run_pipeline(
         f"dfs['data'] Columns ({len(dfs['data'].columns)}): {list(dfs['data'].columns)}"
     )
 
-    # Align dfs["data"] with normalized_avg_weights dict
+    # Ensure we only drop stocks **below the min weight threshold**, not just because of missing data
     dfs["data"] = dfs["data"].filter(items=normalized_avg_weights.keys())
+
     logger.debug(
         f"Filtered symbols after trimming allocations below minimum weight {config.min_weight}: {dfs['data'].columns}"
     )
 
-    # Check for empty DataFrame after filtering
+    # Prevent empty DataFrame after filtering
     if dfs["data"].empty:
         logger.error("No valid symbols remain in the DataFrame after alignment.")
 
@@ -457,7 +444,7 @@ def run_pipeline(
         reverse=True,
     )
 
-    # Step 9: Optional plotting
+    # Optional plotting
     if run_local:
         plot_graphs(
             daily_returns=daily_returns,
@@ -466,11 +453,13 @@ def run_pipeline(
             symbols=sorted_symbols,
         )
 
-    # Step 10: Cleanup
+    # Cleanup
     cleanup_cache("cache")
     logger.info("Pipeline execution completed successfully.")
 
-    # Step 11: Compile and return results
+    # Compile and return results
+    boxplot_stats = generate_boxplot_data(daily_returns)
+
     return {
         "start_date": str(dfs["start"]),
         "end_date": str(dfs["end"]),
@@ -479,4 +468,5 @@ def run_pipeline(
         "normalized_avg": normalized_avg_weights,
         "daily_returns": daily_returns,
         "cumulative_returns": cumulative_returns,
+        "boxplot_stats": boxplot_stats,  # (not extractable from plotly boxplot)
     }
