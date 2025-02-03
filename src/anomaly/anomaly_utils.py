@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 
@@ -39,4 +40,18 @@ def get_cache_filename(method: str) -> str:
         "KF": "optuna_cache/anomaly_thresholds_KF.pkl",
         "Z-score": "optuna_cache/anomaly_thresholds_Z.pkl",
     }
-    return cache_map.get(method, "optuna_cache/anomaly_thresholds_IF.pkl")  # Default to IF
+    return cache_map.get(
+        method, "optuna_cache/anomaly_thresholds_IF.pkl"
+    )  # Default to IF
+
+
+def apply_fixed_zscore(series: pd.Series, threshold: float = 3.0):
+    """Detect anomalies using a fixed Z-score threshold.
+
+    Returns:
+        anomaly_flags (pd.Series): Boolean series indicating anomalies.
+        estimates (pd.Series): In this case, simply the original series.
+    """
+    residuals = (series - series.mean()) / series.std()
+    anomaly_flags = np.abs(residuals) > threshold
+    return anomaly_flags, series.copy()

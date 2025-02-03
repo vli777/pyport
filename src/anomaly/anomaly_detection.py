@@ -5,14 +5,13 @@ import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
 from joblib import Parallel, delayed
-import json
-from pathlib import Path
+
 
 from anomaly.plot_anomalies import plot_anomaly_overview
 from anomaly.isolation_forest import apply_isolation_forest
 from anomaly.plot_optimization_summary import plot_optimization_summary
 from anomaly.kalman_filter import apply_kalman_filter
-from src.anomaly.anomaly_utils import get_cache_filename
+from src.anomaly.anomaly_utils import apply_fixed_zscore, get_cache_filename
 from utils.logger import logger
 from utils.performance_metrics import kappa_ratio
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
@@ -29,8 +28,8 @@ def remove_anomalous_stocks(
 ) -> List[str]:
     """
     Filters out stocks with anomalous returns using Isolation Forest (IF),
-    Kalman Filter (KF), or Z-score, based on the number of stocks in the dataset.
-    Uses per-ticker optimization and caches method-specific parameters.
+    Kalman Filter (KF), or fixed Z-score. Uses per-ticker optimization and caches
+    method-specific parameters.
 
     Args:
         returns_df (pd.DataFrame): DataFrame where each column corresponds to a stock's returns.
@@ -63,7 +62,6 @@ def remove_anomalous_stocks(
         {} if reoptimize else load_parameters_from_pickle(cache_filename) or {}
     )
 
-    # Process each ticker individually.
     def process_ticker(stock: str) -> Optional[Dict[str, Any]]:
         series = returns_df[stock].dropna()
         if series.empty:
@@ -71,7 +69,6 @@ def remove_anomalous_stocks(
             return None
 
         if use_isolation_forest:
-            # Optimize threshold if not cached or if reoptimization is requested.
             if stock in cache and not reoptimize:
                 ticker_info = cache[stock]
             else:
@@ -87,11 +84,12 @@ def remove_anomalous_stocks(
             thresh = 7.0  # Empirically determined threshold.
             anomaly_flags, estimates = apply_kalman_filter(series, threshold=thresh)
 
-        else:  # Z-score method for very small datasets.
+        elif use_fixed_zscore:
             thresh = 3.0
-            residuals = (series - series.mean()) / series.std()
-            anomaly_flags = (np.abs(residuals) > thresh).astype(bool)
-            estimates = series.copy()
+            anomaly_flags, estimates = apply_fixed_zscore(series, threshold=thresh)
+        else:
+            logger.error("No anomaly detection method selected.")
+            return None
 
         ticker_info = {
             "stock": stock,
@@ -102,7 +100,6 @@ def remove_anomalous_stocks(
         }
         return ticker_info
 
-    # Parallel processing of each stock.
     processed_info = Parallel(n_jobs=n_jobs)(
         delayed(process_ticker)(stock) for stock in returns_df.columns
     )
@@ -126,7 +123,6 @@ def remove_anomalous_stocks(
     )
 
     if plot and cache:
-        # Plot anomalies using method-specific plotting function.
         plot_anomaly_overview(cache, returns_df)
         plot_optimization_summary(list(cache.values()))
 
@@ -135,38 +131,56 @@ def remove_anomalous_stocks(
 
 def optimize_threshold_for_ticker(
     returns_series: pd.Series,
-    weight_dict: Dict[str, float],
+    weight_dict: dict,
     stock: str,
+    method: str,
     contamination: float = "auto",
 ) -> dict:
     """
-    Optimizes the anomaly detection filter threshold for one ticker using Optuna.
-    Uses the kappa ratio and applies a penalty that is a percentage of the composite score.
-    For reference stocks, any anomaly flags reduce the composite score by 50%.
-    For non-reference stocks, if the adjusted anomaly fraction is below the maximum, a 10% penalty is applied.
-    Additionally, stocks with high volatility relative to a median benchmark receive an extra penalty,
-    so that meme stocks (which tend to be very volatile) are not rewarded with high composite scores.
+    Optimizes the anomaly detection threshold for a single ticker using Optuna.
+    The objective function scores the threshold based on multiple factors (kappa,
+    volatility penalties, and anomaly fraction). The search space is adjusted
+    dynamically depending on the method:
+        - IF: Isolation Forest (default range: 4.2 to 6.9)
+        - KF: Kalman Filter (default range: 5.0 to 8.0)
+        - Z-score: Fixed Z-score (default range: 2.0 to 4.0)
+
+    Args:
+        returns_series (pd.Series): Series of stock returns.
+        weight_dict (dict): Weights for scoring components (e.g. "kappa", "stability").
+        stock (str): Ticker symbol.
+        method (str): One of "IF", "KF", or "Z-score".
+        contamination (float): Contamination parameter for Isolation Forest.
 
     Returns:
-        dict: A dictionary with keys "stock", "threshold", "best_score", and "anomaly_fraction".
+        dict: Contains "stock", "threshold", "best_score", and "anomaly_fraction".
     """
 
     def objective(trial):
-        threshold = trial.suggest_float("threshold", 4.2, 6.9, step=0.1)
+        # Adjust the search space and anomaly detection function based on method.
+        if method == "IF":
+            threshold = trial.suggest_float("threshold", 4.2, 6.9, step=0.1)
+            anomaly_flags, _ = apply_isolation_forest(
+                returns_series, threshold=threshold, contamination=contamination
+            )
+        elif method == "KF":
+            threshold = trial.suggest_float("threshold", 5.0, 8.0, step=0.1)
+            anomaly_flags, _ = apply_kalman_filter(returns_series, threshold=threshold)
+        elif method == "Z-score":
+            threshold = trial.suggest_float("threshold", 2.0, 4.0, step=0.1)
+            anomaly_flags, _ = apply_fixed_zscore(returns_series, threshold=threshold)
+        else:
+            raise ValueError(f"Unsupported method: {method}")
 
-        anomaly_flags, scores = apply_isolation_forest(
-            returns_series, threshold=threshold, contamination=contamination
-        )
         anomaly_fraction = anomaly_flags.mean()
 
-        # Compute kappa; if NaN, set to 0.
+        # Compute kappa ratio; if NaN, default to 0.
         kappa = kappa_ratio(returns_series, order=3)
         if np.isnan(kappa):
             kappa = 0.0
 
-        # Compute rolling volatility (30-day window with minimum 5 periods).
+        # Rolling volatility computation (30-day window, min 5 observations).
         rolling_std_series = returns_series.rolling(window=30, min_periods=5).std()
-        # Use nanmean and nanmedian to be safe.
         rolling_volatility = np.nanmean(rolling_std_series)
         median_volatility = np.nanmedian(rolling_std_series)
         if np.isnan(rolling_volatility):
@@ -174,38 +188,35 @@ def optimize_threshold_for_ticker(
         if np.isnan(median_volatility) or median_volatility == 0:
             median_volatility = 1.0
 
-        # Stability penalty: more volatility is worse.
+        # Stability penalty: higher volatility reduces the score.
         stability_penalty = -rolling_volatility * 0.05
 
-        # Extreme volatility penalty: use 95th percentile of daily absolute pct changes.
+        # Extreme volatility penalty based on 95th percentile of daily pct changes.
         pct_changes = returns_series.pct_change().abs().dropna()
         if len(pct_changes) > 0:
             extreme_vol = np.percentile(pct_changes, 95)
-            if np.isnan(extreme_vol):
-                extreme_volatility_penalty = 0.0
-            else:
-                extreme_volatility_penalty = -extreme_vol * 0.5
+            extreme_volatility_penalty = (
+                -extreme_vol * 0.5 if not np.isnan(extreme_vol) else 0.0
+            )
         else:
             extreme_volatility_penalty = 0.0
 
-        # Meme stock penalty: based on the 95th percentile of absolute rolling z-scores.
+        # Meme stock penalty based on rolling z-scores.
         rolling_mean = returns_series.rolling(window=30, min_periods=5).mean()
         rolling_std = returns_series.rolling(window=30, min_periods=5).std()
-        z_score_series = (returns_series - rolling_mean) / (rolling_std + 1e-8)
-        z_score_series = z_score_series.abs().fillna(0)
+        z_score_series = (
+            ((returns_series - rolling_mean) / (rolling_std + 1e-8)).abs().fillna(0)
+        )
         if len(z_score_series) > 0:
             perc_z = np.percentile(z_score_series, 95)
-            if np.isnan(perc_z):
-                meme_stock_penalty = 0.0
-            else:
-                meme_stock_penalty = -perc_z * 1.5
+            meme_stock_penalty = -perc_z * 1.5 if not np.isnan(perc_z) else 0.0
         else:
             meme_stock_penalty = 0.0
 
-        # Anomaly fraction penalty: directly penalize higher anomaly fractions.
+        # Direct penalty for a higher anomaly fraction.
         anomaly_fraction_penalty = anomaly_fraction * 10
 
-        # Composite score as a sum of weighted components.
+        # Composite score: higher is better.
         composite_score = (
             weight_dict["kappa"] * kappa
             + weight_dict["stability"] * stability_penalty
@@ -214,15 +225,14 @@ def optimize_threshold_for_ticker(
             - anomaly_fraction_penalty
         )
 
-        # Optional: Normalize by a volatility ratio.
+        # Normalize by volatility ratio.
         vol_penalty_ratio = (
             rolling_volatility / median_volatility if median_volatility > 0 else 1.0
         )
         composite_score /= vol_penalty_ratio + 1e-8
 
-        # Debug print.
         print(
-            f"[DEBUG] Stock: {stock}, Threshold: {threshold:.2f}, "
+            f"[DEBUG] Stock: {stock}, Method: {method}, Threshold: {threshold:.2f}, "
             f"Score: {composite_score:.4f}, Anomaly Fraction: {anomaly_fraction:.4f}"
         )
 
@@ -237,10 +247,12 @@ def optimize_threshold_for_ticker(
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
     study.optimize(objective, n_trials=50, timeout=60)
 
+    # Use a default threshold if optimization fails.
     if not study.best_trial or study.best_value == -np.inf:
+        default_threshold = 5.0 if method == "IF" else (7.0 if method == "KF" else 3.0)
         return {
             "stock": stock,
-            "threshold": 5.0,
+            "threshold": default_threshold,
             "best_score": 0.0,
             "anomaly_fraction": 1.0,
         }
