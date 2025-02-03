@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
 from sklearn.manifold import TSNE
+from sklearn.neighbors import NearestNeighbors
 from sklearn.covariance import LedoitWolf
 import plotly.express as px
 
@@ -23,16 +24,16 @@ def filter_correlated_groups_dbscan(
     reoptimize: bool = False,
 ) -> list:
     """
-    Uses DBSCAN to cluster stocks based on the distance (1 - correlation) matrix.
+    Uses DBSCAN to cluster assets based on the distance (1 - correlation) matrix.
     Then, for each cluster, selects the top performing stock(s) based on a composite
     performance metric computed internally.
 
     Args:
-        returns_df (pd.DataFrame): DataFrame with dates as index and stocks as columns.
+        returns_df (pd.DataFrame): DataFrame with dates as index and assets as columns.
         risk_free_rate (float): Risk-free rate for performance metric calculation.
         eps (float): The eps parameter for DBSCAN (distance threshold).
         min_samples (int): Minimum samples for a core point in DBSCAN.
-        top_n_per_cluster (int): How many top stocks to select from each cluster.
+        top_n_per_cluster (int): How many top assets to select from each cluster.
         plot (bool): If True, display a t-SNE visualization of clusters.
         cache_dir (str): Directory path to cache optimized DBSCAN parameters.
         reoptimize (bool): If True, force re-optimization (or re-calculation) of eps.
@@ -69,7 +70,7 @@ def filter_correlated_groups_dbscan(
     # Convert correlation to distance: distance = 1 - correlation.
     distance_matrix = 1 - corr_matrix
 
-    # Cluster stocks with DBSCAN using the precomputed distance matrix.
+    # Cluster assets with DBSCAN using the precomputed distance matrix.
     dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
     cluster_labels = dbscan.fit_predict(distance_matrix)
 
@@ -95,17 +96,18 @@ def filter_correlated_groups_dbscan(
             top_candidates = group_perf.index.tolist()[:top_n_per_cluster]
             selected_tickers.extend(top_candidates)
             logger.info(
-                f"Cluster {label}: {len(tickers)} stocks: Keeping {top_candidates}"
+                f"Cluster {label}: {len(tickers)} assets: Keeping {top_candidates}"
             )
 
     removed_tickers = set(returns_df.columns) - set(selected_tickers)
     if removed_tickers:
         logger.info(
-            f"Removed {len(removed_tickers)} stocks due to high correlation: {sorted(removed_tickers)}"
+            f"Removed {len(removed_tickers)} assets due to high correlation: {sorted(removed_tickers)}"
         )
     else:
-        logger.info("No stocks were removed.")
-
+        logger.info("No assets were removed.")
+    logger.info(f"{len(selected_tickers)} assets remain")
+    
     # Optional t-SNE visualization.
     if plot:
         tsne = TSNE(n_components=2, random_state=42)
@@ -123,6 +125,40 @@ def filter_correlated_groups_dbscan(
         )
         fig.show()
 
+        # --- k-distance plot for eps selection ---
+
+        # Use the precomputed distance matrix.
+        # NearestNeighbors with metric='precomputed' requires the full distance matrix.
+        nbrs = NearestNeighbors(n_neighbors=min_samples, metric="precomputed")
+        nbrs.fit(distance_matrix)
+        distances, _ = nbrs.kneighbors(distance_matrix)
+
+        # We want the distance to the min_samples-th nearest neighbor.
+        kth_distances = np.sort(distances[:, -1])
+
+        # Create a line plot using Plotly.
+        k_values = list(range(1, len(kth_distances) + 1))
+        fig_k = px.line(
+            x=k_values,
+            y=kth_distances,
+            labels={
+                "x": "Points sorted by distance",
+                "y": f"Distance to {min_samples}-th nearest neighbor",
+            },
+            title="k-Distance Plot for eps Selection",
+        )
+
+        # Add a horizontal line at the selected eps value.
+        fig_k.add_hline(
+            y=eps,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"Selected eps: {eps}",
+            annotation_position="top right",
+        )
+
+        fig_k.show()
+
     return selected_tickers
 
 
@@ -131,10 +167,10 @@ def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
     Computes a robust correlation matrix using the Ledoit-Wolf covariance estimate.
 
     Args:
-        df (pd.DataFrame): DataFrame of returns with stocks as columns.
+        df (pd.DataFrame): DataFrame of returns with assets as columns.
 
     Returns:
-        pd.DataFrame: Correlation matrix with stocks as both index and columns.
+        pd.DataFrame: Correlation matrix with assets as both index and columns.
     """
     lw = LedoitWolf()
     covariance = lw.fit(df).covariance_
