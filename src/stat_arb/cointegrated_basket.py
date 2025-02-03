@@ -146,7 +146,7 @@ def objective(trial: optuna.Trial, prices_df: pd.DataFrame) -> float:
         iso_contamination=iso_contamination,
     )
 
-    objective_value = -abs(result["latest_zscore"])
+    objective_value = abs(result["latest_zscore"])
     return objective_value
 
 
@@ -163,7 +163,7 @@ def run_optuna_study_for_basket(prices_df: pd.DataFrame, n_trials: int = 50) -> 
     Returns:
         dict: Dictionary with keys "best_params" and "best_value".
     """
-    study = optuna.create_study(direction="minimize")
+    study = optuna.create_study(direction="maximize")
     study.optimize(lambda trial: objective(trial, prices_df), n_trials=n_trials, n_jobs=-1)
 
     return {"best_params": study.best_params, "best_value": study.best_value}
