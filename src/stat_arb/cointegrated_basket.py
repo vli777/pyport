@@ -164,6 +164,6 @@ def run_optuna_study_for_basket(prices_df: pd.DataFrame, n_trials: int = 50) -> 
         dict: Dictionary with keys "best_params" and "best_value".
     """
     study = optuna.create_study(direction="minimize")
-    study.optimize(lambda trial: objective(trial, prices_df), n_trials=n_trials)
+    study.optimize(lambda trial: objective(trial, prices_df), n_trials=n_trials, n_jobs=-1)
 
     return {"best_params": study.best_params, "best_value": study.best_value}
