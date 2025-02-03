@@ -133,7 +133,6 @@ def run_pipeline(
             logger.debug("Applying anomaly filter.")
             valid_symbols = remove_anomalous_stocks(
                 returns_df=returns_df,
-                cache_filename="optuna_cache/anomaly_thresholds.pkl",
                 reoptimize=False,
                 plot=config.plot_anomalies,
             )

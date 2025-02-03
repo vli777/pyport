@@ -136,5 +136,3 @@ if __name__ == "__main__":
         initial_symbols=None,  # Or provide initial symbols as needed
         run_local=True,
     )
-
-    print("\nFinal allocation:", final_result["normalized_avg"])
