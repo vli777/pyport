@@ -107,7 +107,7 @@ def filter_correlated_groups_dbscan(
     else:
         logger.info("No assets were removed.")
     logger.info(f"{len(selected_tickers)} assets remain")
-    
+
     # Optional t-SNE visualization.
     if plot:
         tsne = TSNE(n_components=2, random_state=42)

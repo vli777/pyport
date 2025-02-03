@@ -84,15 +84,21 @@ def update_store(data_path, symbol, start_date, end_date):
 
     # Determine missing historical data (prepend missing records)
     if earliest_stored_date is None or start_date < earliest_stored_date:
-        logger.info(f"Fetching missing history for {symbol} from {start_date} to {earliest_stored_date}...")
+        logger.info(
+            f"Fetching missing history for {symbol} from {start_date} to {earliest_stored_date}..."
+        )
         new_history_df = yf.download(symbol, start=start_date, end=earliest_stored_date)
     else:
         new_history_df = pd.DataFrame()
 
     # Determine missing future data (append missing records)
     if latest_stored_date is None or end_date > latest_stored_date:
-        logger.info(f"Fetching recent data for {symbol} from {latest_stored_date} to {end_date}...")
-        new_recent_df = yf.download(symbol, start=latest_stored_date + timedelta(days=1), end=end_date)
+        logger.info(
+            f"Fetching recent data for {symbol} from {latest_stored_date} to {end_date}..."
+        )
+        new_recent_df = yf.download(
+            symbol, start=latest_stored_date + timedelta(days=1), end=end_date
+        )
     else:
         new_recent_df = pd.DataFrame()
 
@@ -102,8 +108,12 @@ def update_store(data_path, symbol, start_date, end_date):
             df.index = pd.to_datetime(df.index)
 
     # Merge all data, ensuring chronological order
-    combined_df = pd.concat([new_history_df, old_df, new_recent_df]).sort_index().drop_duplicates()
-    
+    combined_df = (
+        pd.concat([new_history_df, old_df, new_recent_df])
+        .sort_index()
+        .drop_duplicates()
+    )
+
     # Save the updated dataset back to Parquet
     combined_df.to_parquet(pq_filename, index=True)
     return combined_df
