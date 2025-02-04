@@ -7,6 +7,46 @@ from utils.logger import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
+def optimize_group_weights(
+    group_signals: dict,
+    returns_df: pd.DataFrame,
+    n_trials: int = 50,
+    n_jobs: int = -1,
+    reoptimize: bool = False,
+):
+    group_weights = {}
+    # group_signals is expected to be a dict keyed by group label,
+    # where each value is a dict:
+    # {
+    #    "tickers": [list of tickers],
+    #    "daily": {ticker: {date: signal}, ...},
+    #    "weekly": {ticker: {date: signal}, ...},
+    # }
+    for group_label, data in group_signals.items():
+        tickers = data["tickers"]
+        # Subset returns
+        group_returns = returns_df[tickers]
+        # Use unique cache filenames so parameters don’t get overwritten
+        cache_filename = f"optuna_cache/reversion_period_weights_{group_label}.pkl"
+
+        # Use only the signals for this group.
+        group_reversion_signals = {
+            "daily": {t: data["daily"][t] for t in tickers if t in data["daily"]},
+            "weekly": {t: data["weekly"][t] for t in tickers if t in data["weekly"]},
+        }
+
+        optimal_weights = find_optimal_weights(
+            group_reversion_signals,
+            group_returns,
+            n_trials=n_trials,
+            n_jobs=n_jobs,
+            cache_filename=cache_filename,
+            reoptimize=reoptimize,
+        )
+        group_weights[group_label] = optimal_weights
+    return group_weights
+
+
 def find_optimal_weights(
     reversion_signals: Dict[str, Dict[str, Dict[str, int]]],
     returns_df: pd.DataFrame,
@@ -96,7 +136,7 @@ def reversion_weights_objective(
     daily_signals_df = daily_signals_df.reindex(combined_dates).fillna(0)
     weekly_signals_df = weekly_signals_df.reindex(combined_dates).fillna(0)
 
-    combined_signals = (
+    combined_signals: pd.DataFrame = (
         weight_daily * daily_signals_df + weight_weekly * weekly_signals_df
     )
     # Map the weighted signal back to discrete positions {-1, 0, 1}
