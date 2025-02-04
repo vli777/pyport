@@ -84,6 +84,8 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
+            df_existing = df_existing[~df_existing.index.duplicated(keep="first")]
+            df_new = df_new[~df_new.index.duplicated(keep="first")]
             df_combined = (
                 pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
             )
