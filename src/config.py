@@ -32,14 +32,14 @@ class Config:
 
     plot_daily_returns: bool
     plot_cumulative_returns: bool
-    
+
     use_anomaly_filter: bool
     plot_anomalies: bool
-    
+
     use_decorrelation: bool
     top_n_candidates: int
     plot_clustering: bool
-    
+
     use_mean_reversion: bool
     mean_reversion_strength: float
     plot_reversion: bool

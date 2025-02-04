@@ -223,13 +223,15 @@ def run_pipeline(
 
         # Normalize weights and convert to a dictionary if necessary
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
+        logger.info(f"\nNormalized avg weights: {normalized_weights}")
 
         if config.use_mean_reversion:
-            logger.info("Adjusting weights with mean reversion signals...")
+            logger.info("\nAdjusting weights with mean reversion signals...")
             normalized_weights = apply_mean_reversion(
                 baseline_allocation=normalized_weights,
                 returns_df=returns_df,
                 config=config,
+                cache_dir="optuna_cache",
             )
 
         # Ensure output is a dictionary
