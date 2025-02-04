@@ -64,7 +64,7 @@ def apply_mean_reversion(
 
     # Compute the continuous composite signal using the cached parameters.
     composite_signals = calculate_continuous_composite_signal(
-        group_signals=group_reversion_signals, ticker_params=ticker_params
+        group_signals=group_reversion_signals
     )
     print(f"Composite Signals: {composite_signals}")
 
