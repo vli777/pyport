@@ -56,7 +56,6 @@ def calculate_continuous_composite_signal(
                     'z_threshold_weekly': 1.7,
                     'weight_daily': 0.5,
                     'weight_weekly': 0.5,
-                    'group': 'Tech'
                 },
                 ...
             }
