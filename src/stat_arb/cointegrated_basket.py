@@ -125,15 +125,14 @@ def objective(trial: optuna.Trial, prices_df: pd.DataFrame) -> float:
     An example objective function to tune the rolling window, z-score threshold,
     and isolation forest contamination for the basket analysis.
 
-    In practice, you would link the signal to a backtested performance metric.
-    For demonstration purposes, we return the negative absolute latest z-score (i.e., favoring higher mean reversion).
+    We return the absolute latest z-score (i.e., favoring higher mean reversion).
 
     Args:
         trial (optuna.Trial): Optuna trial object.
         prices_df (pd.DataFrame): Price data for the basket.
 
     Returns:
-        float: Objective value to minimize.
+        float: Objective value to maximize.
     """
     window = trial.suggest_int("window", 20, 60)
     zscore_threshold = trial.suggest_float("zscore_threshold", 1.5, 3.0)
@@ -164,6 +163,8 @@ def run_optuna_study_for_basket(prices_df: pd.DataFrame, n_trials: int = 50) -> 
         dict: Dictionary with keys "best_params" and "best_value".
     """
     study = optuna.create_study(direction="maximize")
-    study.optimize(lambda trial: objective(trial, prices_df), n_trials=n_trials, n_jobs=-1)
+    study.optimize(
+        lambda trial: objective(trial, prices_df), n_trials=n_trials, n_jobs=-1
+    )
 
     return {"best_params": study.best_params, "best_value": study.best_value}
