@@ -43,7 +43,6 @@ def apply_mean_reversion(
         returns_df,
         n_trials=50,
         n_jobs=-1,
-        cache_dir=cache_dir,
         reoptimize=False,
         global_cache=global_cache,  # Pass the in-memory cache
     )
