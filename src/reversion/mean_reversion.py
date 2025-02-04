@@ -1,74 +1,78 @@
 import pandas as pd
 from config import Config
 from reversion.cluster_mean_reversion import cluster_mean_reversion
-from reversion.optimize_period_weights import optimize_group_weights
 from reversion.reversion_utils import (
     adjust_allocation_with_mean_reversion,
     calculate_continuous_composite_signal,
 )
-from reversion.plot_reversion_clusters import plot_reversion_clusters
+from reversion.reversion_plots import plot_reversion_params
+from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
 def apply_mean_reversion(
-    baseline_allocation: pd.Series, returns_df: pd.DataFrame, config: Config
+    baseline_allocation: pd.Series,
+    returns_df: pd.DataFrame,
+    config: Config,
+    cache_dir: str = "optuna_cache",
 ) -> pd.Series:
     """
     Generate continuous mean reversion signals on clusters of stocks and overlay the adjustment
     onto the baseline allocation using a continuous adjustment factor.
 
-    The continuous signal (e.g. a z-score) is used to adjust the baseline weight via:
-        new_weight = baseline_weight * (1 + alpha * continuous_signal)
-    followed by renormalization.
+    This version loads a global cache (a dictionary of ticker-level parameters) and passes it
+    to cluster_mean_reversion. That function updates the cache for any tickers that need optimization.
+    Later, the composite signals are computed using these cached parameters.
 
     Args:
         baseline_allocation (pd.Series): Original weight allocation after optimization.
         returns_df (pd.DataFrame): Returns for all selected stocks.
         config (Config): Configuration object.
+        cache_dir (str): Directory for cache files.
 
     Returns:
         pd.Series: Final adjusted allocation.
     """
-    # Step 1. Cluster the stocks and compute continuous reversion signals per cluster.
+    # Load (or initialize) the global cache.
+    global_cache_file = f"{cache_dir}/reversion_params_global.pkl"
+    global_cache = load_parameters_from_pickle(global_cache_file)
+    if not isinstance(global_cache, dict):
+        global_cache = {}
+
+    # Pass the global cache into the clustering function so it can update it in memory.
     group_reversion_signals = cluster_mean_reversion(
         returns_df,
         n_trials=50,
         n_jobs=-1,
-        cache_dir="optuna_cache",
+        cache_dir=cache_dir,
         reoptimize=False,
+        global_cache=global_cache,  # Pass the in-memory cache
     )
     print("Reversion Signals Generated.")
 
-    # Step 2. Optimize the weighting parameters to combine daily/weekly signals for each cluster.
-    optimal_period_weights = optimize_group_weights(
-        group_reversion_signals,
-        returns_df,
-        n_trials=50,
-        n_jobs=-1,
-        reoptimize=False,
-    )
-    print(f"Optimal Period Weights: {optimal_period_weights}")
+    # Optionally, save the updated global cache back to disk.
+    save_parameters_to_pickle(global_cache, global_cache_file)
 
-    # Optional: if plotting is enabled, visualize the clusters and parameters.
+    # Now, ticker parameters are simply what's in the global cache.
+    ticker_params = global_cache
+    print(f"Loaded Ticker Parameters for {len(ticker_params)} tickers.")
+
+    # Optional: if plotting is enabled, visualize the optimal hyperparameters.
     if config.plot_reversion:
-        plot_reversion_clusters(
-            returns_df=returns_df,
-            group_reversion_signals=group_reversion_signals,
-            optimal_period_weights=optimal_period_weights,
-            title="Mean Reversion Groups & Parameters",
+        plot_reversion_params(
+            ticker_params=ticker_params, title="Mean Reversion Groups & Parameters"
         )
 
-    # Step 3. Compute the continuous composite signal from the clusters.
+    # Compute the continuous composite signal using the cached parameters.
     composite_signals = calculate_continuous_composite_signal(
-        group_signals=group_reversion_signals, group_weights=optimal_period_weights
+        group_signals=group_reversion_signals, ticker_params=ticker_params
     )
     print(f"Composite Signals: {composite_signals}")
 
-    # Step 4. Overlay the continuous mean reversion adjustment onto the baseline allocation.
-    # Here, alpha controls the influence of the signal.
+    # Adjust the baseline allocation using the composite signals.
     final_allocation = adjust_allocation_with_mean_reversion(
         baseline_allocation=baseline_allocation,
         composite_signals=composite_signals,
-        alpha=config.mean_reversion_strength,  # e.g. 0.2
+        alpha=config.mean_reversion_strength,
         allow_short=config.allow_short,
     )
 

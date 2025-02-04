@@ -6,36 +6,34 @@ import pandas as pd
 from reversion.strategy_metrics import composite_score, simulate_strategy
 from utils.z_scores import calculate_robust_zscores
 from utils.logger import logger
-from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
 def optimize_robust_mean_reversion(
     returns_df: pd.DataFrame,
     n_trials: int = 50,
     n_jobs: int = -1,
-    cache_filename: str = "optuna_cache/reversion_window_multiplier.pkl",
     reoptimize: bool = False,
+    cache: dict = None,  # Optional global cache passed in
 ) -> Tuple[Dict[str, float], optuna.study.Study]:
     """
     Optimize the rolling window and z_threshold using Optuna.
+    If a cache dict is provided and it contains cached parameters,
+    those will be used.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
-        window_range (range): Range of window sizes.
         n_trials (int, optional): Number of optimization trials. Defaults to 50.
         n_jobs (int, optional): Number of parallel jobs. Defaults to -1.
-        cache_filename (str, optional): Path to Pickle cache file.
         reoptimize (bool): Override to reoptimize.
+        cache (dict, optional): A global cache dict; if provided, its relevant entry is used.
 
     Returns:
-        best parameters and the study object.
+        Tuple[Dict[str, float], optuna.study.Study]: The best parameters and the study.
     """
-    # Load cached study results if available and not reoptimizing
-    if not reoptimize:
-        cached_params = load_parameters_from_pickle(cache_filename)
-        if cached_params:
-            logger.info("Using cached parameters.")
-            return cached_params, None
+    # If a cache is provided and reoptimization is not forced, try to use it.
+    if not reoptimize and cache is not None and "robust_params" in cache:
+        logger.info("Using cached robust parameters.")
+        return cache["robust_params"], None
 
     study = optuna.create_study(
         direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
@@ -50,7 +48,11 @@ def optimize_robust_mean_reversion(
         if study.best_trial
         else {"window": 20, "z_threshold": 1.5}
     )
-    save_parameters_to_pickle(best_params, cache_filename)
+
+    # Update the cache if provided.
+    if cache is not None:
+        cache["robust_params"] = best_params
+
     return best_params, study
 
 
