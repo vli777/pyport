@@ -32,15 +32,17 @@ class Config:
 
     plot_daily_returns: bool
     plot_cumulative_returns: bool
-    plot_clustering: bool
-    plot_anomalies: bool
-    plot_reversion: bool
-
-    top_n_candidates: int
-
-    use_mean_reversion: bool
+    
     use_anomaly_filter: bool
+    plot_anomalies: bool
+    
     use_decorrelation: bool
+    top_n_candidates: int
+    plot_clustering: bool
+    
+    use_mean_reversion: bool
+    mean_reversion_strength: float
+    plot_reversion: bool
 
     test_mode: bool
     test_data_visible_pct: float
@@ -89,6 +91,7 @@ class Config:
             plot_anomalies=config_dict.get("plot_anomalies", False),
             plot_reversion=config_dict.get("plot_reversion", False),
             top_n_candidates=config_dict.get("top_n_candidates", None),
+            mean_reversion_strength=config_dict.get("mean_reversion_strength", 0.2),
             use_mean_reversion=config_dict.get("use_mean_reversion", True),
             use_anomaly_filter=config_dict.get("use_anomaly_filter", True),
             use_decorrelation=config_dict.get("use_decorrelation", True),

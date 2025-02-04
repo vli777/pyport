@@ -1,4 +1,5 @@
 from typing import Dict, List, Tuple
+import numpy as np
 import optuna
 import pandas as pd
 
@@ -24,19 +25,29 @@ def optimize_group_weights(
     # }
     for group_label, data in group_signals.items():
         tickers = data["tickers"]
-        # Subset returns
         group_returns = returns_df[tickers]
-        # Use unique cache filenames so parameters don’t get overwritten
         cache_filename = f"optuna_cache/reversion_period_weights_{group_label}.pkl"
 
-        # Use only the signals for this group.
-        group_reversion_signals = {
-            "daily": {t: data["daily"][t] for t in tickers if t in data["daily"]},
-            "weekly": {t: data["weekly"][t] for t in tickers if t in data["weekly"]},
-        }
+        # Precompute the signal dataframes once for the group
+        daily_signals_df = pd.DataFrame.from_dict(
+            {t: data["daily"][t] for t in tickers if t in data["daily"]},
+            orient="index",
+        ).T
+        weekly_signals_df = pd.DataFrame.from_dict(
+            {t: data["weekly"][t] for t in tickers if t in data["weekly"]},
+            orient="index",
+        ).T
+
+        # Create a combined index outside the trial loop to avoid repeated reindexing
+        combined_dates = daily_signals_df.index.union(weekly_signals_df.index).union(
+            group_returns.index
+        )
+        daily_signals_df = daily_signals_df.reindex(combined_dates).fillna(0)
+        weekly_signals_df = weekly_signals_df.reindex(combined_dates).fillna(0)
 
         optimal_weights = find_optimal_weights(
-            group_reversion_signals,
+            daily_signals_df,
+            weekly_signals_df,
             group_returns,
             n_trials=n_trials,
             n_jobs=n_jobs,
@@ -48,7 +59,8 @@ def optimize_group_weights(
 
 
 def find_optimal_weights(
-    reversion_signals: Dict[str, Dict[str, Dict[str, int]]],
+    daily_signals_df: pd.DataFrame,
+    weekly_signals_df: pd.DataFrame,
     returns_df: pd.DataFrame,
     n_trials: int = 50,
     n_jobs: int = -1,
@@ -60,7 +72,8 @@ def find_optimal_weights(
     Uses built-in Optuna SQLite caching.
 
     Args:
-        reversion_signals (Dict[str, Dict[str, Dict[str, int]]]): Dictionary of signals per timeframe.
+        daily_signals_df (pd.DataFrame): Daily signals DataFrame.
+        weekly_signals_df (pd.DataFrame): Weekly signals DataFrame.
         returns_df (pd.DataFrame): Log returns DataFrame.
         n_trials (int, optional): Number of optimization trials. Defaults to 50.
         n_jobs (int, optional): Number of parallel jobs. Defaults to 1.
@@ -85,7 +98,9 @@ def find_optimal_weights(
 
     # Run optimization in parallel
     study.optimize(
-        lambda trial: reversion_weights_objective(trial, reversion_signals, returns_df),
+        lambda trial: reversion_weights_objective(
+            trial, daily_signals_df, weekly_signals_df, returns_df
+        ),
         n_trials=n_trials,
         n_jobs=n_jobs,
     )
@@ -106,7 +121,8 @@ def find_optimal_weights(
 
 def reversion_weights_objective(
     trial,
-    reversion_signals: Dict[str, Dict[str, Dict[str, int]]],
+    daily_signals_df: pd.DataFrame,
+    weekly_signals_df: pd.DataFrame,
     returns_df: pd.DataFrame,
 ) -> float:
     """
@@ -114,7 +130,8 @@ def reversion_weights_objective(
 
     Args:
         trial (optuna.trial.Trial): Optuna trial object.
-        reversion_signals (Dict[str, Dict[str, Dict[str, int]]]): Dictionary of signals per timeframe.
+        daily_signals_df (pd.DataFrame): Daily signals DataFrame.
+        weekly_signals_df (pd.DataFrame): Weekly signals DataFrame.
         returns_df (pd.DataFrame): Log returns DataFrame.
 
     Returns:
@@ -123,32 +140,23 @@ def reversion_weights_objective(
     weight_daily = trial.suggest_float("weight_daily", 0.0, 1.0, step=0.1)
     weight_weekly = 1.0 - weight_daily
 
-    daily_signals_df = pd.DataFrame.from_dict(
-        reversion_signals["daily"], orient="index"
-    ).T
-    weekly_signals_df = pd.DataFrame.from_dict(
-        reversion_signals["weekly"], orient="index"
-    ).T
-
-    combined_dates = daily_signals_df.index.union(weekly_signals_df.index).union(
-        returns_df.index
-    )
-    daily_signals_df = daily_signals_df.reindex(combined_dates).fillna(0)
-    weekly_signals_df = weekly_signals_df.reindex(combined_dates).fillna(0)
-
-    combined_signals: pd.DataFrame = (
-        weight_daily * daily_signals_df + weight_weekly * weekly_signals_df
-    )
-    # Map the weighted signal back to discrete positions {-1, 0, 1}
-    combined_signals = combined_signals.map(
-        lambda x: 1 if x > 0.5 else (-1 if x < -0.5 else 0)
+    # Combine the precomputed dataframes using vectorized operations
+    combined = weight_daily * daily_signals_df + weight_weekly * weekly_signals_df
+    
+    # Vectorize the mapping to discrete signals
+    combined_signals = pd.DataFrame(
+        np.sign(combined.values),
+        index=combined.index,
+        columns=combined.columns,
     )
 
     valid_stocks = returns_df.dropna(axis=1, how="all").columns
     combined_signals = combined_signals[valid_stocks]
+
     aligned_returns = returns_df[valid_stocks].reindex(combined_signals.index)
     positions_df = combined_signals.shift(1).fillna(0)
 
+    # Run the simulation and calculate a composite score.
     _, metrics = simulate_strategy(aligned_returns, positions_df)
-
+    
     return composite_score(metrics)

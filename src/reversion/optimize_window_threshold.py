@@ -1,4 +1,5 @@
 from typing import Dict, List, Tuple
+import numpy as np
 import optuna
 import pandas as pd
 
@@ -65,14 +66,14 @@ def robust_mean_reversion_objective(trial, returns_df: pd.DataFrame) -> float:
 
     robust_z = calculate_robust_zscores(returns_df, window)
     # Generate signals on all tickers at once; result is a DataFrame of {date x ticker}
-    signals_df = robust_z.map(
-        lambda x: 1 if x < -z_threshold else (-1 if x > z_threshold else 0)
+    signals = np.where(
+        robust_z.values < -z_threshold,
+        1,
+        np.where(robust_z.values > z_threshold, -1, 0),
     )
+    signals_df = pd.DataFrame(signals, index=robust_z.index, columns=robust_z.columns)
 
-    # Shift signals to avoid lookahead bias
     positions_df = signals_df.shift(1).fillna(0)
-
-    # Limit analysis to tickers with sufficient data
     valid_stocks = returns_df.dropna(axis=1, how="all").columns
     positions_df = positions_df[valid_stocks]
     aligned_returns = returns_df[valid_stocks].reindex(positions_df.index)

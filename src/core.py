@@ -225,6 +225,7 @@ def run_pipeline(
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
 
         if config.use_mean_reversion:
+            logger.info("Adjusting weights with mean reversion signals...")
             normalized_weights = apply_mean_reversion(
                 baseline_allocation=normalized_weights,
                 returns_df=returns_df,
