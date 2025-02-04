@@ -15,12 +15,13 @@ min_weight: float # Minimum weight for inclusion in final weights
 max_weight: float # Maximum weight allowed for any individual hodling
 portfolio_max_size: int # Maximum number of assets in the portfolio
 risk_free_rate: float
+allow_short: bool # Whether to allow shorting (WIP)
 
 plot_daily_returns: bool # Whether to plot daily returns
 plot_cumulative_returns: bool # Whether to plot cumulative returns
 plot_clustering: bool # Where to plot hierarchical clustering dendrogram
 plot_anomalies: bool # Whether to plot anomalies detected by Kalman filter
-plot_reversion_threshold: bool # Whether to plot mean reversion z scores
+plot_reversion: bool # Whether to plot mean reversion parameters
 
 top_n_candidates: int # Optional fixed number of top candidates to select from cluster groups
 
