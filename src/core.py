@@ -13,14 +13,9 @@ from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
 from anomaly.anomaly_detection import remove_anomalous_stocks
-from reversion.multiscale_reversion import apply_mean_reversion_multiscale
-from reversion.optimize_timescale_weights import find_optimal_weights
 from boxplot import generate_boxplot_data
 from correlation.tsne_dbscan import filter_correlated_groups_dbscan
-from stat_arb.stat_arb_adjust import (
-    adjust_allocation_with_stat_arb,
-    calculate_composite_signal,
-)
+from reversion.mean_reversion import apply_mean_reversion
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -194,51 +189,6 @@ def run_pipeline(
 
         return valid_symbols
 
-    def stat_arb_adjust(
-        baseline_allocation: pd.Series, returns_df: pd.DataFrame, config: Config
-    ) -> pd.Series:
-        """
-        Apply z-score based allocation weight adjustments
-        Args:
-            baseline_allocation (pd.Series) Original weight allocation after optimization
-            returns_df (pd.DataFrame): The returns dataframe of all selected stocks in the portfolio
-            config (Config): yaml config loader object
-
-        Returns:
-            final_allocation (pd.Series)
-        """
-        # Apply z-score based allocation weight adjustments
-
-        # Step 1. Generate reversion signals (using your multiscale implementation)
-        reversion_signals = apply_mean_reversion_multiscale(
-            returns_df, n_trials=50, n_jobs=-1, plot=config.plot_reversion_threshold
-        )
-        print("Reversion Signals Generated.")
-
-        # Step 2. Optimize weights for the reversion signals (for example, the daily/weekly weighting)
-        optimal_weights = find_optimal_weights(
-            reversion_signals, returns_df, n_trials=50
-        )
-        print(f"Optimal Weights: {optimal_weights}")
-
-        # Step 3. Compute the composite stat arb signal from the reversion signals.
-        # (This gives a continuous signal for each ticker.)
-        composite_signals = calculate_composite_signal(
-            reversion_signals,
-            weight_daily=optimal_weights.get("weight_daily", 0.5),
-            weight_weekly=1.0 - optimal_weights.get("weight_daily", 0.5),
-        )
-        print(f"Composite Signals: {composite_signals}")
-
-        final_allocation = adjust_allocation_with_stat_arb(
-            baseline_allocation=baseline_allocation,
-            composite_signals=composite_signals,
-            alpha=0.2,  # e.g. 0.2 or another value determined by testing
-            allow_short=False,  # config.allow_short,
-        )
-
-        return final_allocation
-
     def perform_post_processing(
         stack_weights: Dict[str, Any], returns_df: pd.DataFrame
     ) -> Dict[str, any]:
@@ -275,7 +225,7 @@ def run_pipeline(
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
 
         if config.use_mean_reversion:
-            normalized_weights = stat_arb_adjust(
+            normalized_weights = apply_mean_reversion(
                 baseline_allocation=normalized_weights,
                 returns_df=returns_df,
                 config=config,
