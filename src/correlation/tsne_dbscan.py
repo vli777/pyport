@@ -8,6 +8,7 @@ from sklearn.covariance import LedoitWolf
 import plotly.express as px
 
 from utils.caching_utils import (
+    cleanup_cache,
     compute_ticker_hash,
     load_parameters_from_pickle,
     save_parameters_to_pickle,
@@ -44,6 +45,9 @@ def filter_correlated_groups_dbscan(
     Returns:
         list: A list of selected ticker symbols after decorrelation.
     """
+    # Clean up old cache files
+    cleanup_cache(cache_dir, max_age_hours=24 * 30)
+
     # Optionally load cached eps (if optimizing and caching)
     # Ensure the cache directory exists
     cache_path = Path(cache_dir)
