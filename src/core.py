@@ -123,6 +123,7 @@ def run_pipeline(
             pd.DataFrame: Processed DataFrame with daily returns, with optional anomaly filtering and decorrelation applied.
         """
         returns_df = calculate_returns(df)
+        filtered_returns_df = returns_df  # Ensure it's always assigned
 
         if config.use_anomaly_filter:
             logger.debug("Applying anomaly filter.")
@@ -133,7 +134,7 @@ def run_pipeline(
             )
             filtered_returns_df = returns_df[valid_symbols]
         else:
-            filtered_returns_df = returns_df
+            valid_symbols = returns_df.columns.tolist()  # Ensure it exists
 
         # Apply decorrelation filter if enabled
         if config.use_decorrelation:
@@ -146,11 +147,10 @@ def run_pipeline(
                 if symbol in filtered_returns_df.columns
             ]
 
-            return filtered_returns_df[valid_symbols]
-        # Remove rows where all columns are NaN after all filtering steps
-        filtered_returns_df = filtered_returns_df.dropna(how="all")
+        filtered_returns_df = filtered_returns_df[valid_symbols]  # Always valid
 
-        return filtered_returns_df
+        # Remove rows where all columns are NaN after all filtering steps
+        return filtered_returns_df.dropna(how="all")
 
     def filter_correlated_assets(returns_df: pd.DataFrame, config: Config) -> List[str]:
         """
