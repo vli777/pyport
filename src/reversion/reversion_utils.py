@@ -2,6 +2,7 @@ from typing import Dict
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
+import hashlib
 
 
 def compute_distance_matrix(returns_df: pd.DataFrame) -> pd.DataFrame:
@@ -25,8 +26,6 @@ def cluster_stocks(
 
 
 def compute_ticker_hash(tickers: list) -> str:
-    import hashlib
-
     return hashlib.md5("".join(sorted(tickers)).encode("utf-8")).hexdigest()
 
 
@@ -68,10 +67,10 @@ def calculate_continuous_composite_signal(
         weekly_signals = group_data.get("weekly", {})
         for ticker in group_data.get("tickers", []):
             params = ticker_params.get(ticker, {})
-            wd = params.get("weight_daily", 0.5)
+            wd = params.get("weight_daily", 0.7)
             # Ensure weight_daily is within [0,1]
             wd = max(0.0, min(wd, 1.0))
-            ww = params.get("weight_weekly", 0.5)
+            ww = params.get("weight_weekly", 0.3)
             # If both weights are from the same group they should sum to ~1.
             # (They were set as weight_weekly = 1 - weight_daily in the optimization.)
 
