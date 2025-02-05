@@ -14,32 +14,46 @@ def find_optimal_weights(
     n_trials: int = 50,
     n_jobs: int = -1,
     reoptimize: bool = False,
-    cache: dict = None,  # Global cache dict for weights.
-    group_id: str = None,  # Extra parameter for the cluster identifier.
+    cache: dict = None,  # Global cache dict keyed by ticker.
+    group_id: str = None,  # Identifier for the cluster group.
 ) -> Dict[str, float]:
     """
     Run Optuna to find the optimal weighting of daily and weekly signals.
-    If a cache dict is provided and contains weights for this group, they are used.
+    This function first checks whether the tickers in the group already have period
+    weights stored in the global cache. If so, it returns those weights directly.
 
     Args:
         daily_signals_df (pd.DataFrame): Daily signals DataFrame.
         weekly_signals_df (pd.DataFrame): Weekly signals DataFrame.
-        returns_df (pd.DataFrame): Log returns DataFrame.
+        returns_df (pd.DataFrame): Log returns DataFrame (its columns should be the tickers in the group).
         n_trials (int, optional): Number of optimization trials. Defaults to 50.
         n_jobs (int, optional): Number of parallel jobs. Defaults to -1.
-        reoptimize (bool): Override to reoptimize.
-        cache (dict, optional): A global cache dict.
+        reoptimize (bool): If True, forces reoptimization.
+        cache (dict, optional): Global cache dict keyed by ticker.
         group_id (str): Identifier for the cluster group.
 
     Returns:
-        Dict[str, float]: Best weights for daily and weekly signals.
+        Dict[str, float]: Best weights for daily and weekly signals for the group.
     """
-    cache_key = f"weights_{group_id}" if group_id is not None else "weights"
-    if not reoptimize and cache is not None and cache_key in cache:
-        return cache[cache_key]
+    # Extract tickers in the current group from returns_df columns.
+    tickers_in_group = list(returns_df.columns)
 
+    # Check if every ticker in this group already has "weight_daily" in its cache entry.
+    if (
+        not reoptimize
+        and cache is not None
+        and all(t in cache and "weight_daily" in cache[t] for t in tickers_in_group)
+    ):
+        # Use the weights from the first ticker (they should be identical within the group).
+        group_params = cache[tickers_in_group[0]]
+        return {
+            "weight_daily": group_params.get("weight_daily", 0.7),
+            "weight_weekly": group_params.get("weight_weekly", 0.3),
+        }
+
+    # Otherwise, perform optimization.
     study = optuna.create_study(
-        study_name="reversion_weights_optimization",
+        study_name=f"reversion_weights_optimization_{group_id}",
         direction="maximize",
         sampler=optuna.samplers.TPESampler(n_startup_trials=max(5, n_trials // 10)),
     )
@@ -54,13 +68,11 @@ def find_optimal_weights(
 
     if study.best_trial is None:
         logger.error("No valid optimization results found.")
-        best_weights = {"weight_daily": 0.5, "weight_weekly": 0.5}
+        best_weights = {"weight_daily": 0.7, "weight_weekly": 0.3}
     else:
         best_weights = study.best_trial.params
 
-    if cache is not None:
-        cache[cache_key] = best_weights
-
+    # At this point, the caller is responsible for updating the global cache for all tickers in the group.
     return best_weights
 
 
