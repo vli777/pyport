@@ -124,3 +124,9 @@ def load_parameters_from_pickle(
         parameters = pickle.load(f)
     print(f"Loaded optimized parameters from {filename}")
     return parameters
+
+
+def compute_ticker_hash(tickers):
+    """Compute a hash of the sorted list of tickers."""
+    ticker_str = ",".join(sorted(tickers))
+    return hashlib.sha256(ticker_str.encode()).hexdigest()[:16]  # Use a short hash

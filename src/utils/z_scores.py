@@ -1,23 +1,51 @@
+from typing import Union
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from scipy.stats import median_abs_deviation
 
 
-def calculate_robust_z_scores(returns_df: pd.DataFrame, window: int) -> pd.DataFrame:
+from typing import Union
+import numpy as np
+import pandas as pd
+from scipy.stats import median_abs_deviation
+
+
+def calculate_robust_zscores(
+    data: Union[pd.Series, pd.DataFrame], window: int
+) -> Union[pd.Series, pd.DataFrame]:
     """
-    Calculate rolling robust z-scores using the rolling median and MAD.
-    The MAD is scaled by 1.4826 to approximate the standard deviation.
+    Compute rolling robust z-scores using the median and MAD (scaled by 1.4826).
+    This function accepts either a pandas Series or DataFrame.
+
+    Args:
+        data (pd.Series or pd.DataFrame): Input time series or DataFrame of time series.
+        window (int): Rolling window size.
+
+    Returns:
+        pd.Series or pd.DataFrame: Rolling robust z-scores, matching the input type.
     """
-    rolling_median = returns_df.rolling(window=window, min_periods=1).median()
-    # Rolling MAD: use a lambda to compute median absolute deviation over the window
-    mad = returns_df.rolling(window=window, min_periods=1).apply(
-        lambda x: np.median(np.abs(x - np.median(x))), raw=True
+    input_is_series = isinstance(data, pd.Series)
+    if input_is_series:
+        data = data.to_frame()
+
+    # Compute rolling median
+    rolling_median = data.rolling(window=window, min_periods=1).median()
+
+    # Compute rolling MAD
+    rolling_mad = data.rolling(window=window, min_periods=1).apply(
+        lambda x: median_abs_deviation(x, scale=1.4826), raw=True
     )
-    # Avoid division by zero by replacing zeros in mad
-    mad.replace(0, np.nan, inplace=True)
-    robust_z = (returns_df - rolling_median) / (mad * 1.4826)
-    return robust_z.fillna(0)
+
+    # Avoid division by zero by replacing zero MAD values with NaN
+    rolling_mad.replace(0, np.nan, inplace=True)
+
+    # Compute robust Z-scores
+    z = (data - rolling_median) / rolling_mad
+
+    # If the input was a Series, return a Series
+    return z.iloc[:, 0] if input_is_series else z
 
 
 def plot_robust_z_scores(

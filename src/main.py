@@ -9,7 +9,7 @@ from utils import logger
 def iterative_pipeline_runner(
     config: Config,
     initial_symbols: Optional[List[str]] = None,
-    max_epochs: Optional[int] = 10,
+    max_epochs: Optional[int] = 1,
     min_weight: Optional[float] = None,
     portfolio_max_size: Optional[int] = None,
     top_n_candidates: Optional[int] = None,

@@ -28,18 +28,21 @@ class Config:
     max_weight: float
     portfolio_max_size: int
     risk_free_rate: float
+    allow_short: bool
 
     plot_daily_returns: bool
     plot_cumulative_returns: bool
-    plot_clustering: bool
-    plot_anomalies: bool
-    plot_reversion_threshold: bool
 
+    use_anomaly_filter: bool
+    plot_anomalies: bool
+
+    use_decorrelation: bool
     top_n_candidates: int
+    plot_clustering: bool
 
     use_mean_reversion: bool
-    use_anomaly_filter: bool
-    use_decorrelation: bool
+    mean_reversion_strength: float
+    plot_reversion: bool
 
     test_mode: bool
     test_data_visible_pct: float
@@ -81,12 +84,14 @@ class Config:
             max_weight=config_dict.get("max_weight", 1.0),
             portfolio_max_size=config_dict.get("portfolio_max_size", 20),
             risk_free_rate=config_dict.get("risk_free_rate", 0.0),
+            allow_short=config_dict.get("allow_short", False),
             plot_daily_returns=config_dict.get("plot_daily_returns", False),
             plot_cumulative_returns=config_dict.get("plot_cumulative_returns", False),
             plot_clustering=config_dict.get("plot_clustering", False),
             plot_anomalies=config_dict.get("plot_anomalies", False),
-            plot_reversion_threshold=config_dict.get("plot_reversion_threshold", False),
+            plot_reversion=config_dict.get("plot_reversion", False),
             top_n_candidates=config_dict.get("top_n_candidates", None),
+            mean_reversion_strength=config_dict.get("mean_reversion_strength", 0.2),
             use_mean_reversion=config_dict.get("use_mean_reversion", True),
             use_anomaly_filter=config_dict.get("use_anomaly_filter", True),
             use_decorrelation=config_dict.get("use_decorrelation", True),

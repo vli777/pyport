@@ -7,8 +7,12 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.covariance import LedoitWolf
 import plotly.express as px
 
-from correlation.correlation_utils import compute_ticker_hash
-from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
+from utils.caching_utils import (
+    cleanup_cache,
+    compute_ticker_hash,
+    load_parameters_from_pickle,
+    save_parameters_to_pickle,
+)
 from utils.performance_metrics import kappa_ratio, sharpe_ratio
 from utils.logger import logger
 

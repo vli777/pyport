@@ -22,30 +22,36 @@ def is_valid_ticker(symbol):
 
 def process_input_files(input_file_paths):
     """
-    Process input CSV files, read valid ticker symbols, and return a sorted list of unique symbols.
-    Symbols are validated using a regular expression and a custom function `is_valid_ticker`.
+    Reads CSV files, extracts valid ticker symbols, and returns a sorted list of unique symbols.
+    A valid ticker consists solely of uppercase alphabetical characters and passes the `is_valid_ticker` check.
     """
     symbols = set()
-    for input_file in input_file_paths:
-        input_file = Path(input_file).with_suffix(
-            ".csv"
-        )  # Ensure the file has a .csv extension
+
+    for file_path in input_file_paths:
+        if file_path.suffix.lower() != ".csv":
+            file_path = file_path.with_suffix(".csv")
 
         try:
-            with input_file.open("r") as file:
+            with file_path.open("r", encoding="utf-8") as file:
                 for line in file:
-                    line = line.strip().upper()
-                    # Validate ticker: must be alphabetic and not start with a comment ('#')
-                    if re.match("^[A-Z]+$", line) and not line.startswith("#"):
-                        if is_valid_ticker(line):
-                            symbols.add(line)
-                        else:
-                            logger.warning(f"Ignoring invalid ticker symbol: {line}")
-        except FileNotFoundError:
-            logger.warning(f"File not found: {input_file}")
-        except Exception as e:
-            logger.warning(f"Error processing file {input_file}: {e}")
+                    ticker = line.strip().upper()
+                    # Skip commented lines
+                    if not ticker or ticker.startswith("#"):
+                        continue
 
+                    # Validate that the ticker is fully alphabetic
+                    if re.fullmatch(r"[A-Z]+", ticker):
+                        logger.debug(f"Checking validity for ticker: {ticker}")
+                        if is_valid_ticker(ticker):
+                            symbols.add(ticker)
+                        else:
+                            logger.warning(f"Ignoring invalid ticker symbol: {ticker}")
+        except FileNotFoundError:
+            logger.warning(f"File not found: {file_path}")
+        except Exception as e:
+            logger.warning(f"Error processing file {file_path}: {e}")
+
+    logger.info(f"{file_path} processed.")
     return sorted(symbols)
 
 
@@ -222,3 +228,33 @@ def convert_all_csv_to_parquet(data_folder: str):
         df.to_parquet(parquet_file)
 
         logger.info(f"Converted {csv_file.name} -> {parquet_file.name}")
+
+
+def ensure_unique_timestamps(
+    df: pd.DataFrame, symbol: str, keep: str = "first"
+) -> pd.DataFrame:
+    """
+    Ensures the DataFrame has a unique datetime index.
+    Logs a warning and removes duplicates if any are found.
+
+    Args:
+        df (pd.DataFrame): DataFrame with a DatetimeIndex.
+        symbol (str): Ticker symbol for logging context.
+        keep (str): 'first' or 'last' row to keep if duplicates exist.
+
+    Returns:
+        pd.DataFrame: A DataFrame with a unique DatetimeIndex.
+    """
+    if not df.index.is_unique:
+        # Identify duplicated timestamps
+        duplicates = df.index[df.index.duplicated(keep=False)]
+        logger.warning(
+            f"{symbol}: Found duplicate timestamps in index: {duplicates.unique().tolist()}"
+        )
+
+        # Remove duplicates based on 'keep' strategy
+        df = df[~df.index.duplicated(keep=keep)]
+        logger.warning(
+            f"{symbol}: Removed {len(duplicates.unique())} duplicated timestamps."
+        )
+    return df

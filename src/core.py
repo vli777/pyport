@@ -13,14 +13,9 @@ from portfolio_optimization import run_optimization_and_save
 from process_symbols import process_symbols
 from result_output import output
 from anomaly.anomaly_detection import remove_anomalous_stocks
-from reversion.multiscale_reversion import apply_mean_reversion_multiscale
-from reversion.optimize_timescale_weights import find_optimal_weights
 from boxplot import generate_boxplot_data
 from correlation.tsne_dbscan import filter_correlated_groups_dbscan
-from stat_arb.stat_arb_adjust import (
-    adjust_allocation_with_stat_arb,
-    calculate_composite_signal,
-)
+from reversion.mean_reversion import apply_mean_reversion
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -128,6 +123,7 @@ def run_pipeline(
             pd.DataFrame: Processed DataFrame with daily returns, with optional anomaly filtering and decorrelation applied.
         """
         returns_df = calculate_returns(df)
+        filtered_returns_df = returns_df  # Ensure it's always assigned
 
         if config.use_anomaly_filter:
             logger.debug("Applying anomaly filter.")
@@ -138,7 +134,7 @@ def run_pipeline(
             )
             filtered_returns_df = returns_df[valid_symbols]
         else:
-            filtered_returns_df = returns_df
+            valid_symbols = returns_df.columns.tolist()  # Ensure it exists
 
         # Apply decorrelation filter if enabled
         if config.use_decorrelation:
@@ -151,11 +147,10 @@ def run_pipeline(
                 if symbol in filtered_returns_df.columns
             ]
 
-            return filtered_returns_df[valid_symbols]
-        # Remove rows where all columns are NaN after all filtering steps
-        filtered_returns_df = filtered_returns_df.dropna(how="all")
+        filtered_returns_df = filtered_returns_df[valid_symbols]  # Always valid
 
-        return filtered_returns_df
+        # Remove rows where all columns are NaN after all filtering steps
+        return filtered_returns_df.dropna(how="all")
 
     def filter_correlated_assets(returns_df: pd.DataFrame, config: Config) -> List[str]:
         """
@@ -194,51 +189,6 @@ def run_pipeline(
 
         return valid_symbols
 
-    def stat_arb_adjust(
-        baseline_allocation: pd.Series, returns_df: pd.DataFrame, config: Config
-    ) -> pd.Series:
-        """
-        Apply z-score based allocation weight adjustments
-        Args:
-            baseline_allocation (pd.Series) Original weight allocation after optimization
-            returns_df (pd.DataFrame): The returns dataframe of all selected stocks in the portfolio
-            config (Config): yaml config loader object
-
-        Returns:
-            final_allocation (pd.Series)
-        """
-        # Apply z-score based allocation weight adjustments
-
-        # Step 1. Generate reversion signals (using your multiscale implementation)
-        reversion_signals = apply_mean_reversion_multiscale(
-            returns_df, n_trials=50, n_jobs=-1, plot=config.plot_reversion_threshold
-        )
-        print("Reversion Signals Generated.")
-
-        # Step 2. Optimize weights for the reversion signals (for example, the daily/weekly weighting)
-        optimal_weights = find_optimal_weights(
-            reversion_signals, returns_df, n_trials=50
-        )
-        print(f"Optimal Weights: {optimal_weights}")
-
-        # Step 3. Compute the composite stat arb signal from the reversion signals.
-        # (This gives a continuous signal for each ticker.)
-        composite_signals = calculate_composite_signal(
-            reversion_signals,
-            weight_daily=optimal_weights.get("weight_daily", 0.5),
-            weight_weekly=1.0 - optimal_weights.get("weight_daily", 0.5),
-        )
-        print(f"Composite Signals: {composite_signals}")
-
-        final_allocation = adjust_allocation_with_stat_arb(
-            baseline_allocation=baseline_allocation,
-            composite_signals=composite_signals,
-            alpha=0.2,  # e.g. 0.2 or another value determined by testing
-            allow_short=False,  # config.allow_short,
-        )
-
-        return final_allocation
-
     def perform_post_processing(
         stack_weights: Dict[str, Any], returns_df: pd.DataFrame
     ) -> Dict[str, any]:
@@ -273,13 +223,7 @@ def run_pipeline(
 
         # Normalize weights and convert to a dictionary if necessary
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
-
-        if config.use_mean_reversion:
-            normalized_weights = stat_arb_adjust(
-                baseline_allocation=normalized_weights,
-                returns_df=returns_df,
-                config=config,
-            )
+        logger.info(f"\nNormalized avg weights: {normalized_weights}")
 
         # Ensure output is a dictionary
         if isinstance(normalized_weights, pd.Series):
@@ -399,34 +343,25 @@ def run_pipeline(
     if not normalized_avg_weights:
         return {}
 
-    # Prepare output data
+    # Prepare input metadata
     valid_models = [
         model for models in config.models.values() if models for model in models
     ]
     combined_models = ", ".join(sorted(set(valid_models)))
     combined_input_files = ", ".join(config.input_files)
 
-    # Debugging: Log the normalized_avg_weights keys and dfs["data"] columns
-    logger.debug(
-        f"Normalized Average Weights Keys ({len(normalized_avg_weights)}): {list(normalized_avg_weights.keys())}"
-    )
-    logger.debug(
-        f"dfs['data'] Columns ({len(dfs['data'].columns)}): {list(dfs['data'].columns)}"
-    )
-
-    # Ensure we only drop stocks **below the min weight threshold**, not just because of missing data
-    dfs["data"] = dfs["data"].filter(items=normalized_avg_weights.keys())
-
-    logger.debug(
-        f"Filtered symbols after trimming allocations below minimum weight {config.min_weight}: {dfs['data'].columns}"
-    )
+    # Sort symbols and filter DataFrame accordingly
+    sorted_symbols = sorted(normalized_avg_weights.keys())
+    dfs["data"] = dfs["data"].filter(items=sorted_symbols)
 
     # Prevent empty DataFrame after filtering
     if dfs["data"].empty:
         logger.error("No valid symbols remain in the DataFrame after alignment.")
+        return {}
 
-    # Proceed to output
-    daily_returns, cumulative_returns = output(
+    # Step 1: Compute pre-mean reversion results
+    logger.info("\nEnsemble results:")
+    pre_daily_returns, pre_cumulative_returns = output(
         data=dfs["data"],
         allocation_weights=normalized_avg_weights,
         inputs=combined_input_files,
@@ -436,36 +371,77 @@ def run_pipeline(
         time_period=sorted_time_periods[0],
         config=config,
     )
+    pre_boxplot_stats = generate_boxplot_data(pre_daily_returns)
 
-    sorted_symbols = sorted(
-        normalized_avg_weights.keys(),
-        key=lambda symbol: normalized_avg_weights.get(symbol, 0),
-        reverse=True,
-    )
+    # Default return dictionary (pre-mean reversion)
+    final_result_dict = {
+        "start_date": str(dfs["start"]),
+        "end_date": str(dfs["end"]),
+        "models": combined_models,
+        "symbols": sorted_symbols,
+        "normalized_avg": normalized_avg_weights,
+        "daily_returns": pre_daily_returns,
+        "cumulative_returns": pre_cumulative_returns,
+        "boxplot_stats": pre_boxplot_stats,
+    }
 
-    # Optional plotting
+    # Step 2: Apply mean reversion if enabled
+    if config.use_mean_reversion:
+        logger.info("\nApplying mean reversion on normalized weights...")
+        mean_reverted_weights = apply_mean_reversion(
+            baseline_allocation=normalized_avg_weights,
+            returns_df=returns_df,
+            config=config,
+            cache_dir="optuna_cache",
+        )
+
+        # Sort and filter again for new weights
+        sorted_symbols_post = sorted(mean_reverted_weights.keys())
+        dfs["data"] = dfs["data"].filter(items=sorted_symbols_post)
+
+        # Compute post-mean reversion results
+        post_daily_returns, post_cumulative_returns = output(
+            data=dfs["data"],
+            allocation_weights=mean_reverted_weights,
+            inputs=combined_input_files,
+            start_date=dfs["start"],
+            end_date=dfs["end"],
+            optimization_model=combined_models,
+            time_period=sorted_time_periods[0],
+            config=config,
+        )
+        post_boxplot_stats = generate_boxplot_data(post_daily_returns)
+
+        # Log performance comparison
+        logger.info("\nPerformance Comparison:")
+        logger.info(f"Pre-Mean Reversion Cumulative Returns: {pre_cumulative_returns}")
+        logger.info(
+            f"Post-Mean Reversion Cumulative Returns: {post_cumulative_returns}"
+        )
+
+        # Update the final result dictionary to store **only post-mean reversion results**
+        final_result_dict = {
+            "start_date": str(dfs["start"]),
+            "end_date": str(dfs["end"]),
+            "models": combined_models,
+            "symbols": sorted_symbols_post,
+            "normalized_avg": mean_reverted_weights,
+            "daily_returns": post_daily_returns,
+            "cumulative_returns": post_cumulative_returns,
+            "boxplot_stats": post_boxplot_stats,
+        }
+
+    # Optional plotting (only on local runs)
     if run_local:
         plot_graphs(
-            daily_returns=daily_returns,
-            cumulative_returns=cumulative_returns,
+            daily_returns=final_result_dict["daily_returns"],
+            cumulative_returns=final_result_dict["cumulative_returns"],
             config=config,
-            symbols=sorted_symbols,
+            symbols=final_result_dict["symbols"],
         )
 
     # Cleanup
     cleanup_cache("cache")
     logger.info("Pipeline execution completed successfully.")
 
-    # Compile and return results
-    boxplot_stats = generate_boxplot_data(daily_returns)
-
-    return {
-        "start_date": str(dfs["start"]),
-        "end_date": str(dfs["end"]),
-        "models": combined_models,
-        "symbols": sorted_symbols,
-        "normalized_avg": normalized_avg_weights,
-        "daily_returns": daily_returns,
-        "cumulative_returns": cumulative_returns,
-        "boxplot_stats": boxplot_stats,  # (not extractable from plotly boxplot)
-    }
+    return final_result_dict

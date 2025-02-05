@@ -23,6 +23,9 @@ def sharpe_ratio(
     """
     excess_return = returns.mean() - risk_free_rate
     annualized_volatility = returns.std() * np.sqrt(entries_per_year)
+
+    if annualized_volatility == 0:
+        return np.nan
     sharpe_r = excess_return / annualized_volatility
 
     return sharpe_r
