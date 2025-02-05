@@ -72,7 +72,6 @@ def cluster_mean_reversion(
                 returns_df=group_returns,
                 n_trials=n_trials,
                 n_jobs=n_jobs,
-                reoptimize=reoptimize,
                 group_id=group_id,
             )
 
