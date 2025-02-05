@@ -62,7 +62,7 @@ def iterative_pipeline_runner(
     previous_top_symbols = set()
     final_result = None
 
-    for epoch in range(max_epochs):
+    for epoch in range(max_epochs + 1):
         print(f"Epoch {epoch + 1}")
 
         # Run the pipeline
@@ -134,5 +134,6 @@ if __name__ == "__main__":
     final_result = iterative_pipeline_runner(
         config=config,
         initial_symbols=None,  # Or provide initial symbols as needed
+        max_epochs=2,
         run_local=True,
     )

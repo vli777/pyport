@@ -31,7 +31,7 @@ def cleanup_cache(cache_dir: Optional[str] = None, max_age_hours: int = 24) -> N
     max_age = timedelta(hours=max_age_hours)
 
     logger.info(
-        f"Cleaning up cache: Removing files older than {max_age_hours} hours from {cache_path}"
+        f"\nCleaning up cache: Removing files older than {max_age_hours} hours from {cache_path}"
     )
 
     for filepath in cache_path.iterdir():

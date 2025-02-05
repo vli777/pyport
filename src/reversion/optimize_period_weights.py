@@ -25,7 +25,9 @@ def find_optimal_weights(
         sampler=optuna.samplers.TPESampler(n_startup_trials=max(5, n_trials // 10)),
     )
     study.optimize(
-        lambda trial: reversion_weights_objective(trial, daily_signals_df, weekly_signals_df, returns_df),
+        lambda trial: reversion_weights_objective(
+            trial, daily_signals_df, weekly_signals_df, returns_df
+        ),
         n_trials=n_trials,
         n_jobs=n_jobs,
     )
@@ -33,7 +35,7 @@ def find_optimal_weights(
         logger.error("No valid optimization results found.")
         best_weights = {"weight_daily": 0.7, "weight_weekly": 0.3}
     else:
-        best_weights = study.best_trial.params        
+        best_weights = study.best_trial.params
         best_weights["weight_weekly"] = round(1.0 - best_weights["weight_daily"], 1)
     return best_weights
 
@@ -60,7 +62,9 @@ def reversion_weights_objective(
     weight_weekly = 1.0 - weight_daily
 
     # Combine the precomputed dataframes using vectorized operations
-    combined_signals = weight_daily * daily_signals_df + weight_weekly * weekly_signals_df
+    combined_signals = (
+        weight_daily * daily_signals_df + weight_weekly * weekly_signals_df
+    )
 
     valid_stocks = returns_df.dropna(axis=1, how="all").columns
     combined_signals = combined_signals[valid_stocks]
