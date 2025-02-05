@@ -4,11 +4,10 @@ import pandas as pd
 from sklearn.cluster import DBSCAN
 from sklearn.manifold import TSNE
 from sklearn.neighbors import NearestNeighbors
-from sklearn.covariance import LedoitWolf
 import plotly.express as px
 
-from utils.caching_utils import (
-    cleanup_cache,
+from correlation.correlation_utils import compute_correlation_matrix
+from utils.caching_utils import (    
     compute_ticker_hash,
     load_parameters_from_pickle,
     save_parameters_to_pickle,
@@ -65,11 +64,7 @@ def filter_correlated_groups_dbscan(
         save_parameters_to_pickle(cached_params, cache_filename)
 
     # Compute correlation matrix (robust if needed)
-    if returns_df.shape[1] > 50:
-        corr_matrix = compute_lw_correlation(returns_df)
-    else:
-        corr_matrix = returns_df.corr().abs()
-        np.fill_diagonal(corr_matrix.values, 1.0)
+    corr_matrix = compute_correlation_matrix(returns_df)
 
     # Convert correlation to distance: distance = 1 - correlation.
     distance_matrix = 1 - corr_matrix
@@ -164,24 +159,6 @@ def filter_correlated_groups_dbscan(
         fig_k.show()
 
     return selected_tickers
-
-
-def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Computes a robust correlation matrix using the Ledoit-Wolf covariance estimate.
-
-    Args:
-        df (pd.DataFrame): DataFrame of returns with assets as columns.
-
-    Returns:
-        pd.DataFrame: Correlation matrix with assets as both index and columns.
-    """
-    lw = LedoitWolf()
-    covariance = lw.fit(df).covariance_
-    std_dev = np.sqrt(np.diag(covariance))
-    corr = covariance / np.outer(std_dev, std_dev)
-    np.fill_diagonal(corr, 1.0)
-    return pd.DataFrame(corr, index=df.columns, columns=df.columns)
 
 
 def compute_performance_metrics(

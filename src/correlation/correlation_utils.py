@@ -104,3 +104,32 @@ def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
     corr_matrix = covariance / np.outer(stddev, stddev)
     np.fill_diagonal(corr_matrix, 0)
     return pd.DataFrame(corr_matrix, index=df.columns, columns=df.columns)
+
+
+def compute_correlation_matrix(
+    df: pd.DataFrame, lw_threshold: int = 50, use_abs: bool = True
+) -> pd.DataFrame:
+    """
+    Compute a correlation matrix for the given returns DataFrame.
+    Uses the Ledoit-Wolf estimator if the number of columns exceeds lw_threshold.
+    Otherwise, uses the standard Pearson correlation.
+
+    Args:
+        df (pd.DataFrame): DataFrame of returns with tickers as columns.
+        lw_threshold (int): If number of columns > lw_threshold, use Ledoit-Wolf.
+        use_abs (bool): If True, take the absolute value of correlations.
+
+    Returns:
+        pd.DataFrame: Correlation matrix with the diagonal filled with zeros.
+    """
+    if len(df.columns) > lw_threshold:
+        # Use the Ledoit-Wolf based correlation matrix.
+        corr_matrix = compute_lw_correlation(df)
+    else:
+        # Use standard correlation.
+        corr_matrix = df.corr()
+        if use_abs:
+            corr_matrix = corr_matrix.abs()
+        # Fill diagonal with zeros.
+        np.fill_diagonal(corr_matrix.values, 0)
+    return corr_matrix

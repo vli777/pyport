@@ -9,7 +9,7 @@ import functools
 import copy
 
 from correlation.correlation_utils import (
-    compute_lw_correlation,
+    compute_correlation_matrix,
     hierarchical_clustering,
 )
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
@@ -82,11 +82,7 @@ def filter_correlated_groups(
         aligned_df = working_df.loc[min_common_date:]
 
         # Compute correlation matrix (LedoitWolf if large)
-        if len(aligned_df.columns) > 50:
-            corr_matrix = compute_lw_correlation(aligned_df)
-        else:
-            corr_matrix = aligned_df.corr().abs()
-            np.fill_diagonal(corr_matrix.values, 0)
+        corr_matrix = compute_correlation_matrix(aligned_df)
 
         # Convert correlation -> distance = (1 - correlation)
         # Then do hierarchical clustering with the chosen linkage
