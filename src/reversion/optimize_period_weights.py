@@ -14,11 +14,12 @@ def find_optimal_weights(
     n_trials: int = 50,
     n_jobs: int = -1,
     reoptimize: bool = False,
-    cache: dict = None,  # Optional global cache for weights.
+    cache: dict = None,  # Global cache dict for weights.
+    group_id: str = None,  # Extra parameter for the cluster identifier.
 ) -> Dict[str, float]:
     """
     Run Optuna to find the optimal weighting of daily and weekly signals.
-    If a cache dict is provided and contains weights, they are used.
+    If a cache dict is provided and contains weights for this group, they are used.
 
     Args:
         daily_signals_df (pd.DataFrame): Daily signals DataFrame.
@@ -27,13 +28,15 @@ def find_optimal_weights(
         n_trials (int, optional): Number of optimization trials. Defaults to 50.
         n_jobs (int, optional): Number of parallel jobs. Defaults to -1.
         reoptimize (bool): Override to reoptimize.
-        cache (dict, optional): A global cache dict; if provided, its "weights" key is used.
+        cache (dict, optional): A global cache dict.
+        group_id (str): Identifier for the cluster group.
 
     Returns:
         Dict[str, float]: Best weights for daily and weekly signals.
     """
-    if not reoptimize and cache is not None and "weights" in cache:
-        return cache["weights"]
+    cache_key = f"weights_{group_id}" if group_id is not None else "weights"
+    if not reoptimize and cache is not None and cache_key in cache:
+        return cache[cache_key]
 
     study = optuna.create_study(
         study_name="reversion_weights_optimization",
@@ -56,7 +59,7 @@ def find_optimal_weights(
         best_weights = study.best_trial.params
 
     if cache is not None:
-        cache["weights"] = best_weights
+        cache[cache_key] = best_weights
 
     return best_weights
 

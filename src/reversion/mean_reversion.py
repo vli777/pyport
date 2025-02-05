@@ -5,7 +5,7 @@ from reversion.reversion_utils import (
     adjust_allocation_with_mean_reversion,
     calculate_continuous_composite_signal,
 )
-from reversion.reversion_plots import plot_reversion_scatter
+from reversion.reversion_plots import plot_reversion_bubble
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
@@ -54,7 +54,7 @@ def apply_mean_reversion(
     print(f"Loaded Ticker Parameters for {len(ticker_params)} tickers.")
 
     if config.plot_reversion:
-        plot_reversion_scatter(
+        plot_reversion_bubble(
             ticker_params=ticker_params, title="Mean Reversion Parameters"
         )
 

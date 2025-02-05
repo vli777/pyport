@@ -13,11 +13,12 @@ def optimize_robust_mean_reversion(
     n_trials: int = 50,
     n_jobs: int = -1,
     reoptimize: bool = False,
-    cache: dict = None,  # Optional global cache passed in
+    cache: dict = None,  # Global cache dict passed in
+    group_id: str = None,  # Extra parameter for the cluster identifier
 ) -> Tuple[Dict[str, float], optuna.study.Study]:
     """
     Optimize the rolling window and z_threshold using Optuna.
-    If a cache dict is provided and it contains cached parameters,
+    If a cache dict is provided and it contains cached parameters for this group_id,
     those will be used.
 
     Args:
@@ -25,15 +26,18 @@ def optimize_robust_mean_reversion(
         n_trials (int, optional): Number of optimization trials. Defaults to 50.
         n_jobs (int, optional): Number of parallel jobs. Defaults to -1.
         reoptimize (bool): Override to reoptimize.
-        cache (dict, optional): A global cache dict; if provided, its relevant entry is used.
+        cache (dict, optional): A global cache dict.
+        group_id (str): Identifier for the cluster group.
 
     Returns:
         Tuple[Dict[str, float], optuna.study.Study]: The best parameters and the study.
     """
-    # If a cache is provided and reoptimization is not forced, try to use it.
-    if not reoptimize and cache is not None and "robust_params" in cache:
-        logger.info("Using cached robust parameters.")
-        return cache["robust_params"], None
+    # Create a unique cache key using the group_id.
+    cache_key = f"robust_params_{group_id}" if group_id is not None else "robust_params"
+
+    if not reoptimize and cache is not None and cache_key in cache:
+        logger.info(f"Using cached robust parameters for group {group_id}.")
+        return cache[cache_key], None
 
     study = optuna.create_study(
         direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
@@ -49,9 +53,8 @@ def optimize_robust_mean_reversion(
         else {"window": 20, "z_threshold": 1.5}
     )
 
-    # Update the cache if provided.
     if cache is not None:
-        cache["robust_params"] = best_params
+        cache[cache_key] = best_params
 
     return best_params, study
 

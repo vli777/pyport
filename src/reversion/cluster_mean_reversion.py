@@ -12,17 +12,21 @@ def cluster_mean_reversion(
     reoptimize: bool = False,
     global_cache: dict = None,  # Global cache passed in.
 ):
-    # global_cache should be a dict that persists across clusters.
     if global_cache is None:
         global_cache = {}
 
     clusters = cluster_stocks(returns_df)
+    print(f"{len(clusters)} clusters found")
+
     group_parameters = {}
 
     for label, tickers in clusters.items():
         group_returns = returns_df[tickers].dropna(how="all", axis=1)
         if group_returns.empty:
             continue
+
+        # Use label as a string for the group id.
+        group_id = str(label)
 
         # Check for missing tickers in the global cache.
         tickers_missing = [t for t in tickers if t not in global_cache]
@@ -33,7 +37,8 @@ def cluster_mean_reversion(
                 n_trials=n_trials,
                 n_jobs=n_jobs,
                 reoptimize=reoptimize,
-                cache=global_cache,  # Using the same cache dict.
+                cache=global_cache,
+                group_id=group_id,
             )
 
             # Optimize for weekly returns.
@@ -44,6 +49,7 @@ def cluster_mean_reversion(
                 n_jobs=n_jobs,
                 reoptimize=reoptimize,
                 cache=global_cache,
+                group_id=group_id,
             )
 
             # Optimize the combination weights for daily and weekly signals.
@@ -55,13 +61,10 @@ def cluster_mean_reversion(
                 },
                 orient="index",
             ).T.fillna(0)
-            # (For weekly signals, you would similarly build a dataframe from your weekly signal data.)
-            # Here, for simplicity we assume the weekly signals are available in the same way.
             weekly_signals_df = (
                 daily_signals_df.copy()
-            )  # replace with actual weekly signals
+            )  # Replace with actual weekly signals if available.
 
-            # Create a combined index for safety.
             combined_dates = daily_signals_df.index.union(
                 weekly_signals_df.index
             ).union(group_returns.index)
@@ -76,6 +79,7 @@ def cluster_mean_reversion(
                 n_jobs=n_jobs,
                 reoptimize=reoptimize,
                 cache=global_cache,
+                group_id=group_id,
             )
 
             # Combine parameters into one dict for this cluster.
@@ -86,13 +90,13 @@ def cluster_mean_reversion(
                 "z_threshold_weekly": best_params_weekly.get("z_threshold", 1.5),
                 "weight_daily": group_weights.get("weight_daily", 0.5),
                 "weight_weekly": group_weights.get("weight_weekly", 0.5),
+                "cluster": group_id,
             }
 
             # Update the global cache for all tickers in this group.
             for ticker in tickers:
                 global_cache[ticker] = group_params
 
-        # Save group-level parameters for potential downstream use.
         group_parameters[label] = {
             "tickers": tickers,
             "params": global_cache[tickers[0]],
