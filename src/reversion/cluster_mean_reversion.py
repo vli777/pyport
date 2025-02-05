@@ -33,23 +33,19 @@ def cluster_mean_reversion(
         if tickers_missing:
             # Optimize robust mean reversion parameters for daily returns.
             best_params_daily, _ = optimize_robust_mean_reversion(
-                group_returns,
+                returns_df=group_returns,
                 test_window_range=range(5, 31, 5),
                 n_trials=n_trials,
                 n_jobs=n_jobs,
-                reoptimize=reoptimize,
-                group_id=group_id,
             )
 
             # Optimize for weekly returns.
             weekly_returns = group_returns.resample("W").last()
             best_params_weekly, _ = optimize_robust_mean_reversion(
-                weekly_returns,
+                returns_df=weekly_returns,
                 test_window_range=range(1, 26),
                 n_trials=n_trials,
                 n_jobs=n_jobs,
-                reoptimize=reoptimize,
-                group_id=group_id,
             )
 
             # Optimize the combination weights for daily and weekly signals.
