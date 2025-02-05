@@ -4,9 +4,12 @@ Modern Portfolio Optimization
 # WIP
 - Z-score-based arbitrage on cointegrated baskets
 
-# February 2025 Latest
+# February 2025 Latest (2/5/25)
 - Updated features with more modern techniques: (VAE for anomaly detection would be considered more SOTA, but due to our data sample size and the marginal benefit vs computational resources required, isolation forest was selected.
 - Changed the data processing to use the full available history for various computations vs slicing to the latest data range available among newer assets first.
+- Fixed mean reversion hyperparameters optimization study results and continuous vs discrete signal generation for weight adjustment vs binary exclusion/inclusion
+- Balanced precision for computational speed by using clustering to apply group optimal params vs for each individual asset for fast results
+![image](https://github.com/user-attachments/assets/7bcefd44-e20a-41f3-8ac8-80dd8fd3c16a)
 - Overall the results are very similar to the previous version which is a good sign for consistency!
 
 - [x] Anomaly detection with Isolation Forest
