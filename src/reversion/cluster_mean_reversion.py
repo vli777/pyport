@@ -9,7 +9,6 @@ def cluster_mean_reversion(
     returns_df: pd.DataFrame,
     n_trials: int = 50,
     n_jobs: int = -1,
-    reoptimize: bool = False,
     global_cache: dict = None,  # Global cache passed in.
 ):
     if global_cache is None:
@@ -77,12 +76,12 @@ def cluster_mean_reversion(
 
             # Combine parameters into one dict for this cluster.
             group_params = {
-                "window_daily": best_params_daily.get("window", 20),
-                "z_threshold_daily": best_params_daily.get("z_threshold", 1.5),
-                "window_weekly": best_params_weekly.get("window", 20),
-                "z_threshold_weekly": best_params_weekly.get("z_threshold", 1.5),
-                "weight_daily": group_weights.get("weight_daily", 0.7),
-                "weight_weekly": group_weights.get("weight_weekly", 0.3),
+                "window_daily": round(best_params_daily.get("window", 20), 1),
+                "z_threshold_daily": round(best_params_daily.get("z_threshold", 1.5), 1),
+                "window_weekly": round(best_params_weekly.get("window", 5), 1),
+                "z_threshold_weekly": round(best_params_weekly.get("z_threshold", 1.5), 1),
+                "weight_daily": round(group_weights.get("weight_daily", 0.7), 1),
+                "weight_weekly": round(group_weights.get("weight_weekly", 0.3), 1),
                 "cluster": group_id,
             }
 
