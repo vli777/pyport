@@ -34,10 +34,10 @@ def cluster_mean_reversion(
             # Optimize robust mean reversion parameters for daily returns.
             best_params_daily, _ = optimize_robust_mean_reversion(
                 group_returns,
+                test_window_range=range(5, 31, 5),
                 n_trials=n_trials,
                 n_jobs=n_jobs,
                 reoptimize=reoptimize,
-                cache=global_cache,
                 group_id=group_id,
             )
 
@@ -45,10 +45,10 @@ def cluster_mean_reversion(
             weekly_returns = group_returns.resample("W").last()
             best_params_weekly, _ = optimize_robust_mean_reversion(
                 weekly_returns,
+                test_window_range=range(1, 26),
                 n_trials=n_trials,
                 n_jobs=n_jobs,
                 reoptimize=reoptimize,
-                cache=global_cache,
                 group_id=group_id,
             )
 
@@ -64,7 +64,6 @@ def cluster_mean_reversion(
             weekly_signals_df = (
                 daily_signals_df.copy()
             )  # Replace with actual weekly signals if available.
-
             combined_dates = daily_signals_df.index.union(
                 weekly_signals_df.index
             ).union(group_returns.index)
@@ -78,7 +77,6 @@ def cluster_mean_reversion(
                 n_trials=n_trials,
                 n_jobs=n_jobs,
                 reoptimize=reoptimize,
-                cache=global_cache,
                 group_id=group_id,
             )
 

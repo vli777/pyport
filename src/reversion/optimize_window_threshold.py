@@ -10,40 +10,32 @@ from utils.logger import logger
 
 def optimize_robust_mean_reversion(
     returns_df: pd.DataFrame,
+    test_window_range: range = range(10, 31, 5),
     n_trials: int = 50,
     n_jobs: int = -1,
-    reoptimize: bool = False,
-    cache: dict = None,  # Global cache dict passed in
-    group_id: str = None,  # Extra parameter for the cluster identifier
 ) -> Tuple[Dict[str, float], optuna.study.Study]:
     """
     Optimize the rolling window and z_threshold using Optuna.
-    If a cache dict is provided and it contains cached parameters for this group_id,
-    those will be used.
+    This version does not write group-level keys to the global cache.
 
     Args:
         returns_df (pd.DataFrame): Log returns DataFrame.
-        n_trials (int, optional): Number of optimization trials. Defaults to 50.
-        n_jobs (int, optional): Number of parallel jobs. Defaults to -1.
-        reoptimize (bool): Override to reoptimize.
-        cache (dict, optional): A global cache dict.
-        group_id (str): Identifier for the cluster group.
+        test_window_range (range): Range of window sizes.
+        n_trials (int, optional): Number of trials. Defaults to 50.
+        n_jobs (int, optional): Parallel jobs. Defaults to -1.
+        reoptimize (bool): Force reoptimization.
+        group_id (str): Identifier for the cluster (not used for caching here).
 
     Returns:
-        Tuple[Dict[str, float], optuna.study.Study]: The best parameters and the study.
+        Tuple[Dict[str, float], optuna.study.Study]: Best parameters and the study.
     """
-    # Create a unique cache key using the group_id.
-    cache_key = f"robust_params_{group_id}" if group_id is not None else "robust_params"
-
-    if not reoptimize and cache is not None and cache_key in cache:
-        logger.info(f"Using cached robust parameters for group {group_id}.")
-        return cache[cache_key], None
-
     study = optuna.create_study(
         direction="maximize", sampler=optuna.samplers.TPESampler(seed=42)
     )
     study.optimize(
-        lambda trial: robust_mean_reversion_objective(trial, returns_df),
+        lambda trial: robust_mean_reversion_objective(
+            trial, returns_df, test_window_range
+        ),
         n_trials=n_trials,
         n_jobs=n_jobs,
     )
@@ -52,21 +44,25 @@ def optimize_robust_mean_reversion(
         if study.best_trial
         else {"window": 20, "z_threshold": 1.5}
     )
-
-    if cache is not None:
-        cache[cache_key] = best_params
-
     return best_params, study
 
 
-def robust_mean_reversion_objective(trial, returns_df: pd.DataFrame) -> float:
+def robust_mean_reversion_objective(
+    trial, returns_df: pd.DataFrame, test_window_range: range = range(10, 31, 5)
+) -> float:
     """
     Objective function for optimizing the robust mean reversion parameters.
     The trial suggests a rolling window size and a z_threshold.
     The resulting signals are used (with a one-day shift to avoid lookahead)
     to simulate a simple strategy; the cumulative return and sharpe ratio is maximized.
     """
-    window = trial.suggest_int("window", 10, 30, step=5)
+
+    def suggest_window(trial, window_range: range):
+        return trial.suggest_int(
+            "window", window_range.start, window_range.stop - 1, step=window_range.step
+        )
+
+    window = suggest_window(trial, test_window_range)
     z_threshold = trial.suggest_float("z_threshold", 1.0, 3.0, step=0.1)
 
     robust_z = calculate_robust_zscores(returns_df, window)
