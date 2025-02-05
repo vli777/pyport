@@ -46,7 +46,7 @@ def find_optimal_weights(
     )
     if study.best_trial is None:
         logger.error("No valid optimization results found.")
-        best_weights = {"weight_daily": 0.5, "weight_weekly": 0.5}
+        best_weights = {"weight_daily": 0.7, "weight_weekly": 0.3}
     else:
         best_weights = study.best_trial.params
     return best_weights
@@ -74,14 +74,7 @@ def reversion_weights_objective(
     weight_weekly = 1.0 - weight_daily
 
     # Combine the precomputed dataframes using vectorized operations
-    combined = weight_daily * daily_signals_df + weight_weekly * weekly_signals_df
-
-    # Vectorize the mapping to discrete signals
-    combined_signals = pd.DataFrame(
-        np.sign(combined.values),
-        index=combined.index,
-        columns=combined.columns,
-    )
+    combined_signals = weight_daily * daily_signals_df + weight_weekly * weekly_signals_df
 
     valid_stocks = returns_df.dropna(axis=1, how="all").columns
     combined_signals = combined_signals[valid_stocks]
