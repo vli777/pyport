@@ -21,7 +21,7 @@ def cluster_mean_reversion(
     group_parameters = {}
 
     for label, tickers in clusters.items():
-        group_returns = returns_df[tickers].dropna(how="all", axis=1)
+        group_returns: pd.DataFrame = returns_df[tickers].dropna(how="all", axis=1)
         if group_returns.empty:
             continue
 
@@ -88,8 +88,8 @@ def cluster_mean_reversion(
                 "z_threshold_daily": best_params_daily.get("z_threshold", 1.5),
                 "window_weekly": best_params_weekly.get("window", 20),
                 "z_threshold_weekly": best_params_weekly.get("z_threshold", 1.5),
-                "weight_daily": group_weights.get("weight_daily", 0.5),
-                "weight_weekly": group_weights.get("weight_weekly", 0.5),
+                "weight_daily": group_weights.get("weight_daily", 0.7),
+                "weight_weekly": group_weights.get("weight_weekly", 0.3),
                 "cluster": group_id,
             }
 
