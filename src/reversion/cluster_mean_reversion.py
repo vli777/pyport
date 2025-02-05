@@ -40,10 +40,6 @@ def cluster_mean_reversion(
                 break  # Stop checking once we find a match
 
         if existing_params:
-            print(
-                f"Cluster {label} maps to existing group {existing_group_id}. Reusing params."
-            )
-
             # Apply existing parameters to all tickers in this group
             for ticker in tickers:
                 global_cache[ticker] = existing_params

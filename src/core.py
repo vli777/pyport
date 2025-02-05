@@ -360,6 +360,7 @@ def run_pipeline(
         return {}
 
     # Step 1: Compute pre-mean reversion results
+    logger.info("\nEnsemble results:")
     pre_daily_returns, pre_cumulative_returns = output(
         data=dfs["data"],
         allocation_weights=normalized_avg_weights,
