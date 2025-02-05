@@ -2,7 +2,7 @@
 Modern Portfolio Optimization 
 
 # WIP
-- Z-score-based arbitrage on cointegrated baskets
+- Statistical arbitrage on cointegrated baskets
 
 # February 2025 Latest (2/5/25)
 - Updated features with more modern techniques: (VAE for anomaly detection would be considered more SOTA, but due to our data sample size and the marginal benefit vs computational resources required, isolation forest was selected.
