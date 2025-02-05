@@ -6,7 +6,10 @@ from reversion.reversion_utils import (
     calculate_continuous_composite_signal,
     group_ticker_params_by_cluster,
 )
-from reversion.reversion_plots import plot_group_reversion_params
+from reversion.reversion_plots import (
+    plot_group_reversion_params,
+    plot_reversion_signals,
+)
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
@@ -63,7 +66,8 @@ def apply_mean_reversion(
     composite_signals = calculate_continuous_composite_signal(
         group_signals=group_reversion_signals, ticker_params=ticker_params
     )
-    print(f"Composite Signals: {composite_signals}")
+    if config.plot_reversion:
+        plot_reversion_signals(data=composite_signals)
 
     # Adjust the baseline allocation.
     final_allocation = adjust_allocation_with_mean_reversion(
