@@ -1,141 +1,128 @@
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import plotly.express as px
 
 
-def plot_reversion_bubble(ticker_params: dict, title: str = "Reversion Parameters"):
+def plot_group_reversion_params(
+    group_parameters: dict, title: str = "Group Reversion Parameters"
+):
     """
-    Create a two-column bubble plot:
-      - Left: Daily parameters
-            x-axis: window_daily (and used for marker color)
-            y-axis: ticker (categorical)
-            bubble size: proportional to z_threshold_daily
-            hover: ticker, window_daily, z_threshold_daily, weight_daily
-      - Right: Weekly parameters
-            x-axis: window_weekly (and used for marker color)
-            y-axis: ticker (categorical)
-            bubble size: proportional to z_threshold_weekly
-            hover: ticker, window_weekly, z_threshold_weekly, weight_weekly
+    Plot group-level optimized parameters using bar charts.
 
-    The marker color is based on the rolling window value using a sequential gradient ("Viridis").
+    For each cluster group, we plot two bar charts (daily and weekly):
+      - x-axis: Rolling window (window_daily or window_weekly)
+      - y-axis: Z-Threshold (z_threshold_daily or z_threshold_weekly)
+
+    The bars are colored using a bright pastel sequential palette.
+    Hover info shows the group (cluster id), the rolling window, the z-threshold,
+    and a list of tickers in that group.
 
     Args:
-        ticker_params (dict): Dictionary keyed by ticker with parameters, e.g.
+        group_parameters (dict): Dictionary keyed by the original cluster label, with values like:
             {
-                'AAPL': {
-                    'window_daily': 25,
-                    'z_threshold_daily': 1.7,
-                    'weight_daily': 0.5,
-                    'window_weekly': 30,
-                    'z_threshold_weekly': 1.9,
-                    'weight_weekly': 0.55
-                },
-                ...
+              label: {
+                 "tickers": [list of tickers],
+                 "params": {
+                     "window_daily": ...,
+                     "z_threshold_daily": ...,
+                     "window_weekly": ...,
+                     "z_threshold_weekly": ...,
+                     "weight_daily": ...,
+                     "weight_weekly": ...,
+                     "cluster": <group_id as hash string>
+                 }
+              },
+              ...
             }
-        title (str): Overall title for the figure.
+        title (str): Overall title for the plot.
 
     Returns:
         go.Figure: The resulting Plotly figure.
     """
-    # Convert the dictionary to a DataFrame.
-    df = pd.DataFrame.from_dict(ticker_params, orient="index")
-    df.index.name = "ticker"
-    df.reset_index(inplace=True)
+    # Build a summary DataFrame from group_parameters.
+    records = []
+    for label, grp_data in group_parameters.items():
+        params = grp_data["params"]
+        tickers = grp_data["tickers"]
+        records.append(
+            {
+                "group_label": label,
+                "cluster": params.get(
+                    "cluster", label
+                ),  # use the cluster id from params if available
+                "window_daily": params.get("window_daily", 20),
+                "z_threshold_daily": params.get("z_threshold_daily", 1.5),
+                "window_weekly": params.get("window_weekly", 20),
+                "z_threshold_weekly": params.get("z_threshold_weekly", 1.5),
+                "tickers": ", ".join(tickers),
+            }
+        )
+    df = pd.DataFrame(records)
 
-    # Fill missing values for safety.
-    df["z_threshold_daily"] = df["z_threshold_daily"].fillna(0)
-    df["z_threshold_weekly"] = df["z_threshold_weekly"].fillna(0)
-    df["window_daily"] = df["window_daily"].fillna(0)
-    df["window_weekly"] = df["window_weekly"].fillna(0)
+    # Choose a pastel sequential palette. For example, using Plotly Express "Viridis" but
+    # we can also choose a palette with bright pastel colors.
+    # Here, we use a simple categorical mapping based on the number of groups.
+    num_groups = df.shape[0]
+    colors = px.colors.qualitative.Pastel1
+    # If there are more groups than colors, cycle through.
+    df["color"] = [colors[i % len(colors)] for i in range(num_groups)]
 
-    # Sort by ticker for consistency.
-    df = df.sort_values(by="ticker")
-
-    # Define a scale factor for bubble size.
-    size_scale = 15
-
-    # Create a subplot with 1 row and 2 columns.
+    # Create subplots: one for daily parameters, one for weekly parameters.
     fig = make_subplots(
-        rows=1,
-        cols=2,
-        subplot_titles=("Daily Parameters", "Weekly Parameters"),
-        horizontal_spacing=0.1,
+        rows=1, cols=2, subplot_titles=("Daily Parameters", "Weekly Parameters")
     )
 
-    # Left subplot: Daily parameters.
-    # Marker color is based on window_daily using a sequential color scale.
+    # Daily bar chart: each bar represents a group.
     fig.add_trace(
-        go.Scatter(
+        go.Bar(
             x=df["window_daily"],
-            y=df["ticker"],
-            mode="markers",
-            marker=dict(
-                size=df["z_threshold_daily"] * size_scale,
-                color=df["window_daily"],
-                colorscale="Viridis",
-                colorbar=dict(title="Daily Window"),
-                opacity=0.8,
-                line=dict(width=1, color="black"),
-            ),
+            y=df["cluster"],
+            orientation="h",
+            marker=dict(color=df["color"], line=dict(width=0)),
+            text=df["z_threshold_daily"],
             hovertemplate=(
-                "Ticker: %{text}<br>"
+                "Cluster: %{y}<br>"
                 + "Window: %{x}<br>"
-                + "Z-Threshold: %{customdata[0]}<br>"
+                + "Z-Threshold: %{text}<br>"
+                + "Tickers: "
+                + df["tickers"]
+                + "<extra></extra>"
             ),
-            text=df["ticker"],
-            customdata=df[["z_threshold_daily"]].values,
         ),
         row=1,
         col=1,
     )
 
-    # Right subplot: Weekly parameters.
-    # Marker color is based on window_weekly using the same sequential color scale.
+    # Weekly bar chart.
     fig.add_trace(
-        go.Scatter(
+        go.Bar(
             x=df["window_weekly"],
-            y=df["ticker"],
-            mode="markers",
-            marker=dict(
-                size=df["z_threshold_weekly"] * size_scale,
-                color=df["window_weekly"],
-                colorscale="Viridis",
-                colorbar=dict(title="Weekly Window"),
-                opacity=0.8,
-                line=dict(width=1, color="black"),
-            ),
+            y=df["cluster"],
+            orientation="h",
+            marker=dict(color=df["color"], line=dict(width=0)),
+            text=df["z_threshold_weekly"],
             hovertemplate=(
-                "Ticker: %{text}<br>"
+                "Cluster: %{y}<br>"
                 + "Window: %{x}<br>"
-                + "Z-Threshold: %{customdata[0]}<br>"
+                + "Z-Threshold: %{text}<br>"
+                + "Tickers: "
+                + df["tickers"]
+                + "<extra></extra>"
             ),
-            text=df["ticker"],
-            customdata=df[["z_threshold_weekly"]].values,
         ),
         row=1,
         col=2,
     )
 
-    # Update axis titles.
+    # Update axes titles.
     fig.update_xaxes(title_text="Rolling Window (Days)", row=1, col=1)
     fig.update_xaxes(title_text="Rolling Window (Weeks)", row=1, col=2)
-    fig.update_yaxes(title_text="Ticker", automargin=True)
+    fig.update_yaxes(title_text="Cluster ID", automargin=True)
 
-    fig.update_layout(title=title, margin=dict(l=100, r=50, t=100, b=50))
+    fig.update_layout(
+        title=title, margin=dict(l=100, r=50, t=100, b=50), showlegend=False
+    )
 
     fig.show()
     return fig
-
-
-# Example usage:
-# ticker_params = {
-#     "AAPL": {"window_daily": 25, "z_threshold_daily": 1.7, "weight_daily": 0.5,
-#              "window_weekly": 30, "z_threshold_weekly": 1.9, "weight_weekly": 0.55},
-#     "MSFT": {"window_daily": 20, "z_threshold_daily": 1.6, "weight_daily": 0.6,
-#              "window_weekly": 28, "z_threshold_weekly": 1.8, "weight_weekly": 0.6},
-#     "JPM":  {"window_daily": 30, "z_threshold_daily": 1.8, "weight_daily": 0.55,
-#              "window_weekly": 35, "z_threshold_weekly": 2.0, "weight_weekly": 0.5},
-#     "BAC":  {"window_daily": 32, "z_threshold_daily": 1.9, "weight_daily": 0.5,
-#              "window_weekly": 34, "z_threshold_weekly": 2.1, "weight_weekly": 0.5}
-# }
-# fig = plot_reversion_bubble(ticker_params, title="Mean Reversion Parameters")
