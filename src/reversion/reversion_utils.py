@@ -112,17 +112,27 @@ def adjust_allocation_with_mean_reversion(
     Returns:
         pd.Series: Adjusted and normalized allocation.
     """
+    # Ensure composite_signals is a Pandas Series with tickers as index
+    composite_signals = pd.Series(composite_signals)
+
+    # Ensure baseline_allocation is also a Pandas Series
+    if isinstance(baseline_allocation, dict):
+        baseline_allocation = pd.Series(baseline_allocation)
+
+    # Apply mean reversion adjustment
     adjusted = baseline_allocation.copy()
     for ticker in adjusted.index:
-        signal = composite_signals.get(ticker, 0)
-        adjusted[ticker] = adjusted[ticker] * (1 + alpha * signal)
+        signal = composite_signals.get(ticker, 0)  # Default to 0 if missing
+        adjusted[ticker] *= 1 + alpha * signal
 
     if not allow_short:
         adjusted = adjusted.clip(lower=0)
 
+    # Normalize back to sum to 1
     total = adjusted.sum()
     if total > 0:
-        adjusted = adjusted / total
+        adjusted /= total
+
     return adjusted
 
 
