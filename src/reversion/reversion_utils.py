@@ -126,11 +126,15 @@ def adjust_allocation_with_mean_reversion(
 
     if not allow_short:
         adjusted = adjusted.clip(lower=0)
-
-    # Normalize back to sum to 1
-    total = adjusted.sum()
-    if total > 0:
-        adjusted /= total
+        # Normalize so that the sum of weights equals 1.
+        total = adjusted.sum()
+        if total > 0:
+            adjusted /= total
+    else:
+        # When allowing shorts, normalize by the sum of absolute weights
+        total = adjusted.abs().sum()
+        if total > 0:
+            adjusted /= total
 
     return adjusted
 
