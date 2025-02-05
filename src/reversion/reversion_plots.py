@@ -64,7 +64,7 @@ def plot_group_reversion_params(
     # we can also choose a palette with bright pastel colors.
     # Here, we use a simple categorical mapping based on the number of groups.
     num_groups = df.shape[0]
-    colors = px.colors.qualitative.Pastel1
+    colors = px.colors.qualitative.Vivid_r
     # If there are more groups than colors, cycle through.
     df["color"] = [colors[i % len(colors)] for i in range(num_groups)]
 
@@ -126,3 +126,61 @@ def plot_group_reversion_params(
 
     fig.show()
     return fig
+
+
+def plot_reversion_signals(data):
+    """
+    Plots mean reversion signals using Plotly.
+
+    Args:
+        data (dict): Dictionary where keys are stock tickers and values are composite signal values (daily + weekly weighted)
+                     Negative values represent bearish sentiment, positive values represent bullish sentiment.
+    """
+    # Convert to DataFrame
+    df = pd.DataFrame(list(data.items()), columns=["Stock", "Value"])
+    df = df[df["Value"] != 0]  # Remove zero values
+    df = df.sort_values(by="Value")  # Sort for better visualization
+
+    # Assign colors from Plotly palette
+    colors = px.colors.qualitative.Prism
+    color_map = {stock: colors[i % len(colors)] for i, stock in enumerate(df["Stock"])}
+
+    # Create figure
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(
+            y=df["Stock"],
+            x=df["Value"],
+            orientation="h",
+            marker=dict(
+                color=[color_map[stock] for stock in df["Stock"]],
+                line=dict(color="black", width=0.5),
+            ),
+            hoverinfo="x+y+text",
+        )
+    )
+
+    # Style adjustments
+    fig.update_layout(
+        title="Stock Sentiment Visualization",
+        xaxis_title="Sentiment Value (Negative = Bearish, Positive = Bullish)",
+        yaxis_title="Stock Ticker",
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        showlegend=False,
+        margin=dict(l=100, r=40, t=40, b=40),
+        xaxis=dict(showgrid=False, zeroline=False),
+        yaxis=dict(showgrid=False, zeroline=False),
+        font=dict(family="Arial", size=12),
+    )
+
+    # Add rounded card-style shadow (Material UI style)
+    fig.update_layout(
+        margin=dict(l=60, r=60, t=40, b=40),
+        title_x=0.5,
+        height=600,
+    )
+
+    fig.show()
