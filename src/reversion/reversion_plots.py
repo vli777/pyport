@@ -130,57 +130,133 @@ def plot_group_reversion_params(
 
 def plot_reversion_signals(data):
     """
-    Plots mean reversion signals using Plotly.
+    Plots Z-score based mean reversion signals using Plotly:
+      - Positive => Bullish (yellow to green gradient; more positive => deeper green).
+      - Negative => Bearish (orange to red gradient; more negative => deeper red).
 
     Args:
-        data (dict): Dictionary where keys are stock tickers and values are composite signal values (daily + weekly weighted)
-                     Negative values represent bearish sentiment, positive values represent bullish sentiment.
+        data (dict): Keys are asset tickers, values are Z-score-based signals.
+                     Negative => Overbought region, Positive => Oversold region.
     """
-    # Convert to DataFrame
-    df = pd.DataFrame(list(data.items()), columns=["Stock", "Value"])
-    df = df[df["Value"] != 0]  # Remove zero values
-    df = df.sort_values(by="Value")  # Sort for better visualization
 
-    # Assign colors from Plotly palette
-    colors = px.colors.qualitative.Prism
-    color_map = {stock: colors[i % len(colors)] for i, stock in enumerate(df["Stock"])}
+    # Convert data to DataFrame
+    df = pd.DataFrame(list(data.items()), columns=["Asset", "Value"])
+    df = df[df["Value"] != 0]  # Remove zero values if any
+    df = df.sort_values(by="Value")
 
-    # Create figure
+    # Determine min and max for scaling
+    min_val = df["Value"].min()  # most negative
+    max_val = df["Value"].max()  # most positive
+    # For symmetric axis, we span from -max_abs to +max_abs
+    max_abs = max(abs(min_val), abs(max_val))
+
+    # Color gradients
+    #   Negative: small negative (close to 0) -> orange, large negative -> deep red
+    #   Positive: small positive (close to 0) -> yellow, large positive -> deep green
+    def get_bar_color(value):
+        if value < 0:
+            # Normalize in [0, 1], 0 => near 0, 1 => min_val
+            norm = abs(value) / abs(min_val) if min_val != 0 else 0
+            # Orange (255,150,0) -> Red (150,0,0)
+            r = 255 - int((255 - 150) * norm)  # 255 -> 150
+            g = 150 - int(150 * norm)  # 150 -> 0
+            b = 0
+        else:
+            # Normalize in [0, 1], 0 => 0, 1 => max_val
+            norm = value / max_val if max_val != 0 else 0
+            # Yellow (255,255,100) -> Green (0,200,0)
+            r = 255 - int(255 * norm)  # 255 -> 0
+            g = 255 - int((255 - 200) * norm)  # 255 -> 200
+            b = 100 - int(100 * norm)  # 100 -> 0
+        return (r, g, b)
+
+    # Determine bar color and text color
+    bar_colors = []
+    text_colors = []
+    for val in df["Value"]:
+        r, g, b = get_bar_color(val)
+        bar_colors.append(f"rgb({r},{g},{b})")
+        # Decide if bar is dark or light for text contrast
+        brightness = 0.299 * r + 0.587 * g + 0.114 * b
+        text_colors.append("black" if brightness > 140 else "white")
+
+    df["BarColor"] = bar_colors
+    df["TextColor"] = text_colors
+
+    # Create the bar chart
     fig = go.Figure()
-
     fig.add_trace(
         go.Bar(
-            y=df["Stock"],
+            y=df["Asset"],
             x=df["Value"],
             orientation="h",
-            marker=dict(
-                color=[color_map[stock] for stock in df["Stock"]],
-                line=dict(color="black", width=0.5),
-            ),
+            marker=dict(color=df["BarColor"]),
+            text=df["Asset"],
+            textposition="inside",
+            textfont=dict(color=df["TextColor"], size=16),
             hoverinfo="x+y+text",
+            width=0.8,  # Thicker bars
         )
     )
 
-    # Style adjustments
+    # Hide y-axis ticks/labels (tickers now appear only inside bars)
+    fig.update_yaxes(
+        showticklabels=True,
+        showgrid=False,
+        zeroline=True,
+        showline=True,
+    )
+
+    # Center the x-axis around 0, keep the zero line visible
+    fig.update_xaxes(
+        range=[-max_abs, max_abs],
+        zeroline=True,  # Show line at x=0
+        zerolinecolor="grey",
+        zerolinewidth=2,
+        showgrid=False,
+        showline=True,
+        showticklabels=True,  # Hide numeric tick labels
+    )
+
+    # Increase overall figure size for easier visibility
     fig.update_layout(
-        title="Stock Sentiment Visualization",
-        xaxis_title="Sentiment Value (Negative = Bearish, Positive = Bullish)",
-        yaxis_title="Stock Ticker",
-        template="plotly_white",
+        width=1200,
+        height=800,
         paper_bgcolor="white",
         plot_bgcolor="white",
         showlegend=False,
-        margin=dict(l=100, r=40, t=40, b=40),
-        xaxis=dict(showgrid=False, zeroline=False),
-        yaxis=dict(showgrid=False, zeroline=False),
-        font=dict(family="Arial", size=12),
+        margin=dict(l=40, r=40, t=40, b=40),
+        font=dict(family="Arial", size=14),
+        title="Z-Score Reversion Signals",
     )
 
-    # Add rounded card-style shadow (Material UI style)
-    fig.update_layout(
-        margin=dict(l=60, r=60, t=40, b=40),
-        title_x=0.5,
-        height=600,
+    # Add left/right annotations for Overbought/Oversold
+    # Rotated 90°, centered vertically
+    fig.add_annotation(
+        x=0.0,
+        y=0.5,
+        xref="paper",
+        yref="paper",
+        text="<b>Overbought</b>",
+        showarrow=False,
+        font=dict(size=16),
+        align="center",
+        textangle=-90,
+        xanchor="left",
+        yanchor="middle",
+    )
+    fig.add_annotation(
+        x=1.0,
+        y=0.5,
+        xref="paper",
+        yref="paper",
+        text="<b>Oversold</b>",
+        showarrow=False,
+        font=dict(size=16),
+        align="center",
+        textangle=90,
+        xanchor="right",
+        yanchor="middle",
     )
 
     fig.show()
