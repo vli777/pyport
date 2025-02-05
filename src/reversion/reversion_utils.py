@@ -41,7 +41,7 @@ def calculate_continuous_composite_signal(
          composite[ticker] = weight_daily * daily_signal + weight_weekly * weekly_signal
 
     Args:
-        group_signals (dict): Contains groups keyed by group label; each group is a dict with:
+        group_signals (dict): Dictionary keyed by group label with values:
             {
                 "tickers": [list of tickers],
                 "daily": {ticker: {date: continuous signal}, ...},
@@ -60,30 +60,33 @@ def calculate_continuous_composite_signal(
                 ...
             }
     Returns:
-        dict: Mapping from ticker to composite continuous signal.
+        dict: Mapping from ticker to its composite signal.
     """
     composite = {}
-    # Iterate over groups in the group signals.
     for group_label, group_data in group_signals.items():
         daily_signals = group_data.get("daily", {})
         weekly_signals = group_data.get("weekly", {})
         for ticker in group_data.get("tickers", []):
-            # Look up ticker-specific weights from the global cache.
             params = ticker_params.get(ticker, {})
             wd = params.get("weight_daily", 0.5)
-            # Optionally ensure wd is in [0,1]
+            # Ensure weight_daily is within [0,1]
             wd = max(0.0, min(wd, 1.0))
             ww = params.get("weight_weekly", 0.5)
-            # Use the latest available signal in each timeframe.
+            # If both weights are from the same group they should sum to ~1.
+            # (They were set as weight_weekly = 1 - weight_daily in the optimization.)
+
+            # Get the latest daily signal if available.
             daily_val = 0
-            weekly_val = 0
             if ticker in daily_signals and daily_signals[ticker]:
-                # Assuming the keys are dates and higher is later.
-                latest_date = max(daily_signals[ticker])
+                # Assuming dates are comparable (e.g., as strings or timestamps)
+                latest_date = max(daily_signals[ticker].keys())
                 daily_val = daily_signals[ticker][latest_date]
+            # Similarly for weekly signals.
+            weekly_val = 0
             if ticker in weekly_signals and weekly_signals[ticker]:
-                latest_date = max(weekly_signals[ticker])
+                latest_date = max(weekly_signals[ticker].keys())
                 weekly_val = weekly_signals[ticker][latest_date]
+
             composite[ticker] = wd * daily_val + ww * weekly_val
     return composite
 
@@ -94,12 +97,29 @@ def adjust_allocation_with_mean_reversion(
     alpha: float = 0.2,
     allow_short: bool = False,
 ) -> pd.Series:
+    """
+    Adjust the baseline allocation using a continuous mean reversion signal.
+    The adjustment is multiplicative:
+         new_weight = baseline_weight * (1 + alpha * composite_signal)
+    Negative weights are clipped if shorts are not allowed, and the result is renormalized.
+
+    Args:
+        baseline_allocation (pd.Series): Series with index = ticker and values = baseline weights.
+        composite_signals (dict): Mapping from ticker to continuous signal (e.g. a z-score).
+        alpha (float): Sensitivity factor.
+        allow_short (bool): If False, negative adjusted weights are set to zero.
+
+    Returns:
+        pd.Series: Adjusted and normalized allocation.
+    """
     adjusted = baseline_allocation.copy()
     for ticker in adjusted.index:
         signal = composite_signals.get(ticker, 0)
         adjusted[ticker] = adjusted[ticker] * (1 + alpha * signal)
+
     if not allow_short:
         adjusted = adjusted.clip(lower=0)
+
     total = adjusted.sum()
     if total > 0:
         adjusted = adjusted / total
