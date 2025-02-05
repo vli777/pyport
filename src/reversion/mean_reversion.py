@@ -44,7 +44,6 @@ def apply_mean_reversion(
         returns_df,
         n_trials=50,
         n_jobs=-1,
-        reoptimize=False,
         global_cache=global_cache,
     )
     print("Reversion Signals Generated.")
