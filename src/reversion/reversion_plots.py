@@ -53,7 +53,7 @@ def plot_group_reversion_params(
                 ),  # use the cluster id from params if available
                 "window_daily": params.get("window_daily", 20),
                 "z_threshold_daily": params.get("z_threshold_daily", 1.5),
-                "window_weekly": params.get("window_weekly", 20),
+                "window_weekly": params.get("window_weekly", 5),
                 "z_threshold_weekly": params.get("z_threshold_weekly", 1.5),
                 "tickers": ", ".join(tickers),
             }
