@@ -17,20 +17,7 @@ def find_optimal_weights(
 ) -> Dict[str, float]:
     """
     Run Optuna to find the optimal weighting of daily and weekly signals.
-
-    This version does not store group-level keys in the global cache.
-
-    Args:
-        daily_signals_df (pd.DataFrame): Daily signals DataFrame.
-        weekly_signals_df (pd.DataFrame): Weekly signals DataFrame.
-        returns_df (pd.DataFrame): Log returns DataFrame.
-        n_trials (int, optional): Number of trials. Defaults to 50.
-        n_jobs (int, optional): Parallel jobs. Defaults to -1.
-        reoptimize (bool): Force reoptimization.
-        group_id (str): Identifier for the cluster.
-
-    Returns:
-        Dict[str, float]: Best weights for daily and weekly signals.
+    Returns a dictionary with both weight_daily and weight_weekly, ensuring they sum to 1.
     """
     study = optuna.create_study(
         study_name=f"reversion_weights_optimization_{group_id}",
@@ -38,9 +25,7 @@ def find_optimal_weights(
         sampler=optuna.samplers.TPESampler(n_startup_trials=max(5, n_trials // 10)),
     )
     study.optimize(
-        lambda trial: reversion_weights_objective(
-            trial, daily_signals_df, weekly_signals_df, returns_df
-        ),
+        lambda trial: reversion_weights_objective(trial, daily_signals_df, weekly_signals_df, returns_df),
         n_trials=n_trials,
         n_jobs=n_jobs,
     )
@@ -48,7 +33,8 @@ def find_optimal_weights(
         logger.error("No valid optimization results found.")
         best_weights = {"weight_daily": 0.7, "weight_weekly": 0.3}
     else:
-        best_weights = study.best_trial.params
+        best_weights = study.best_trial.params        
+        best_weights["weight_weekly"] = round(1.0 - best_weights["weight_daily"], 1)
     return best_weights
 
 
