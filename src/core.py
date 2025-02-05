@@ -225,15 +225,6 @@ def run_pipeline(
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
         logger.info(f"\nNormalized avg weights: {normalized_weights}")
 
-        if config.use_mean_reversion:
-            logger.info("\nAdjusting weights with mean reversion signals...")
-            normalized_weights = apply_mean_reversion(
-                baseline_allocation=normalized_weights,
-                returns_df=returns_df,
-                config=config,
-                cache_dir="optuna_cache",
-            )
-
         # Ensure output is a dictionary
         if isinstance(normalized_weights, pd.Series):
             normalized_weights = normalized_weights.to_dict()
@@ -352,34 +343,24 @@ def run_pipeline(
     if not normalized_avg_weights:
         return {}
 
-    # Prepare output data
+    # Prepare input metadata
     valid_models = [
         model for models in config.models.values() if models for model in models
     ]
     combined_models = ", ".join(sorted(set(valid_models)))
     combined_input_files = ", ".join(config.input_files)
 
-    # Debugging: Log the normalized_avg_weights keys and dfs["data"] columns
-    logger.debug(
-        f"Normalized Average Weights Keys ({len(normalized_avg_weights)}): {list(normalized_avg_weights.keys())}"
-    )
-    logger.debug(
-        f"dfs['data'] Columns ({len(dfs['data'].columns)}): {list(dfs['data'].columns)}"
-    )
-
-    # Ensure we only drop stocks **below the min weight threshold**, not just because of missing data
-    dfs["data"] = dfs["data"].filter(items=normalized_avg_weights.keys())
-
-    logger.debug(
-        f"Filtered symbols after trimming allocations below minimum weight {config.min_weight}: {dfs['data'].columns}"
-    )
+    # Sort symbols and filter DataFrame accordingly
+    sorted_symbols = sorted(normalized_avg_weights.keys())
+    dfs["data"] = dfs["data"].filter(items=sorted_symbols)
 
     # Prevent empty DataFrame after filtering
     if dfs["data"].empty:
         logger.error("No valid symbols remain in the DataFrame after alignment.")
+        return {}
 
-    # Proceed to output
-    daily_returns, cumulative_returns = output(
+    # Step 1: Compute pre-mean reversion results
+    pre_daily_returns, pre_cumulative_returns = output(
         data=dfs["data"],
         allocation_weights=normalized_avg_weights,
         inputs=combined_input_files,
@@ -389,36 +370,77 @@ def run_pipeline(
         time_period=sorted_time_periods[0],
         config=config,
     )
+    pre_boxplot_stats = generate_boxplot_data(pre_daily_returns)
 
-    sorted_symbols = sorted(
-        normalized_avg_weights.keys(),
-        key=lambda symbol: normalized_avg_weights.get(symbol, 0),
-        reverse=True,
-    )
+    # Default return dictionary (pre-mean reversion)
+    final_result_dict = {
+        "start_date": str(dfs["start"]),
+        "end_date": str(dfs["end"]),
+        "models": combined_models,
+        "symbols": sorted_symbols,
+        "normalized_avg": normalized_avg_weights,
+        "daily_returns": pre_daily_returns,
+        "cumulative_returns": pre_cumulative_returns,
+        "boxplot_stats": pre_boxplot_stats,
+    }
 
-    # Optional plotting
+    # Step 2: Apply mean reversion if enabled
+    if config.use_mean_reversion:
+        logger.info("\nApplying mean reversion on normalized weights...")
+        mean_reverted_weights = apply_mean_reversion(
+            baseline_allocation=normalized_avg_weights,
+            returns_df=returns_df,
+            config=config,
+            cache_dir="optuna_cache",
+        )
+
+        # Sort and filter again for new weights
+        sorted_symbols_post = sorted(mean_reverted_weights.keys())
+        dfs["data"] = dfs["data"].filter(items=sorted_symbols_post)
+
+        # Compute post-mean reversion results
+        post_daily_returns, post_cumulative_returns = output(
+            data=dfs["data"],
+            allocation_weights=mean_reverted_weights,
+            inputs=combined_input_files,
+            start_date=dfs["start"],
+            end_date=dfs["end"],
+            optimization_model=combined_models,
+            time_period=sorted_time_periods[0],
+            config=config,
+        )
+        post_boxplot_stats = generate_boxplot_data(post_daily_returns)
+
+        # Log performance comparison
+        logger.info("\nPerformance Comparison:")
+        logger.info(f"Pre-Mean Reversion Cumulative Returns: {pre_cumulative_returns}")
+        logger.info(
+            f"Post-Mean Reversion Cumulative Returns: {post_cumulative_returns}"
+        )
+
+        # Update the final result dictionary to store **only post-mean reversion results**
+        final_result_dict = {
+            "start_date": str(dfs["start"]),
+            "end_date": str(dfs["end"]),
+            "models": combined_models,
+            "symbols": sorted_symbols_post,
+            "normalized_avg": mean_reverted_weights,
+            "daily_returns": post_daily_returns,
+            "cumulative_returns": post_cumulative_returns,
+            "boxplot_stats": post_boxplot_stats,
+        }
+
+    # Optional plotting (only on local runs)
     if run_local:
         plot_graphs(
-            daily_returns=daily_returns,
-            cumulative_returns=cumulative_returns,
+            daily_returns=final_result_dict["daily_returns"],
+            cumulative_returns=final_result_dict["cumulative_returns"],
             config=config,
-            symbols=sorted_symbols,
+            symbols=final_result_dict["symbols"],
         )
 
     # Cleanup
     cleanup_cache("cache")
     logger.info("Pipeline execution completed successfully.")
 
-    # Compile and return results
-    boxplot_stats = generate_boxplot_data(daily_returns)
-
-    return {
-        "start_date": str(dfs["start"]),
-        "end_date": str(dfs["end"]),
-        "models": combined_models,
-        "symbols": sorted_symbols,
-        "normalized_avg": normalized_avg_weights,
-        "daily_returns": daily_returns,
-        "cumulative_returns": cumulative_returns,
-        "boxplot_stats": boxplot_stats,  # (not extractable from plotly boxplot)
-    }
+    return final_result_dict
