@@ -4,14 +4,74 @@ import pandas as pd
 import pytz
 
 from utils import logger
-from utils.data_utils import flatten_columns, format_to_df_format, get_stock_data
+from utils.data_utils import (
+    ensure_unique_timestamps,
+    flatten_columns,
+    format_to_df_format,
+    get_stock_data,
+)
 from utils.date_utils import find_valid_trading_date, is_after_4pm_est
+
+
+def process_symbols(symbols, start_date, end_date, data_path, download) -> pd.DataFrame:
+    """
+    Loads or downloads data for each symbol, ensuring proper historical alignment.
+    Skips any symbols with no data.
+    """
+    combined_data = pd.DataFrame()
+
+    for symbol in symbols:
+        symbol_data = load_or_download_symbol_data(
+            symbol, start_date, end_date, data_path, download
+        )
+        if symbol_data.empty:
+            logger.warning(f"No data for {symbol}, skipping.")
+            continue
+
+        # Remove duplicate indices and format the DataFrame
+        symbol_data = symbol_data[~symbol_data.index.duplicated(keep="first")]
+        symbol_data = format_to_df_format(symbol_data, symbol)
+        earliest_date = symbol_data.index.min()
+        logger.info(
+            f"{symbol} starts at {earliest_date}. Using full available history."
+        )
+
+        # Convert columns to a multi-level index with (ticker, OHLC) structure
+        symbol_data.columns = pd.MultiIndex.from_product(
+            [[symbol], symbol_data.columns]
+        )
+
+        # Merge symbol data into the main DataFrame
+        if combined_data.empty:
+            combined_data = symbol_data
+        else:
+            combined_data = combined_data.join(symbol_data, how="outer")
+            combined_data = combined_data[~combined_data.index.duplicated(keep="first")]
+
+        duplicates = combined_data.index[combined_data.index.duplicated()]
+        if len(duplicates) > 0:
+            logger.debug(
+                f"Duplicates in combined data after merging {symbol}: {duplicates}"
+            )
+
+    # Forward-fill then backward-fill missing values
+    combined_data.ffill(inplace=True)
+    combined_data.bfill(inplace=True)
+
+    # Drop any rows that remain completely null
+    if combined_data.isna().any().any():
+        logger.warning(
+            "Data still has missing values after fill. Dropping remaining nulls."
+        )
+        combined_data.dropna(how="any", inplace=True)
+
+    return combined_data
 
 
 def load_or_download_symbol_data(symbol, start_date, end_date, data_path, download):
     """
-    Load symbol data from a Parquet file or download if missing or outdated.
-    Ensures stock data is correctly aligned to available history.
+    Loads symbol data from a Parquet file or downloads it if missing or outdated.
+    Returns an empty DataFrame if no data is found.
     """
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
@@ -21,79 +81,86 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     now_est = datetime.now(est)
     today_ts = pd.Timestamp(now_est.date())
 
-    # 1) If file doesn't exist, download full range
+    # 1. If the Parquet file does not exist, download the full history.
     if not pq_file.is_file():
         logger.info(
-            f"No file for {symbol}. Downloading full history from {start_ts} to {end_ts}."
+            f"No file for {symbol}. Downloading full history {start_ts} -> {end_ts}"
         )
-        df_new = get_stock_data(symbol, start_date=start_ts, end_date=end_ts)
-        df_new = flatten_columns(df_new, symbol)
+        data = get_stock_data(symbol, start_date=start_ts, end_date=end_ts)
+        data = flatten_columns(data, symbol)
 
-        if df_new.empty:
+        if data.empty:
             logger.warning(f"No data for {symbol} in range {start_ts} - {end_ts}.")
             return pd.DataFrame()
 
-        df_new.to_parquet(pq_file)
-        return format_to_df_format(df_new, symbol)
+        data.to_parquet(pq_file)
+        return format_to_df_format(data, symbol)
 
-    # 2) If after market close and we have today's data, skip
-    if is_after_4pm_est() and pq_file.is_file():
-        df_existing = pd.read_parquet(pq_file)
-        df_existing = flatten_columns(df_existing, symbol)
-        last_date = df_existing.index.max()
-        if last_date is not None and last_date >= today_ts:
+    # 2. If it's after 4 PM EST and today's data is already present, skip downloading.
+    if is_after_4pm_est():
+        existing_data = pd.read_parquet(pq_file)
+        existing_data = flatten_columns(existing_data, symbol)
+        existing_data = ensure_unique_timestamps(existing_data, symbol)
+        if (
+            existing_data.index.max() is not None
+            and existing_data.index.max() >= today_ts
+        ):
             logger.info(
                 f"{symbol}: Already have today's data after market close, skipping."
             )
-            return format_to_df_format(df_existing, symbol)
+            return format_to_df_format(existing_data, symbol)
 
-    # 3) Adjust end_ts if before market open
+    # 3. Determine the effective end timestamp, adjusting for market open times.
     effective_end_ts = end_ts
-    if now_est.time() < datetime.strptime("09:30", "%H:%M").time():
+    market_open = datetime.strptime("09:30", "%H:%M").time()
+    if now_est.time() < market_open:
         effective_end_ts = find_valid_trading_date(end_ts, tz=est, direction="backward")
 
-    # Ensure we only update up to the last valid trading day before today
     if effective_end_ts.normalize() >= today_ts.normalize():
         effective_end_ts = find_valid_trading_date(
             today_ts - pd.Timedelta(days=1), tz=est, direction="backward"
         )
 
-    # 4) Read existing data
-    df_existing = pd.read_parquet(pq_file)
-    df_existing = flatten_columns(df_existing, symbol)
-    last_date = df_existing.index.max() if not df_existing.empty else None
-    first_date = df_existing.index.min() if not df_existing.empty else None
+    # 4. Load existing data from file and ensure unique timestamps.
+    existing_data = pd.read_parquet(pq_file)
+    existing_data = flatten_columns(existing_data, symbol)
+    existing_data = ensure_unique_timestamps(existing_data, symbol=symbol, keep="first")
 
-    # 5) Prepend missing historical data
+    last_date = existing_data.index.max() if not existing_data.empty else None
+    first_date = existing_data.index.min() if not existing_data.empty else None
+
+    # 5. Prepend missing historical data if needed.
     if first_date is None or start_ts < first_date:
-        logger.info(
-            f"{symbol}: Fetching missing history from {start_ts} to {first_date}."
-        )
-        df_history = get_stock_data(symbol, start_date=start_ts, end_date=first_date)
-        df_history = flatten_columns(df_history, symbol)
+        logger.info(f"{symbol}: Fetching missing history {start_ts} -> {first_date}")
+        history_data = get_stock_data(symbol, start_date=start_ts, end_date=first_date)
+        history_data = flatten_columns(history_data, symbol)
+        history_data = ensure_unique_timestamps(history_data, symbol)
+        if not history_data.empty:
+            existing_data = pd.concat([history_data, existing_data]).sort_index()
+            existing_data = existing_data[~existing_data.index.duplicated(keep="first")]
 
-        if not df_history.empty:
-            df_existing = (
-                pd.concat([df_history, df_existing]).sort_index().drop_duplicates()
-            )
-
-    # 5) Handle forced download
+    # 5b. Forced download if requested.
     if download:
-        logger.info(f"{symbol}: Forced download from {start_ts} to {effective_end_ts}.")
-        df_new = get_stock_data(symbol, start_date=start_ts, end_date=effective_end_ts)
-        df_new = flatten_columns(df_new, symbol)
+        logger.info(f"{symbol}: Forced download {start_ts} -> {effective_end_ts}")
+        new_data = get_stock_data(
+            symbol, start_date=start_ts, end_date=effective_end_ts
+        )
+        new_data = flatten_columns(new_data, symbol)
 
-        if not df_new.empty:
-            df_existing = df_existing[~df_existing.index.duplicated(keep="first")]
-            df_new = df_new[~df_new.index.duplicated(keep="first")]
-            df_combined = (
-                pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
-            )
-            df_combined.to_parquet(pq_file)
-            return format_to_df_format(df_combined, symbol)
-        return format_to_df_format(df_existing, symbol)
+        if new_data.empty:
+            return format_to_df_format(existing_data, symbol)
 
-    # 6) Append missing data dynamically
+        existing_data = existing_data[~existing_data.index.duplicated(keep="first")]
+        new_data = new_data[~new_data.index.duplicated(keep="first")]
+        new_data = new_data.loc[~new_data.index.isin(existing_data.index)]
+
+        combined_data = pd.concat([existing_data, new_data]).sort_index()
+        combined_data = combined_data[~combined_data.index.duplicated(keep="first")]
+        combined_data = ensure_unique_timestamps(combined_data, symbol)
+        combined_data.to_parquet(pq_file)
+        return format_to_df_format(combined_data, symbol)
+
+    # 6. Append missing data if existing data is outdated.
     if last_date is None or last_date < effective_end_ts:
         update_start = last_date + pd.Timedelta(days=1) if last_date else start_ts
         update_start = find_valid_trading_date(
@@ -102,63 +169,35 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
 
         if update_start >= effective_end_ts:
             logger.debug(f"{symbol}: Data already up-to-date.")
-            return format_to_df_format(df_existing, symbol)
+            return format_to_df_format(existing_data, symbol)
 
-        logger.info(f"{symbol}: Updating from {update_start} to {effective_end_ts}.")
+        logger.info(f"{symbol}: Updating {update_start} -> {effective_end_ts}")
         df_new = get_stock_data(
             symbol, start_date=update_start, end_date=effective_end_ts
         )
         df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
-            df_combined = (
-                pd.concat([df_existing, df_new]).sort_index().drop_duplicates()
-            )
+            logger.debug(f"Checking duplicates for {symbol} before concat...")
+
+            # Remove duplicates within each DataFrame first
+            existing_data = existing_data.loc[
+                ~existing_data.index.duplicated(keep="first")
+            ]
+            df_new = df_new.loc[~df_new.index.duplicated(keep="first")]
+
+            # Remove any overlapping indices in df_new
+            df_new = df_new.loc[~df_new.index.isin(existing_data.index)]
+
+            # Concatenate and ensure the resulting index is unique
+            df_combined = pd.concat([existing_data, df_new])
+            df_combined = df_combined.loc[~df_combined.index.duplicated(keep="first")]
+            df_combined = df_combined.sort_index()
+
             df_combined.to_parquet(pq_file)
             return format_to_df_format(df_combined, symbol)
         else:
             logger.info(f"{symbol}: No new data found for update period.")
-            return format_to_df_format(df_existing, symbol)
+            return format_to_df_format(existing_data, symbol)
     else:
-        return format_to_df_format(df_existing, symbol)
-
-
-def process_symbols(symbols, start_date, end_date, data_path, download):
-    """
-    Loads or downloads data for all symbols, ensuring proper historical alignment.
-    """
-    df_all = pd.DataFrame()
-
-    for sym in symbols:
-        df_sym = load_or_download_symbol_data(
-            sym, start_date, end_date, data_path, download
-        )
-        if df_sym.empty:
-            logger.warning(f"No data for {sym}, skipping.")
-            continue
-
-        df_sym = df_sym.loc[~df_sym.index.duplicated(keep="first")]
-        df_sym = format_to_df_format(df_sym, sym)
-
-        # Ensure we respect each stock's available data instead of slicing arbitrarily
-        earliest = df_sym.index.min()
-        logger.info(f"{sym} starts at {earliest}. Using full available history.")
-
-        # Convert columns to multi-level (Outer = ticker, Inner = OHLC data)
-        df_sym.columns = pd.MultiIndex.from_product([[sym], df_sym.columns])
-
-        # Merge into main DataFrame
-        df_all = df_sym if df_all.empty else df_all.join(df_sym, how="outer")
-
-    # Fill missing values forward, then backward
-    df_all.ffill(inplace=True)
-    df_all.bfill(inplace=True)
-
-    # Drop any remaining nulls
-    if df_all.isna().any().any():
-        logger.warning(
-            "Data still has missing values after fill. Dropping remaining nulls."
-        )
-        df_all.dropna(inplace=True)
-
-    return df_all
+        return format_to_df_format(existing_data, symbol)
