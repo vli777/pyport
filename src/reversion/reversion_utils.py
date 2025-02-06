@@ -1,4 +1,4 @@
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
@@ -97,13 +97,16 @@ def propagate_signals_by_similarity(
     group_mapping: dict,
     baseline_allocation: Union[dict, pd.Series],
     returns_df: pd.DataFrame,
+    signal_dampening: float = 0.5,
     lw_threshold: int = 50,
 ) -> dict:
     """
-    Propagate composite signals within clusters by adding each ticker's own signal
-    with contributions from other tickers in the cluster weighted by their positive
-    correlations. This ensures that if one ticker is strongly overbought (negative)
-    or oversold (positive), highly correlated tickers will receive a similar signal.
+    Propagate composite signals within clusters by blending each ticker's own signal
+    with a weighted average of the signals from the other tickers in the cluster. The
+    weights come from the positive correlations (similarity) between tickers.
+
+    This prevents a multiplicative effect when multiple source signals exist in the
+    same cluster by normalizing the contribution.
 
     Args:
         composite_signals (dict): Original composite signals (ticker -> signal).
@@ -111,9 +114,10 @@ def propagate_signals_by_similarity(
         baseline_allocation (dict or pd.Series): Baseline allocation (should be a Series).
         returns_df (pd.DataFrame): Returns DataFrame (dates as index, tickers as columns).
         lw_threshold (int): Size threshold for using Ledoit Wolf vs Pearson correlation.
+        signal_dampening (float): Dampening factor when propagating signals
 
     Returns:
-        dict: Updated composite signals with propagated, correlation-weighted values.
+        dict: Updated composite signals with propagated, normalized values.
     """
     updated_signals = composite_signals.copy()
 
@@ -140,28 +144,39 @@ def propagate_signals_by_similarity(
             cluster_returns, lw_threshold=lw_threshold
         )
 
-        # For each ticker, add contributions from every other ticker (with a nonzero signal)
-        # weighted by the positive similarity.
+        # For each ticker, compute the weighted average of the signals from other tickers.
         for ticker in available_tickers:
-            propagated_signal = 0
+            original_signal = composite_signals.get(ticker, 0)
+            weighted_sum = 0.0
+            sum_similarity = 0.0
+
             for source_ticker in available_tickers:
                 if source_ticker == ticker:
                     continue
+
                 source_signal = composite_signals.get(source_ticker, 0)
                 if source_signal != 0:
-                    # Get similarity value; if missing, default to 0.
+                    # Get the similarity; default to 0 if not available.
                     similarity = 0
                     if (source_ticker in similarity_matrix.index) and (
                         ticker in similarity_matrix.columns
                     ):
                         similarity = similarity_matrix.at[source_ticker, ticker]
-                    # Use only positive correlations so that the sign of the signal remains intact.
+                    # Use only positive correlations.
                     if similarity > 0:
-                        propagated_signal += source_signal * similarity
+                        weighted_sum += source_signal * similarity
+                        sum_similarity += similarity
 
-            # The final updated signal is the ticker's own signal plus the propagated contributions.
-            original_signal = composite_signals.get(ticker, 0)
-            updated_signals[ticker] = original_signal + propagated_signal
+            # Normalize the propagated signal by the total similarity weight.
+            if sum_similarity > 0:
+                propagated_signal = weighted_sum / sum_similarity
+            else:
+                propagated_signal = 0
+
+            # Combine the original and the normalized propagated signal using alpha.
+            updated_signals[ticker] = (
+                1 - signal_dampening
+            ) * original_signal + signal_dampening * propagated_signal
 
     return updated_signals
 

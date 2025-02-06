@@ -49,7 +49,7 @@ def compute_stateful_signal_with_decay(
     # Compute the daily decay rate such that after 'optimal_window' days the signal decays to target_decay of its initial value.
     decay_rate = target_decay ** (1 / optimal_window)
 
-    for date, z in z_scores.iteritems():
+    for date, z in z_scores.items():
         if pd.isna(z):
             stateful_signal[date] = 0
             continue

@@ -77,6 +77,7 @@ def apply_mean_reversion(
         group_mapping=group_mapping,
         baseline_allocation=baseline_allocation,
         returns_df=returns_df,
+        signal_dampening=0.5,
         lw_threshold=50,
     )
 
