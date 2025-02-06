@@ -100,8 +100,10 @@ def propagate_signals_by_similarity(
     lw_threshold: int = 50,
 ) -> dict:
     """
-    Propagate composite signals within clusters, combining each ticker’s
-    own signal with contributions from other tickers in the cluster weighted by similarity.
+    Propagate composite signals within clusters by adding each ticker's own signal
+    with contributions from other tickers in the cluster weighted by their positive
+    correlations. This ensures that if one ticker is strongly overbought (negative)
+    or oversold (positive), highly correlated tickers will receive a similar signal.
 
     Args:
         composite_signals (dict): Original composite signals (ticker -> signal).
@@ -115,50 +117,49 @@ def propagate_signals_by_similarity(
     """
     updated_signals = composite_signals.copy()
 
-    # Ensure baseline_allocation is a pandas Series
+    # Ensure baseline_allocation is a pandas Series, though it isn't used directly here.
     if isinstance(baseline_allocation, dict):
         baseline_allocation = pd.Series(baseline_allocation)
 
     for cluster_id, group_data in group_mapping.items():
         tickers_in_group = group_data.get("tickers", [])
-        # Only keep tickers that exist in the returns data
+        # Only keep tickers that exist in the returns data.
         available_tickers = [
             ticker for ticker in tickers_in_group if ticker in returns_df.columns
         ]
-
         if not available_tickers:
             continue
 
-        # Subset returns for available tickers and drop columns that are completely NA
+        # Subset returns for available tickers and drop columns that are completely NA.
         cluster_returns = returns_df[available_tickers].dropna(how="all", axis=1)
         if cluster_returns.empty:
             continue
 
-        # Compute correlation (or similarity) matrix for the cluster
+        # Compute correlation (similarity) matrix for the cluster.
         similarity_matrix = compute_correlation_matrix(
             cluster_returns, lw_threshold=lw_threshold
         )
 
-        # For each ticker in the cluster, combine its own signal with contributions
-        # from every other ticker that has a nonzero signal
+        # For each ticker, add contributions from every other ticker (with a nonzero signal)
+        # weighted by the positive similarity.
         for ticker in available_tickers:
             propagated_signal = 0
             for source_ticker in available_tickers:
-                # Only propagate from other tickers with nonzero signals
                 if source_ticker == ticker:
                     continue
                 source_signal = composite_signals.get(source_ticker, 0)
                 if source_signal != 0:
-                    # Get similarity value; default to 0 if missing.
+                    # Get similarity value; if missing, default to 0.
                     similarity = 0
                     if (source_ticker in similarity_matrix.index) and (
                         ticker in similarity_matrix.columns
                     ):
                         similarity = similarity_matrix.at[source_ticker, ticker]
-                    propagated_signal += source_signal * similarity
+                    # Use only positive correlations so that the sign of the signal remains intact.
+                    if similarity > 0:
+                        propagated_signal += source_signal * similarity
 
-            # If the ticker already has a signal, combine it with the propagated signal.
-            # Otherwise, just use the propagated signal.
+            # The final updated signal is the ticker's own signal plus the propagated contributions.
             original_signal = composite_signals.get(ticker, 0)
             updated_signals[ticker] = original_signal + propagated_signal
 
