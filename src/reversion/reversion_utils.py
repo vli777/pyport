@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Union
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
@@ -95,7 +95,7 @@ def calculate_continuous_composite_signal(
 def propagate_signals_by_similarity(
     composite_signals: dict,
     group_mapping: dict,
-    baseline_allocation: pd.Series,
+    baseline_allocation: Union[dict, pd.Series],
     returns_df: pd.DataFrame,
     lw_threshold: int = 50,
 ) -> dict:
@@ -106,51 +106,62 @@ def propagate_signals_by_similarity(
     Args:
         composite_signals (dict): Original composite signals (ticker -> signal).
         group_mapping (dict): Mapping of cluster IDs to group info, which includes 'tickers'.
-        baseline_allocation (pd.Series): Baseline allocation with ticker indices.
+        baseline_allocation (dict or pd.Series): Baseline allocation (should be a Series).
         returns_df (pd.DataFrame): Returns DataFrame (dates as index, tickers as columns).
-        lw_threshold (int): # Size threshold for using Ledoit Wolf vs Pearson correlation.
+        lw_threshold (int): Size threshold for using Ledoit Wolf vs Pearson correlation.
 
     Returns:
         dict: Updated composite signals with propagated, correlation-weighted values.
     """
-    # Start with a copy of the composite signals.
     updated_signals = composite_signals.copy()
 
-    # Process each cluster in the group mapping.
+    # Ensure baseline_allocation is a pandas Series
+    if isinstance(baseline_allocation, dict):
+        baseline_allocation = pd.Series(baseline_allocation)
+
     for cluster_id, group_data in group_mapping.items():
         tickers_in_group = group_data.get("tickers", [])
-        # Identify a source ticker that has a nonzero composite signal.
+
+        # Filter out missing tickers
+        available_tickers = [
+            ticker for ticker in tickers_in_group if ticker in returns_df.columns
+        ]
+
+        # Skip cluster if no tickers exist in returns_df
+        if not available_tickers:
+            continue
+
+        # Identify a source ticker that has a nonzero composite signal
         source_ticker = None
         source_signal = 0
-        for ticker in tickers_in_group:
+        for ticker in available_tickers:
             if ticker in composite_signals and composite_signals[ticker] != 0:
                 source_ticker = ticker
                 source_signal = composite_signals[ticker]
                 break
-        # Skip clusters with no signal.
+
+        # Skip clusters with no valid source ticker
         if source_ticker is None:
             continue
 
-        # Filter the returns DataFrame for tickers in this cluster.
-        cluster_returns = returns_df[tickers_in_group].dropna(how="all", axis=1)
+        # Filter returns DataFrame for available tickers
+        cluster_returns = returns_df[available_tickers].dropna(how="all", axis=1)
         if cluster_returns.empty:
             continue
 
-        # Compute the correlation (similarity) matrix for the cluster.
+        # Compute correlation matrix
         similarity_matrix = compute_correlation_matrix(
             cluster_returns, lw_threshold=lw_threshold
         )
 
-        # For each ticker in the group (that is in the baseline allocation), propagate the signal.
-        for ticker in tickers_in_group:
-            if ticker in baseline_allocation.index:
-                try:
-                    # Get the similarity between the source ticker and the current ticker.
-                    # If the similarity is not available, default to 0.
-                    similarity = similarity_matrix.at[source_ticker, ticker]
-                except (KeyError, IndexError):
-                    similarity = 0
-                # Weight the source signal by the similarity.
+        # Propagate signals
+        for ticker in available_tickers:
+            if ticker in baseline_allocation.index:  # No more AttributeError!
+                similarity = (
+                    similarity_matrix.at[source_ticker, ticker]
+                    if ticker in similarity_matrix.index
+                    else 0
+                )
                 propagated_signal = source_signal * similarity
                 updated_signals[ticker] = propagated_signal
 

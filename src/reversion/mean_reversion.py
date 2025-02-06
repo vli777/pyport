@@ -8,7 +8,7 @@ from reversion.reversion_utils import (
     propagate_signals_by_similarity,
 )
 from reversion.reversion_plots import (
-    plot_group_reversion_params,
+    plot_reversion_params,
     plot_reversion_signals,
 )
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
@@ -58,12 +58,9 @@ def apply_mean_reversion(
     print(f"Loaded Ticker Parameters for {len(ticker_params)} tickers.")
 
     # Build the cluster group mapping
-    group_mapping = group_ticker_params_by_cluster(ticker_params)
 
     if config.plot_reversion:
-        plot_group_reversion_params(
-            group_parameters=group_mapping, title="Mean Reversion Parameters"
-        )
+        plot_reversion_params(data_dict=ticker_params)
 
     # Use the global cache (ticker_params) to compute composite signals.
     composite_signals = calculate_continuous_composite_signal(
@@ -73,6 +70,7 @@ def apply_mean_reversion(
         plot_reversion_signals(data=composite_signals)
 
     # Propagate signals based on pairwise similarity:
+    group_mapping = group_ticker_params_by_cluster(ticker_params)
     updated_composite_signals = propagate_signals_by_similarity(
         composite_signals=composite_signals,
         group_mapping=group_mapping,
@@ -82,6 +80,8 @@ def apply_mean_reversion(
     )
 
     # Adjust the baseline allocation using the updated composite signals.
+    print ('alpha', config.mean_reversion_strength)
+    print ('updated', updated_composite_signals)
     final_allocation = adjust_allocation_with_mean_reversion(
         baseline_allocation=baseline_allocation,
         composite_signals=updated_composite_signals,
