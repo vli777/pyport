@@ -1,21 +1,26 @@
 from typing import Any, List, Dict
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from utils.logger import logger
 
 
 def plot_optimization_summary(
-    optimization_summary: List[Dict[str, Any]], **plot_kwargs
+    optimization_summary: List[Dict[str, Any]],
+    max_anomaly_fraction: float,
+    **plot_kwargs
 ) -> None:
     """
-    Visualizes the optimization summary for each stock in a two-panel plot:
-    one for thresholds and one for scores and anomaly fractions.
+    Visualizes anomaly fractions for each stock. Only the stocks deemed anomalous
+    (anomaly_fraction > max_anomaly_fraction) have their ticker label displayed above
+    their anomaly fraction marker. The hover information for each point includes the
+    stock ticker, threshold, and anomaly fraction.
 
     Args:
         optimization_summary (List[Dict[str, Any]]): List of dictionaries, each containing
-            'stock', 'threshold', 'best_score', and 'anomaly_fraction'.
+            'stock', 'threshold', and 'anomaly_fraction' keys.
+        max_anomaly_fraction (float): Value used to determine if a stock is anomalous.
         plot_kwargs: Additional keyword arguments for layout customization.
     """
     if not optimization_summary:
@@ -28,62 +33,45 @@ def plot_optimization_summary(
         return
 
     df.sort_values("stock", inplace=True, ascending=True)
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.15,
-        subplot_titles=("Optimal Thresholds per Stock", "Scores & Anomaly Fraction"),
-        specs=[[{}], [{"secondary_y": True}]],
+
+    # Identify anomalous stocks based on the provided max_anomaly_fraction.
+    df["is_anomalous"] = df["anomaly_fraction"] > max_anomaly_fraction
+    # Only display the ticker label for anomalous stocks.
+    df["text"] = df.apply(
+        lambda row: row["stock"] if row["is_anomalous"] else "", axis=1
     )
 
-    # Plot thresholds.
-    fig.add_trace(
-        go.Bar(x=df["stock"], y=df["threshold"], name="Threshold"),
-        row=1,
-        col=1,
+    # Create a single scatter plot for anomaly fraction.
+    # Customdata holds stock, threshold, and anomaly_fraction for use in the hover template.
+    custom_data = np.stack(
+        (df["stock"], df["threshold"], df["anomaly_fraction"]), axis=-1
     )
-
-    # Plot best scores if available.
-    if "best_score" in df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=df["stock"],
-                y=df["best_score"],
-                mode="lines+markers",
-                name="Best Score",
-            ),
-            row=2,
-            col=1,
-            secondary_y=False,
-        )
-    else:
-        logger.warning("Column 'best_score' not found in optimization summary.")
-
-    # Plot anomaly fraction.
-    if "anomaly_fraction" in df.columns:
-        fig.add_trace(
+    fig = go.Figure(
+        data=[
             go.Scatter(
                 x=df["stock"],
                 y=df["anomaly_fraction"],
-                mode="lines+markers",
+                mode="markers+text",
+                text=df["text"],
+                textposition="top center",
+                customdata=custom_data,
+                hovertemplate=(
+                    "Asset: %{customdata[0]}<br>"
+                    "Threshold: %{customdata[1]}<br>"
+                    "Anomaly Fraction: %{customdata[2]}<extra></extra>"
+                ),
                 name="Anomaly Fraction",
-            ),
-            row=2,
-            col=1,
-            secondary_y=True,
-        )
-    else:
-        logger.warning("Column 'anomaly_fraction' not found in optimization summary.")
+            )
+        ]
+    )
 
-    fig.update_xaxes(title_text="Stock Ticker", row=2, col=1)
-    fig.update_yaxes(title_text="Threshold", row=1, col=1)
-    fig.update_yaxes(title_text="Score", secondary_y=False, row=2, col=1)
-    fig.update_yaxes(title_text="Anomaly Fraction", secondary_y=True, row=2, col=1)
+    # Remove the ticker labels on the x-axis (middle of the chart)
+    fig.update_xaxes(title_text="Asset", showticklabels=False)
+    fig.update_yaxes(title_text="Anomaly Fraction")
 
     layout_kwargs = dict(
-        title="Optimization Summary",
-        height=800,
+        title="Anomaly Fraction Summary",
+        height=600,
         legend=dict(yanchor="top", y=1.05, xanchor="left", x=0),
     )
     layout_kwargs.update(plot_kwargs)
