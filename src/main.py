@@ -62,10 +62,20 @@ def iterative_pipeline_runner(
     previous_top_symbols = set()
     final_result = None
 
+    # Store the original plot settings
+    original_plot_clustering = config.plot_clustering
+    original_plot_anomalies = config.plot_anomalies
+    original_plot_reversion = config.plot_reversion
+
+    # Temporarily disable plotting during epochs
+    config.plot_clustering = False
+    config.plot_anomalies = False
+    config.plot_reversion = False
+
     for epoch in range(max_epochs + 1):
         print(f"Epoch {epoch + 1}")
 
-        # Run the pipeline
+        # Run the pipeline with plots disabled
         result = run_pipeline(
             config=config,
             symbols_override=symbols,
@@ -76,7 +86,6 @@ def iterative_pipeline_runner(
 
         print(f"\nTop symbols from epoch {epoch + 1}: {valid_symbols}")
 
-        # Log the number of symbols
         logger.info(
             f"Epoch {epoch + 1}: Selected {len(valid_symbols)} symbols for the next iteration."
         )
@@ -85,25 +94,34 @@ def iterative_pipeline_runner(
         if set(valid_symbols) == previous_top_symbols:
             print("Convergence reached. Stopping epochs.")
 
-            # Trim to portfolio_max_size if needed
-            if len(valid_symbols) > config.portfolio_max_size:
-                print(
-                    f"Trimming symbols from {len(valid_symbols)} to {config.portfolio_max_size} for final portfolio."
-                )
-                final_result = run_pipeline(
-                    config=config,
-                    symbols_override=valid_symbols[: config.portfolio_max_size],
-                )
-            else:
-                final_result = result  # No trimming needed
+            # Restore the original plot settings before final run
+            config.plot_clustering = original_plot_clustering
+            config.plot_anomalies = original_plot_anomalies
+            config.plot_reversion = original_plot_reversion
 
+            # Trim to portfolio_max_size if needed
+            final_symbols = (
+                valid_symbols[: config.portfolio_max_size]
+                if len(valid_symbols) > config.portfolio_max_size
+                else valid_symbols
+            )
+            final_result = run_pipeline(
+                config=config,
+                symbols_override=final_symbols,
+            )
             break
 
         if len(valid_symbols) <= config.portfolio_max_size:
             print(
                 f"Stopping epochs as the number of portfolio holdings ({len(valid_symbols)}) is <= the configured portfolio max size of {config.portfolio_max_size}."
             )
-            # Run the final pipeline trimmed to user-defined portfolio max-size
+
+            # Restore the original plot settings before final run
+            config.plot_clustering = original_plot_clustering
+            config.plot_anomalies = original_plot_anomalies
+            config.plot_reversion = original_plot_reversion
+
+            # Run final pipeline with plots enabled
             final_result = run_pipeline(
                 config=config,
                 symbols_override=valid_symbols[: config.portfolio_max_size],
@@ -115,7 +133,7 @@ def iterative_pipeline_runner(
         symbols = valid_symbols
         final_result = result
 
-    # Plot only the last result if `run_local` is enabled
+    # Ensure plotting is only done in the final result
     if run_local:
         plot_graphs(
             daily_returns=final_result["daily_returns"],
@@ -134,6 +152,6 @@ if __name__ == "__main__":
     final_result = iterative_pipeline_runner(
         config=config,
         initial_symbols=None,  # Or provide initial symbols as needed
-        max_epochs=2,
+        max_epochs=10,
         run_local=True,
     )
