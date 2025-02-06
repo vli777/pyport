@@ -335,9 +335,13 @@ def plot_graphs(
     )
 
     # Plot daily returns
-    plot_daily_returns(daily_returns, color_map, config, paper_bgcolor, plot_bgcolor)
+    if config.plot_daily_returns:
+        plot_daily_returns(
+            daily_returns, color_map, config, paper_bgcolor, plot_bgcolor
+        )
 
     # Plot cumulative returns
-    plot_cumulative_returns(
-        cumulative_returns, color_map, config, paper_bgcolor, plot_bgcolor
-    )
+    if config.plot_cumulative_returns:
+        plot_cumulative_returns(
+            cumulative_returns, color_map, config, paper_bgcolor, plot_bgcolor
+        )
