@@ -7,7 +7,7 @@ from sklearn.neighbors import NearestNeighbors
 import plotly.express as px
 
 from correlation.correlation_utils import compute_correlation_matrix
-from utils.caching_utils import (    
+from utils.caching_utils import (
     compute_ticker_hash,
     load_parameters_from_pickle,
     save_parameters_to_pickle,
@@ -28,7 +28,7 @@ def filter_correlated_groups_dbscan(
 ) -> list:
     """
     Uses DBSCAN to cluster assets based on the distance (1 - correlation) matrix.
-    Then, for each cluster, selects the top performing stock(s) based on a composite
+    Then, for each cluster, selects the top performing asset(s) based on a composite
     performance metric computed internally.
 
     Args:
@@ -120,7 +120,7 @@ def filter_correlated_groups_dbscan(
             y="y",
             color="cluster",
             hover_data=["ticker"],
-            title="t-SNE Visualization of Stock Clusters (DBSCAN)",
+            title="t-SNE Visualization of Asset Clusters (DBSCAN)",
         )
         fig.show()
 
