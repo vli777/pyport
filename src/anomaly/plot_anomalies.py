@@ -1,144 +1,140 @@
 from typing import Any, Dict, List, Optional
-import numpy as np
 import pandas as pd
-import plotly.graph_objs as go
+import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
-import math
-import tkinter
 
 from utils.logger import logger
 
 
 def plot_anomaly_overview(
-    cache: Dict[str, Any],
-    returns_df: pd.DataFrame,
-    min_width: int = 320,
-    max_width: int = 1920,
+    anomalous_assets: list[str], cache: dict, returns_df: pd.DataFrame
 ) -> None:
     """
-    Plots anomalies for stocks flagged as anomalous.
+    Plots anomalies for assets flagged as anomalous.
+    For each asset (that exists in returns_df.columns and in anomalous_assets):
+      - The asset’s return series is sliced to start at its first nonzero return.
+      - The x-axis is limited to the date range with data and shows only the start and end year.
+      - The y-axis is padded (or, if the range is very small, forced to a log scale [0.001, 1]).
+      - The returns are plotted as a blue line, and anomaly points (from cache's anomaly_flags)
+        are overlaid as red 'x' markers.
+      - Each subplot is ensured a minimum height (240px per row) and the layout is scrollable
+        if it exceeds the browser window.
 
     Args:
-        cache (Dict[str, Any]): Dictionary of ticker information including thresholds,
-            anomaly flags, and estimates.
-        returns_df (pd.DataFrame): DataFrame with stock return series.
-        min_width (int): Minimum subplot width in pixels.
-        max_width (int): Maximum overall width.
+        anomalous_assets (list): List of assets detected as anomalous.
+        cache (dict): Dictionary of asset-specific parameters (including thresholds,
+                      anomaly flags, and estimates). May contain keys not present in returns_df.
+        returns_df (pd.DataFrame): DataFrame with asset return series.
     """
-    stocks = list(cache.keys())
-    if not stocks:
-        logger.info("No stocks available for plotting anomalies.")
+    # Only consider assets present in returns_df.columns and anomalous_assets.
+    assets = list(set(returns_df.columns) & set(anomalous_assets))
+    if not assets:
+        logger.info("No assets available for plotting anomalies.")
         return
 
-    # Determine available screen width.
-    try:
-        root = tkinter.Tk()
-        screen_width = root.winfo_screenwidth()
-        root.destroy()
-    except Exception:
-        screen_width = max_width
+    # Layout: here we use 3 columns; adjust as needed.
+    cols = 3
+    rows = (len(assets) + cols - 1) // cols
 
-    available_width = min(screen_width, max_width)
-    cols = max(1, available_width // min_width)
-    cols = min(cols, len(stocks))
-    rows = math.ceil(len(stocks) / cols)
-    logger.info(
-        f"Plotting anomalies for {len(stocks)} stocks in a grid of {rows} rows and {cols} columns."
-    )
+    # Create subplots with one subplot per asset (each subplot gets a title)
+    fig = make_subplots(rows=rows, cols=cols, subplot_titles=assets)
 
-    fig = make_subplots(
-        rows=rows,
-        cols=cols,
-        subplot_titles=stocks,
-        vertical_spacing=0.1,
-        horizontal_spacing=0.03,
-    )
-
-    for idx, stock in enumerate(stocks):
-        row = (idx // cols) + 1
-        col = (idx % cols) + 1
-        if stock not in returns_df.columns:
-            logger.warning(f"Returns data for {stock} not found.")
+    for i, asset in enumerate(assets):
+        # Get the series for this asset and drop missing values.
+        series = returns_df[asset].dropna()
+        if series.empty:
+            logger.warning(f"No data for asset {asset}. Skipping.")
             continue
 
-        series = returns_df[stock]
-        ticker_info = cache[stock]
-        anomaly_flags = ticker_info["anomaly_flags"]
-        estimates = ticker_info["estimates"]
-        threshold = ticker_info.get("threshold", 1.96)
+        # Slice the series so that it starts at the first nonzero return.
+        nonzero = series[series != 0]
+        if nonzero.empty:
+            logger.warning(f"All returns are zero for asset {asset}. Skipping.")
+            continue
+        first_valid = nonzero.index[0]
+        series = series[series.index >= first_valid]
 
-        # Plot returns.
+        # Compute x-axis range and determine tick labels (just start and end year).
+        x_min = series.index.min()
+        x_max = series.index.max()
+        start_year = x_min.year
+        end_year = x_max.year
+
+        # Compute y-axis range. If the range is very small, force a [0.001, 1] range with log scale.
+        min_val, max_val = series.min(), series.max()
+        if max_val - min_val < 0.01:
+            y_range = [0.001, 1]
+            y_type = "log"
+        else:
+            padding = (max_val - min_val) * 0.1
+            y_range = [min_val - padding, max_val + padding]
+            y_type = "linear"
+
+        # Get the asset's anomaly_flags from cache (default: all False).
+        asset_info = cache.get(asset, {})
+        anomaly_flags = asset_info.get(
+            "anomaly_flags", pd.Series(False, index=series.index)
+        )
+        if not isinstance(anomaly_flags, pd.Series):
+            anomaly_flags = pd.Series(False, index=series.index)
+        # Slice anomaly_flags to the same date range as series.
+        anomaly_flags = anomaly_flags.loc[series.index]
+        # Identify anomaly points.
+        anomalies = series[anomaly_flags == True]
+
+        # Determine the subplot location.
+        row_idx = i // cols + 1
+        col_idx = i % cols + 1
+
+        # Add the returns line.
         fig.add_trace(
             go.Scatter(
                 x=series.index,
                 y=series.values,
                 mode="lines",
-                name=f"{stock} Returns",
                 line=dict(color="blue"),
+                name=asset,
             ),
-            row=row,
-            col=col,
+            row=row_idx,
+            col=col_idx,
         )
-
-        # Plot estimates (if available).
-        if estimates is not None:
+        # Overlay the anomaly markers on the same subplot.
+        if not anomalies.empty:
             fig.add_trace(
                 go.Scatter(
-                    x=series.index,
-                    y=estimates,
-                    mode="lines",
-                    name=f"{stock} Estimate",
-                    line=dict(color="orange"),
+                    x=anomalies.index,
+                    y=anomalies.values,
+                    mode="markers",
+                    marker=dict(color="red", size=6, symbol="x"),
+                    name="Anomaly",
+                    showlegend=False,
                 ),
-                row=row,
-                col=col,
+                row=row_idx,
+                col=col_idx,
             )
-
-        # Plot anomalies.
-        anomalies = series[anomaly_flags]
-        fig.add_trace(
-            go.Scatter(
-                x=anomalies.index,
-                y=anomalies.values,
-                mode="markers",
-                name=f"{stock} Anomaly",
-                marker=dict(color="red", size=6, symbol="x"),
-            ),
-            row=row,
-            col=col,
+        # Update x-axis: limit to the data range and set ticks to just the start and end year.
+        fig.update_xaxes(
+            range=[x_min, x_max],
+            tickmode="array",
+            tickvals=[x_min, x_max],
+            ticktext=[str(start_year), str(end_year)],
+            row=row_idx,
+            col=col_idx,
+        )
+        # Update y-axis: set computed range and scale; remove the y-axis title.
+        fig.update_yaxes(
+            range=y_range, type=y_type, title_text="", row=row_idx, col=col_idx
         )
 
-        # Plot confidence interval if estimates are available.
-        if estimates is not None:
-            residuals = series - estimates
-            std_dev = residuals.std()
-            lower_bound = estimates - threshold * std_dev
-            upper_bound = estimates + threshold * std_dev
-            # Create a filled area between the upper and lower bounds.
-            fig.add_trace(
-                go.Scatter(
-                    x=list(series.index) + list(series.index[::-1]),
-                    y=list(upper_bound) + list(lower_bound[::-1]),
-                    fill="toself",
-                    fillcolor="rgba(128, 128, 128, 0.2)",
-                    line=dict(color="rgba(255,255,255,0)"),
-                    hoverinfo="skip",
-                    name=f"{stock} Confidence Interval",
-                ),
-                row=row,
-                col=col,
-            )
-
-        fig.update_xaxes(title_text="Date", row=row, col=col)
-        fig.update_yaxes(title_text="Returns", row=row, col=col)
-
-    fig_width = available_width
-    fig_height = min(400 * rows, 1400)
+    # Update overall layout.
     fig.update_layout(
-        autosize=True,
-        width=fig_width,
-        height=fig_height,
-        title_text="Anomaly Detection Across Stocks",
-        showlegend=True,
+        autosize=False,
+        width=1600,
+        height=max(240 * rows, 800),  # at least 240px per row
+        margin=dict(t=100),
+        title_text="Anomaly Detection Across Assets",
     )
+
+    # Show the figure (with scroll zoom enabled in the browser).
     fig.show(renderer="browser")
