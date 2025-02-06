@@ -62,20 +62,16 @@ def iterative_pipeline_runner(
     previous_top_symbols = set()
     final_result = None
 
-    # Store the original plot settings
-    original_plot_clustering = config.plot_clustering
-    original_plot_anomalies = config.plot_anomalies
-    original_plot_reversion = config.plot_reversion
-
-    # Temporarily disable plotting during epochs
-    config.plot_clustering = False
-    config.plot_anomalies = False
-    config.plot_reversion = False
-
     for epoch in range(max_epochs + 1):
         print(f"Epoch {epoch + 1}")
 
-        # Run the pipeline with plots disabled
+        # Enable plots only in the first epoch
+        if epoch > 0:
+            config.plot_clustering = False
+            config.plot_anomalies = False
+            config.plot_reversion = False
+
+        # Run the pipeline
         result = run_pipeline(
             config=config,
             symbols_override=symbols,
@@ -94,11 +90,6 @@ def iterative_pipeline_runner(
         if set(valid_symbols) == previous_top_symbols:
             print("Convergence reached. Stopping epochs.")
 
-            # Restore the original plot settings before final run
-            config.plot_clustering = original_plot_clustering
-            config.plot_anomalies = original_plot_anomalies
-            config.plot_reversion = original_plot_reversion
-
             # Trim to portfolio_max_size if needed
             final_symbols = (
                 valid_symbols[: config.portfolio_max_size]
@@ -115,11 +106,6 @@ def iterative_pipeline_runner(
             print(
                 f"Stopping epochs as the number of portfolio holdings ({len(valid_symbols)}) is <= the configured portfolio max size of {config.portfolio_max_size}."
             )
-
-            # Restore the original plot settings before final run
-            config.plot_clustering = original_plot_clustering
-            config.plot_anomalies = original_plot_anomalies
-            config.plot_reversion = original_plot_reversion
 
             # Run final pipeline with plots enabled
             final_result = run_pipeline(
