@@ -5,6 +5,7 @@ from sklearn.cluster import DBSCAN
 import hashlib
 
 from correlation.correlation_utils import compute_correlation_matrix
+from utils.portfolio_utils import normalize_weights
 
 
 def compute_distance_matrix(returns_df: pd.DataFrame) -> pd.DataFrame:
@@ -227,7 +228,9 @@ def adjust_allocation_with_mean_reversion(
         if total > 0:
             adjusted /= total
 
-    return adjusted
+    normalized_adjusted = normalize_weights(adjusted)
+    
+    return normalized_adjusted
 
 
 def group_ticker_params_by_cluster(ticker_params: dict) -> dict:
