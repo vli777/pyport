@@ -193,8 +193,6 @@ def plot_reversion_signals(data):
 
     # Increase overall figure size for easier visibility
     fig.update_layout(
-        width=1200,
-        height=800,
         paper_bgcolor="white",
         plot_bgcolor="white",
         showlegend=False,
