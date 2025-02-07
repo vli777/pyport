@@ -93,6 +93,8 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             logger.warning(f"No data for {symbol} in range {start_ts} - {end_ts}.")
             return pd.DataFrame()
 
+        # Save cleaned data (if needed, remove duplicate indices)
+        data = data.loc[~data.index.duplicated(keep="first")]
         data.to_parquet(pq_file)
         return format_to_df_format(data, symbol)
 
@@ -136,8 +138,13 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         history_data = flatten_columns(history_data, symbol)
         history_data = ensure_unique_timestamps(history_data, symbol)
         if not history_data.empty:
+            # Remove duplicates from both before concatenating
+            history_data = history_data.loc[~history_data.index.duplicated(keep="first")]
+            existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
             existing_data = pd.concat([history_data, existing_data]).sort_index()
-            existing_data = existing_data[~existing_data.index.duplicated(keep="first")]
+            existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
+        # Save updated data
+        existing_data.to_parquet(pq_file)
 
     # 5b. Forced download if requested.
     if download:
@@ -146,16 +153,19 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             symbol, start_date=start_ts, end_date=effective_end_ts
         )
         new_data = flatten_columns(new_data, symbol)
-
         if new_data.empty:
             return format_to_df_format(existing_data, symbol)
 
-        existing_data = existing_data[~existing_data.index.duplicated(keep="first")]
-        new_data = new_data[~new_data.index.duplicated(keep="first")]
+        # Ensure both DataFrames have unique indices
+        existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
+        new_data = new_data.loc[~new_data.index.duplicated(keep="first")]
+
+        # Remove any overlapping indices from new_data
         new_data = new_data.loc[~new_data.index.isin(existing_data.index)]
 
         combined_data = pd.concat([existing_data, new_data]).sort_index()
-        combined_data = combined_data[~combined_data.index.duplicated(keep="first")]
+        # Remove duplicates again to be safe
+        combined_data = combined_data.loc[~combined_data.index.duplicated(keep="first")]
         combined_data = ensure_unique_timestamps(combined_data, symbol)
         combined_data.to_parquet(pq_file)
         return format_to_df_format(combined_data, symbol)
