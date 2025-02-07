@@ -28,18 +28,20 @@ def process_input_files(input_file_paths):
     symbols = set()
 
     for file_path in input_file_paths:
+        # Ensure the file has a .csv suffix
         if file_path.suffix.lower() != ".csv":
             file_path = file_path.with_suffix(".csv")
 
         try:
             with file_path.open("r", encoding="utf-8") as file:
                 for line in file:
+                    # Convert each ticker to uppercase so that mixed-case entries are normalized.
                     ticker = line.strip().upper()
-                    # Skip commented lines
+                    # Skip empty or commented lines.
                     if not ticker or ticker.startswith("#"):
                         continue
 
-                    # Validate that the ticker is fully alphabetic
+                    # Only allow fully alphabetic tickers.
                     if re.fullmatch(r"[A-Z]+", ticker):
                         logger.debug(f"Checking validity for ticker: {ticker}")
                         if is_valid_ticker(ticker):
@@ -51,7 +53,7 @@ def process_input_files(input_file_paths):
         except Exception as e:
             logger.warning(f"Error processing file {file_path}: {e}")
 
-    logger.info(f"{file_path} processed.")
+    logger.info(f"Processed file: {file_path}")
     return sorted(symbols)
 
 
