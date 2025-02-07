@@ -76,20 +76,20 @@ def output(
     max_dd = max_drawdown(portfolio_cumulative_returns)
     time_uw = time_under_water(portfolio_cumulative_returns)
 
-    # --- Load SPY data and compute market returns over the same period
-    spy_file = Path(config.data_dir) / "SPY.parquet"
+    # --- Load market data and compute market returns over the same period
+    market_file = Path(config.data_dir) / "SPY.parquet"
     try:
-        spy_data = pd.read_parquet(spy_file)
+        market_data = pd.read_parquet(market_file)
     except Exception as e:
-        logger.error(f"Error loading SPY data from {spy_file}: {e}")
+        logger.error(f"Error loading market data from {market_file}: {e}")
         raise
 
-    if "Adj Close" in spy_data.columns:
-        market_returns = spy_data["Adj Close"].pct_change().dropna()
-    elif "Close" in spy_data.columns:
-        market_returns = spy_data["Close"].pct_change().dropna()
+    if "Adj Close" in market_data.columns:
+        market_returns = market_data["Adj Close"].pct_change().dropna()
+    elif "Close" in market_data.columns:
+        market_returns = market_data["Close"].pct_change().dropna()
     else:
-        raise ValueError("SPY data missing 'Adj Close' or 'Close' columns.")
+        raise ValueError("{market_file} data missing 'Adj Close' or 'Close' columns.")
 
     # Filter market_returns to match the analysis period
     market_returns = market_returns.loc[start_date:end_date]
@@ -110,7 +110,7 @@ def output(
     logger.info(f"Portfolio volatility: {round(volatility * 100, 2)}%")
     logger.info(f"Max drawdown: {round(max_dd * 100, 2)}%")
     logger.info(f"Time under water: {time_uw} days")
-    logger.info(f"Portfolio Alpha vs SPY: {alpha:.4f}")
+    logger.info(f"Portfolio Alpha vs Market: {alpha:.4f}")
     logger.info(f"Cumulative return: {cumulative_pct}%")
     logger.info(f"Portfolio allocation weights (min {config.min_weight:.2f}):")
 
