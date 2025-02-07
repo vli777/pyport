@@ -1,26 +1,48 @@
+from pathlib import Path
 from typing import Dict, Optional, Union
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
+import hdbscan
 import hashlib
 
 from correlation.correlation_utils import compute_correlation_matrix
+from utils.caching_utils import load_parameters_from_pickle
 from utils.portfolio_utils import normalize_weights
 
 
-def compute_distance_matrix(returns_df: pd.DataFrame) -> pd.DataFrame:
-    corr_matrix = returns_df.corr().abs()
-    np.fill_diagonal(corr_matrix.values, 1.0)
-    distance_matrix = 1 - corr_matrix
-    return distance_matrix
-
-
 def cluster_stocks(
-    returns_df: pd.DataFrame, eps: float = 0.2, min_samples: int = 2
+    returns_df: pd.DataFrame,
+    min_cluster_size: int = 2,
+    min_samples: int = 2,
+    cache_dir: str = "optuna_cache",
 ) -> dict:
-    distance_matrix = compute_distance_matrix(returns_df)
-    dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
-    cluster_labels = dbscan.fit_predict(distance_matrix)
+    # Ensure the cache directory exists
+    cache_path = Path(cache_dir)
+    cache_path.mkdir(parents=True, exist_ok=True)
+    cache_filename = cache_path / "hdbscan_params.pkl"
+    cached_params = load_parameters_from_pickle(cache_filename) or {}
+
+    if all(
+        param in cached_params
+        for param in [
+            "min_cluster_size",
+            "min_samples_fraction",
+            "cluster_selection_epsilon",
+        ]
+    ):
+        min_cluster_size = cached_params["min_cluster_size"]
+        min_samples = cached_params["min_samples_fraction"]
+        cluster_selection_epsilon = cached_params["cluster_selection_epsilon"]
+
+    distance_matrix = 1 - compute_correlation_matrix(returns_df)
+    clusterer = hdbscan.HDBSCAN(
+        metric="precomputed",
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        cluster_selection_epsilon=cluster_selection_epsilon,
+    )
+    cluster_labels = clusterer.fit_predict(distance_matrix)
 
     clusters = {}
     for ticker, label in zip(returns_df.columns, cluster_labels):
@@ -229,7 +251,7 @@ def adjust_allocation_with_mean_reversion(
             adjusted /= total
 
     normalized_adjusted = normalize_weights(adjusted)
-    
+
     return normalized_adjusted
 
 
