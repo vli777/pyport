@@ -87,12 +87,20 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
 
     # 1. If the Parquet file does not exist, download full history.
     if not pq_file.is_file():
-        logger.info(f"No file for {symbol}. Downloading full history {start_ts} -> {end_ts}")
-        data = get_stock_data(symbol, start_date=start_ts, end_date=end_ts)
+        logger.info(
+            f"No file for {symbol}. Downloading full history {start_ts} -> {end_ts}"
+        )
+        try:
+            data = get_stock_data(symbol, start_date=start_ts, end_date=end_ts)
+        except Exception as e:
+            logger.error(f"Error downloading data for {symbol}: {e}")
+            return pd.DataFrame()  # No existing data to fall back on.
         data = flatten_columns(data, symbol)
         if data.empty:
             logger.warning(f"No data for {symbol} in range {start_ts} - {end_ts}.")
-            return pd.DataFrame()
+            return (
+                pd.DataFrame()
+            )  # Return an empty DataFrame because there's nothing to load.
         data = data.loc[~data.index.duplicated(keep="first")]
         data.to_parquet(pq_file)
         return format_to_df_format(data, symbol)
@@ -102,8 +110,13 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         existing_data = pd.read_parquet(pq_file)
         existing_data = flatten_columns(existing_data, symbol)
         existing_data = ensure_unique_timestamps(existing_data, symbol)
-        if existing_data.index.max() is not None and existing_data.index.max() >= today_ts:
-            logger.info(f"{symbol}: Already have today's data after market close, skipping.")
+        if (
+            existing_data.index.max() is not None
+            and existing_data.index.max() >= today_ts
+        ):
+            logger.info(
+                f"{symbol}: Already have today's data after market close, skipping."
+            )
             return format_to_df_format(existing_data, symbol)
 
     # 3. Determine the effective end timestamp (adjusting for market open times).
@@ -112,7 +125,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     if now_est.time() < market_open:
         effective_end_ts = find_valid_trading_date(end_ts, tz=est, direction="backward")
     if effective_end_ts.normalize() >= today_ts.normalize():
-        effective_end_ts = find_valid_trading_date(today_ts - pd.Timedelta(days=1), tz=est, direction="backward")
+        effective_end_ts = find_valid_trading_date(
+            today_ts - pd.Timedelta(days=1), tz=est, direction="backward"
+        )
 
     # 4. Load existing data and ensure unique timestamps.
     existing_data = pd.read_parquet(pq_file)
@@ -128,8 +143,12 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         history_data = flatten_columns(history_data, symbol)
         history_data = ensure_unique_timestamps(history_data, symbol)
         if not history_data.empty:
-            history_data = history_data.loc[~history_data.index.duplicated(keep="first")]
-            existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
+            history_data = history_data.loc[
+                ~history_data.index.duplicated(keep="first")
+            ]
+            existing_data = existing_data.loc[
+                ~existing_data.index.duplicated(keep="first")
+            ]
             # Force uniqueness by resetting the index.
             existing_data = force_unique_index(existing_data)
             history_data = force_unique_index(history_data)
@@ -140,7 +159,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     # 5b. Forced download branch.
     if download:
         logger.info(f"{symbol}: Forced download {start_ts} -> {effective_end_ts}")
-        new_data = get_stock_data(symbol, start_date=start_ts, end_date=effective_end_ts)
+        new_data = get_stock_data(
+            symbol, start_date=start_ts, end_date=effective_end_ts
+        )
         new_data = flatten_columns(new_data, symbol)
         if new_data.empty:
             return format_to_df_format(existing_data, symbol)
@@ -165,19 +186,25 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     # 6. Append missing data if existing data is outdated.
     if last_date is None or last_date < effective_end_ts:
         update_start = last_date + pd.Timedelta(days=1) if last_date else start_ts
-        update_start = find_valid_trading_date(update_start, tz=est, direction="forward")
+        update_start = find_valid_trading_date(
+            update_start, tz=est, direction="forward"
+        )
         if update_start >= effective_end_ts:
             logger.debug(f"{symbol}: Data already up-to-date.")
             return format_to_df_format(existing_data, symbol)
 
         logger.info(f"{symbol}: Updating {update_start} -> {effective_end_ts}")
-        df_new = get_stock_data(symbol, start_date=update_start, end_date=effective_end_ts)
+        df_new = get_stock_data(
+            symbol, start_date=update_start, end_date=effective_end_ts
+        )
         df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
             logger.debug(f"Checking duplicates for {symbol} before concat...")
 
-            existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
+            existing_data = existing_data.loc[
+                ~existing_data.index.duplicated(keep="first")
+            ]
             df_new = df_new.loc[~df_new.index.duplicated(keep="first")]
 
             # Remove any overlapping indices.
@@ -185,9 +212,9 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
 
             # Force uniqueness by resetting the index on both.
             existing_data = force_unique_index(existing_data)
-            new_data = force_unique_index(new_data)
+            df_new = force_unique_index(df_new)
 
-            df_combined = pd.concat([existing_data, new_data]).sort_index()
+            df_combined = pd.concat([existing_data, df_new]).sort_index()
             df_combined = force_unique_index(df_combined)
             df_combined.to_parquet(pq_file)
             return format_to_df_format(df_combined, symbol)
