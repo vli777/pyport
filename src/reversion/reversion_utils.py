@@ -32,7 +32,8 @@ def cluster_stocks(
         ]
     ):
         min_cluster_size = cached_params["min_cluster_size"]
-        min_samples = cached_params["min_samples_fraction"]
+        min_samples_fraction = cached_params["min_samples_fraction"]
+        min_samples = int(np.ceil(min_cluster_size * min_samples_fraction))
         cluster_selection_epsilon = cached_params["cluster_selection_epsilon"]
 
     distance_matrix = 1 - compute_correlation_matrix(returns_df)
