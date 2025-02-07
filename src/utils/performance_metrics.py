@@ -113,6 +113,33 @@ def calculate_portfolio_alpha(
     return alpha
 
 
+def portfolio_volatility(
+    portfolio_returns: pd.Series, annualization_factor=252
+) -> float:
+    """
+    Compute annualized portfolio volatility.
+    """
+    return portfolio_returns.std() * np.sqrt(annualization_factor)
+
+
+def max_drawdown(portfolio_cumulative_returns: pd.Series) -> float:
+    """
+    Compute Maximum Drawdown (Max peak-to-trough decline).
+    """
+    peak = portfolio_cumulative_returns.cummax()
+    drawdown = (portfolio_cumulative_returns - peak) / peak
+    return drawdown.min()  # Max negative drawdown
+
+
+def time_under_water(portfolio_cumulative_returns: pd.Series) -> int:
+    """
+    Compute Time Under Water (How long portfolio stays below peak).
+    """
+    peak = portfolio_cumulative_returns.cummax()
+    underwater = portfolio_cumulative_returns < peak
+    return underwater.sum()  # Total number of days underwater
+
+
 def calculate_portfolio_performance(
     data: pd.DataFrame, weights: Dict[str, float]
 ) -> Tuple[pd.DataFrame, pd.Series, pd.Series, pd.DataFrame]:

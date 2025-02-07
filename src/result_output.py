@@ -3,7 +3,14 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from config import Config
-from utils.performance_metrics import calculate_portfolio_performance, sharpe_ratio
+from utils.performance_metrics import (
+    calculate_portfolio_performance,
+    kappa_ratio,
+    max_drawdown,
+    portfolio_volatility,
+    sharpe_ratio,
+    time_under_water,
+)
 from utils import logger
 from utils.portfolio_utils import (
     trim_weights,
@@ -61,19 +68,25 @@ def output(
         (all_daily_returns, all_cumulative_returns),
     ) = calculate_portfolio_performance(data[list(clean_weights.keys())], clean_weights)
 
-    try:
-        sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
-    except ZeroDivisionError:
-        sharpe = 0
+    sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
+    kappa = kappa_ratio(portfolio_returns)
+    volatility = portfolio_volatility(portfolio_returns)
+    max_dd = max_drawdown(portfolio_cumulative_returns)
+    time_uw = time_under_water(portfolio_cumulative_returns)
 
-    # logger.info stats
+    # Logging results
     if inputs is not None:
         logger.info(f"\n\nWatchlist Inputs: {inputs}")
-    logger.info(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
 
+    logger.info(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
     cumulative_pct = round((portfolio_cumulative_returns.iloc[-1] - 1) * 100, 2)
+
     logger.info(f"Optimization method: {optimization_model}")
     logger.info(f"Sharpe ratio: {round(sharpe, 2)}")
+    logger.info(f"Kappa ratio: {round(kappa, 2)}")
+    logger.info(f"Portfolio volatility: {round(volatility * 100, 2)}%")
+    logger.info(f"Max drawdown: {round(max_dd * 100, 2)}%")
+    logger.info(f"Time under water: {time_uw} days")
     logger.info(f"Cumulative return: {cumulative_pct}%")
     logger.info(f"Portfolio allocation weights (min {config.min_weight:.2f}):")
 
