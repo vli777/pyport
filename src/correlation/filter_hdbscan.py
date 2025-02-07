@@ -52,20 +52,32 @@ def filter_correlated_groups_hdbscan(
     cached_params = load_parameters_from_pickle(cache_filename) or {}
 
     # Use cached parameters if available, otherwise reoptimize
-    if min_cluster_size is None:
-        if "min_cluster_size" in cached_params:
-            min_cluster_size = cached_params["min_cluster_size"]
-        else:
-            reoptimize = True
+    if all(
+        param in cached_params
+        for param in [
+            "min_cluster_size",
+            "min_samples_fraction",
+            "cluster_selection_epsilon",
+        ]
+    ):
+        min_cluster_size = cached_params["min_cluster_size"]
+        min_samples = cached_params["min_samples_fraction"]
+        cluster_selection_epsilon = cached_params["cluster_selection_epsilon"]
+    else:
+        reoptimize = True
 
     if reoptimize:
         best_params = run_hdbscan_decorrelation_study(
             returns_df=returns_df, n_trials=50
         )
         min_cluster_size = best_params["min_cluster_size"]
-        min_samples = best_params["min_samples"]
+        min_samples = best_params["min_samples_fraction"]
+        cluster_selection_epsilon = best_params["cluster_selection_epsilon"]
+
         cached_params["min_cluster_size"] = min_cluster_size
-        cached_params["min_samples"] = min_samples
+        cached_params["min_samples_fraction"] = min_samples
+        cached_params["cluster_selection_epsilon"] = cluster_selection_epsilon
+
         save_parameters_to_pickle(cached_params, cache_filename)
 
     # Compute the correlation matrix
@@ -75,7 +87,10 @@ def filter_correlated_groups_hdbscan(
 
     # Cluster assets with HDBSCAN using the precomputed distance matrix.
     clusterer = hdbscan.HDBSCAN(
-        min_cluster_size=min_cluster_size, min_samples=min_samples, metric="precomputed"
+        metric="precomputed",
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        cluster_selection_epsilon=cluster_selection_epsilon,
     )
     cluster_labels = clusterer.fit_predict(distance_matrix)
 

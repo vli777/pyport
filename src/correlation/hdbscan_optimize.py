@@ -12,7 +12,7 @@ def evaluate_clusters(
     max_cluster_fraction: float = 0.5,
 ) -> float:
     """
-    Evaluate the clustering quality by calculating the average intra‑cluster correlation.
+    Evaluate the clustering quality by calculating the average intra-cluster correlation.
     Penalize results if any cluster (excluding noise) is too large.
 
     Args:
@@ -21,7 +21,7 @@ def evaluate_clusters(
         max_cluster_fraction (float): Maximum allowable fraction of assets in a cluster.
 
     Returns:
-        float: Average intra‑cluster correlation, or -1.0 if a giant cluster is found.
+        float: Average intra-cluster correlation, or -1.0 if a giant cluster is found.
     """
     # Exclude noise points (label == -1)
     valid_labels = cluster_labels[cluster_labels != -1]
