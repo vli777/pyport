@@ -84,19 +84,14 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
     now_est = datetime.now(est)
     today_ts = pd.Timestamp(now_est.date())
 
-    # 1. If the Parquet file does not exist, download the full history.
+    # 1. If the Parquet file does not exist, download full history.
     if not pq_file.is_file():
-        logger.info(
-            f"No file for {symbol}. Downloading full history {start_ts} -> {end_ts}"
-        )
+        logger.info(f"No file for {symbol}. Downloading full history {start_ts} -> {end_ts}")
         data = get_stock_data(symbol, start_date=start_ts, end_date=end_ts)
         data = flatten_columns(data, symbol)
-
         if data.empty:
             logger.warning(f"No data for {symbol} in range {start_ts} - {end_ts}.")
             return pd.DataFrame()
-
-        # Remove duplicate indices and save.
         data = data.loc[~data.index.duplicated(keep="first")]
         data.to_parquet(pq_file)
         return format_to_df_format(data, symbol)
@@ -106,31 +101,22 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         existing_data = pd.read_parquet(pq_file)
         existing_data = flatten_columns(existing_data, symbol)
         existing_data = ensure_unique_timestamps(existing_data, symbol)
-        if (
-            existing_data.index.max() is not None
-            and existing_data.index.max() >= today_ts
-        ):
-            logger.info(
-                f"{symbol}: Already have today's data after market close, skipping."
-            )
+        if existing_data.index.max() is not None and existing_data.index.max() >= today_ts:
+            logger.info(f"{symbol}: Already have today's data after market close, skipping.")
             return format_to_df_format(existing_data, symbol)
 
-    # 3. Determine the effective end timestamp, adjusting for market open times.
+    # 3. Determine the effective end timestamp (adjusting for market open times).
     effective_end_ts = end_ts
     market_open = datetime.strptime("09:30", "%H:%M").time()
     if now_est.time() < market_open:
         effective_end_ts = find_valid_trading_date(end_ts, tz=est, direction="backward")
-
     if effective_end_ts.normalize() >= today_ts.normalize():
-        effective_end_ts = find_valid_trading_date(
-            today_ts - pd.Timedelta(days=1), tz=est, direction="backward"
-        )
+        effective_end_ts = find_valid_trading_date(today_ts - pd.Timedelta(days=1), tz=est, direction="backward")
 
-    # 4. Load existing data from file and ensure unique timestamps.
+    # 4. Load existing data and ensure unique timestamps.
     existing_data = pd.read_parquet(pq_file)
     existing_data = flatten_columns(existing_data, symbol)
     existing_data = ensure_unique_timestamps(existing_data, symbol=symbol, keep="first")
-
     last_date = existing_data.index.max() if not existing_data.empty else None
     first_date = existing_data.index.min() if not existing_data.empty else None
 
@@ -141,36 +127,43 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         history_data = flatten_columns(history_data, symbol)
         history_data = ensure_unique_timestamps(history_data, symbol)
         if not history_data.empty:
-            history_data = history_data.loc[
-                ~history_data.index.duplicated(keep="first")
-            ]
-            existing_data = existing_data.loc[
-                ~existing_data.index.duplicated(keep="first")
-            ]
+            history_data = history_data.loc[~history_data.index.duplicated(keep="first")]
+            existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
+            # Force uniqueness by resetting the index.
+            existing_data = (
+                existing_data.reset_index()
+                .drop_duplicates(subset="index", keep="first")
+                .set_index("index")
+            )
+            history_data = (
+                history_data.reset_index()
+                .drop_duplicates(subset="index", keep="first")
+                .set_index("index")
+            )
             existing_data = pd.concat([history_data, existing_data]).sort_index()
-            existing_data = existing_data.loc[
-                ~existing_data.index.duplicated(keep="first")
-            ]
+            existing_data = (
+                existing_data.reset_index()
+                .drop_duplicates(subset="index", keep="first")
+                .set_index("index")
+            )
         existing_data.to_parquet(pq_file)
 
-    # 5b. Forced download if requested.
+    # 5b. Forced download branch.
     if download:
         logger.info(f"{symbol}: Forced download {start_ts} -> {effective_end_ts}")
-        new_data = get_stock_data(
-            symbol, start_date=start_ts, end_date=effective_end_ts
-        )
+        new_data = get_stock_data(symbol, start_date=start_ts, end_date=effective_end_ts)
         new_data = flatten_columns(new_data, symbol)
         if new_data.empty:
             return format_to_df_format(existing_data, symbol)
 
-        # Remove duplicates within each DataFrame.
+        # Clean duplicates in each DataFrame.
         existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
         new_data = new_data.loc[~new_data.index.duplicated(keep="first")]
 
-        # Remove overlapping indices in new_data.
+        # Remove overlapping indices.
         new_data = new_data.loc[~new_data.index.isin(existing_data.index)]
 
-        # Force uniqueness by resetting the index.
+        # Force uniqueness by resetting the index on both.
         existing_data = (
             existing_data.reset_index()
             .drop_duplicates(subset="index", keep="first")
@@ -182,48 +175,55 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             .set_index("index")
         )
 
-        # Concatenate safely.
         df_combined = pd.concat([existing_data, new_data]).sort_index()
-        df_combined = df_combined.loc[~df_combined.index.duplicated(keep="first")]
-
+        df_combined = (
+            df_combined.reset_index()
+            .drop_duplicates(subset="index", keep="first")
+            .set_index("index")
+        )
         df_combined = ensure_unique_timestamps(df_combined, symbol)
         df_combined.to_parquet(pq_file)
-
         return format_to_df_format(df_combined, symbol)
 
     # 6. Append missing data if existing data is outdated.
     if last_date is None or last_date < effective_end_ts:
         update_start = last_date + pd.Timedelta(days=1) if last_date else start_ts
-        update_start = find_valid_trading_date(
-            update_start, tz=est, direction="forward"
-        )
-
+        update_start = find_valid_trading_date(update_start, tz=est, direction="forward")
         if update_start >= effective_end_ts:
             logger.debug(f"{symbol}: Data already up-to-date.")
             return format_to_df_format(existing_data, symbol)
 
         logger.info(f"{symbol}: Updating {update_start} -> {effective_end_ts}")
-        df_new = get_stock_data(
-            symbol, start_date=update_start, end_date=effective_end_ts
-        )
+        df_new = get_stock_data(symbol, start_date=update_start, end_date=effective_end_ts)
         df_new = flatten_columns(df_new, symbol)
 
         if not df_new.empty:
             logger.debug(f"Checking duplicates for {symbol} before concat...")
 
-            # Remove duplicates within each DataFrame first.
-            existing_data = existing_data.loc[
-                ~existing_data.index.duplicated(keep="first")
-            ]
+            existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
             df_new = df_new.loc[~df_new.index.duplicated(keep="first")]
 
-            # Remove any overlapping indices in df_new.
+            # Remove any overlapping indices.
             df_new = df_new.loc[~df_new.index.isin(existing_data.index)]
 
-            # Concatenate and ensure the resulting index is unique.
-            df_combined = pd.concat([existing_data, df_new]).sort_index()
-            df_combined = df_combined.loc[~df_combined.index.duplicated(keep="first")]
+            # Force uniqueness by resetting the index on both.
+            existing_data = (
+                existing_data.reset_index()
+                .drop_duplicates(subset="index", keep="first")
+                .set_index("index")
+            )
+            df_new = (
+                df_new.reset_index()
+                .drop_duplicates(subset="index", keep="first")
+                .set_index("index")
+            )
 
+            df_combined = pd.concat([existing_data, df_new]).sort_index()
+            df_combined = (
+                df_combined.reset_index()
+                .drop_duplicates(subset="index", keep="first")
+                .set_index("index")
+            )
             df_combined.to_parquet(pq_file)
             return format_to_df_format(df_combined, symbol)
         else:
