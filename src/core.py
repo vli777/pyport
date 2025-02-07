@@ -16,6 +16,7 @@ from anomaly.anomaly_detection import remove_anomalous_stocks
 from boxplot import generate_boxplot_data
 from correlation.tsne_dbscan import filter_correlated_groups_dbscan
 from reversion.mean_reversion import apply_mean_reversion
+from correlation.filter_hdbscan import filter_correlated_groups_hdbscan
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -69,7 +70,7 @@ def run_pipeline(
         )
         try:
             # data = process_symbols(
-            data = download_multi_ticker_data(                     
+            data = download_multi_ticker_data(
                 symbols=all_symbols,
                 start_date=start_date,
                 end_date=end_date,
@@ -161,15 +162,24 @@ def run_pipeline(
         original_symbols = list(returns_df.columns)  # Preserve original symbols
 
         try:
-            decorrelated_tickers = filter_correlated_groups_dbscan(
+            decorrelated_tickers = filter_correlated_groups_hdbscan(
                 returns_df=returns_df,
-                risk_free_rate=config.risk_free_rate,                
+                risk_free_rate=config.risk_free_rate,
                 min_samples=2,
                 top_n_per_cluster=config.top_n_candidates,
                 plot=config.plot_clustering,
                 cache_dir="optuna_cache",
                 reoptimize=False,
             )
+            # decorrelated_tickers = filter_correlated_groups_dbscan(
+            #     returns_df=returns_df,
+            #     risk_free_rate=config.risk_free_rate,
+            #     min_samples=2,
+            #     top_n_per_cluster=config.top_n_candidates,
+            #     plot=config.plot_clustering,
+            #     cache_dir="optuna_cache",
+            #     reoptimize=False,
+            # )
 
             valid_symbols = [
                 symbol for symbol in original_symbols if symbol in decorrelated_tickers
