@@ -15,6 +15,7 @@ def cluster_stocks(
     returns_df: pd.DataFrame,
     min_cluster_size: int = 2,
     min_samples: int = 2,
+    cluster_selection_epsilon: float = 0.0,
     cache_dir: str = "optuna_cache",
 ) -> dict:
     # Ensure the cache directory exists
