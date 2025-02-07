@@ -7,6 +7,7 @@ from utils import logger
 from utils.data_utils import (
     ensure_unique_timestamps,
     flatten_columns,
+    force_unique_index,
     format_to_df_format,
     get_stock_data,
 )
@@ -130,22 +131,10 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             history_data = history_data.loc[~history_data.index.duplicated(keep="first")]
             existing_data = existing_data.loc[~existing_data.index.duplicated(keep="first")]
             # Force uniqueness by resetting the index.
-            existing_data = (
-                existing_data.reset_index()
-                .drop_duplicates(subset="index", keep="first")
-                .set_index("index")
-            )
-            history_data = (
-                history_data.reset_index()
-                .drop_duplicates(subset="index", keep="first")
-                .set_index("index")
-            )
+            existing_data = force_unique_index(existing_data)
+            history_data = force_unique_index(history_data)
             existing_data = pd.concat([history_data, existing_data]).sort_index()
-            existing_data = (
-                existing_data.reset_index()
-                .drop_duplicates(subset="index", keep="first")
-                .set_index("index")
-            )
+            existing_data = force_unique_index(existing_data)
         existing_data.to_parquet(pq_file)
 
     # 5b. Forced download branch.
@@ -164,23 +153,11 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
         new_data = new_data.loc[~new_data.index.isin(existing_data.index)]
 
         # Force uniqueness by resetting the index on both.
-        existing_data = (
-            existing_data.reset_index()
-            .drop_duplicates(subset="index", keep="first")
-            .set_index("index")
-        )
-        new_data = (
-            new_data.reset_index()
-            .drop_duplicates(subset="index", keep="first")
-            .set_index("index")
-        )
+        existing_data = force_unique_index(existing_data)
+        new_data = force_unique_index(new_data)
 
         df_combined = pd.concat([existing_data, new_data]).sort_index()
-        df_combined = (
-            df_combined.reset_index()
-            .drop_duplicates(subset="index", keep="first")
-            .set_index("index")
-        )
+        df_combined = force_unique_index(df_combined)
         df_combined = ensure_unique_timestamps(df_combined, symbol)
         df_combined.to_parquet(pq_file)
         return format_to_df_format(df_combined, symbol)
@@ -207,23 +184,11 @@ def load_or_download_symbol_data(symbol, start_date, end_date, data_path, downlo
             df_new = df_new.loc[~df_new.index.isin(existing_data.index)]
 
             # Force uniqueness by resetting the index on both.
-            existing_data = (
-                existing_data.reset_index()
-                .drop_duplicates(subset="index", keep="first")
-                .set_index("index")
-            )
-            df_new = (
-                df_new.reset_index()
-                .drop_duplicates(subset="index", keep="first")
-                .set_index("index")
-            )
+            existing_data = force_unique_index(existing_data)
+            new_data = force_unique_index(new_data)
 
-            df_combined = pd.concat([existing_data, df_new]).sort_index()
-            df_combined = (
-                df_combined.reset_index()
-                .drop_duplicates(subset="index", keep="first")
-                .set_index("index")
-            )
+            df_combined = pd.concat([existing_data, new_data]).sort_index()
+            df_combined = force_unique_index(df_combined)
             df_combined.to_parquet(pq_file)
             return format_to_df_format(df_combined, symbol)
         else:
