@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -7,8 +8,8 @@ from sklearn.neighbors import NearestNeighbors
 import plotly.express as px
 
 from correlation.correlation_utils import compute_correlation_matrix
+from correlation.dbscan_optimize import run_dbscan_decorrelation_study
 from utils.caching_utils import (
-    compute_ticker_hash,
     load_parameters_from_pickle,
     save_parameters_to_pickle,
 )
@@ -51,15 +52,25 @@ def filter_correlated_groups_dbscan(
         parents=True, exist_ok=True
     )  # Create the directory if it doesn't exist
 
-    # Compute unique cache filename based on tickers
-    tickers = returns_df.columns.tolist()
-    ticker_hash = compute_ticker_hash(tickers)
-    cache_filename = cache_path / f"dbscan_epsilon_{ticker_hash}.pkl"  # Path object
-
+    # Compute unique cache filename based on start date, end date
+    start_date = returns_df.index.min().strftime("%Y%m%d")
+    end_date = returns_df.index.max().strftime("%Y%m%d")
+    today = date.today()
+    cache_filename = cache_path / f"dbscan_epsilon_{start_date}_{end_date}_{today}.pkl"
     cached_params = load_parameters_from_pickle(cache_filename)
-    if not reoptimize and "eps" in cached_params:
-        eps = cached_params["eps"]
-    else:
+
+    if eps is None:
+        if "eps" in cached_params:
+            eps = cached_params["eps"]
+        else:
+            reoptimize = True
+
+    # Reoptimize eps if needed
+    if reoptimize:
+        best_params = run_dbscan_decorrelation_study(
+            returns_df=returns_df, min_samples=2, n_trials=50
+        )
+        eps = best_params["eps"]
         cached_params["eps"] = eps
         save_parameters_to_pickle(cached_params, cache_filename)
 
