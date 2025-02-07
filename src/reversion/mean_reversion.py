@@ -66,7 +66,10 @@ def apply_mean_reversion(
     composite_signals = calculate_continuous_composite_signal(
         group_signals=group_reversion_signals, ticker_params=ticker_params
     )
-    print(f"composite signals: {composite_signals}")
+    print("\nComposite Signals:")
+    for k, v in {k: v for k, v in composite_signals.items() if v != 0.0}.items():
+        print(f"{k:<10} {v:>8.2f}")
+                
     if config.plot_reversion:
         plot_reversion_signals(data=composite_signals)
 
@@ -82,7 +85,6 @@ def apply_mean_reversion(
     )
 
     # Adjust the baseline allocation using the updated composite signals.
-    print("updated composite signals", updated_composite_signals)
     final_allocation = adjust_allocation_with_mean_reversion(
         baseline_allocation=baseline_allocation,
         composite_signals=updated_composite_signals,

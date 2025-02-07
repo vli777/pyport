@@ -173,7 +173,7 @@ def propagate_signals_by_similarity(
             else:
                 propagated_signal = 0
 
-            # Combine the original and the normalized propagated signal using alpha.
+            # Combine the original and the normalized propagated signal.
             updated_signals[ticker] = (
                 1 - signal_dampening
             ) * original_signal + signal_dampening * propagated_signal
