@@ -17,7 +17,7 @@ from boxplot import generate_boxplot_data
 from correlation.tsne_dbscan import filter_correlated_groups_dbscan
 from reversion.mean_reversion import apply_mean_reversion
 from utils.caching_utils import cleanup_cache
-from utils.data_utils import process_input_files
+from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
 from utils.portfolio_utils import (
     normalize_weights,
@@ -68,7 +68,8 @@ def run_pipeline(
             f"Loading data for symbols: {all_symbols} from {start_date} to {end_date}"
         )
         try:
-            data = process_symbols(
+            # data = process_symbols(
+            data = download_multi_ticker_data(                     
                 symbols=all_symbols,
                 start_date=start_date,
                 end_date=end_date,
@@ -230,6 +231,10 @@ def run_pipeline(
             normalized_weights = normalized_weights.to_dict()
 
         return normalized_weights
+
+    ###############################
+    ########    MAIN    ###########
+    ###############################
 
     # Load and validate symbols
     try:
