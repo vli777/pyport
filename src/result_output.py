@@ -92,10 +92,10 @@ def output(
         raise ValueError("{market_file} data missing 'Adj Close' or 'Close' columns.")
 
     # Filter market_returns to match the analysis period
-    market_returns = market_returns.loc[start_date:end_date]
-    alpha = calculate_portfolio_alpha(
-        portfolio_returns=portfolio_returns, market_returns=market_returns
-    )
+    # market_returns = market_returns.loc[start_date:end_date]
+    # alpha = calculate_portfolio_alpha(
+    #     portfolio_returns=portfolio_returns, market_returns=market_returns
+    # )
 
     # Logging results
     if inputs is not None:
@@ -110,7 +110,7 @@ def output(
     logger.info(f"Portfolio volatility: {round(volatility * 100, 2)}%")
     logger.info(f"Max drawdown: {round(max_dd * 100, 2)}%")
     logger.info(f"Time under water: {time_uw} days")
-    logger.info(f"Portfolio Alpha vs Market: {alpha:.4f}")
+    # logger.info(f"Portfolio Alpha vs Market: {alpha:.4f}")
     logger.info(f"Cumulative return: {cumulative_pct}%")
     logger.info(f"Portfolio allocation weights (min {config.min_weight:.2f}):")
 
