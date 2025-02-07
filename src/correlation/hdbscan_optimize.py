@@ -52,43 +52,55 @@ def objective_hdbscan_decorrelation(
     trial: optuna.Trial, returns_df: pd.DataFrame
 ) -> float:
     """
-    Optuna objective to optimize HDBSCAN clustering parameters so that each cluster is tight.
-    Tight clusters (with high intra‑cluster correlation) ensure that selecting the top performer
-    from each cluster will yield a portfolio of decorrelated assets.
-
-    The function tunes HDBSCAN’s parameters: min_cluster_size and min_samples.
-
     Args:
         trial (optuna.Trial): Current Optuna trial.
         returns_df (pd.DataFrame): DataFrame with dates as index and asset returns as columns.
 
     Returns:
-        float: The average intra‑cluster correlation as the quality metric (to maximize).
+        float: The average intra-cluster correlation as the quality metric (to maximize).
     """
-    # Suggest HDBSCAN parameters
+    # Suggest a minimum cluster size between 2 and 10.
     min_cluster_size = trial.suggest_int("min_cluster_size", 2, 10)
-    min_samples = trial.suggest_int("min_samples", 1, min_cluster_size)
 
-    logger.info(
-        f"Trial {trial.number}: Testing min_cluster_size = {min_cluster_size}, min_samples = {min_samples}"
+    # Instead of allowing min_samples to be low (which may allow giant, loosely connected clusters),
+    # require that min_samples is a high fraction of min_cluster_size.
+    min_samples_fraction = trial.suggest_float(
+        "min_samples_fraction", 0.8, 1.0, step=0.05
+    )
+    min_samples = int(np.ceil(min_cluster_size * min_samples_fraction))
+
+    # Suggest a cluster_selection_epsilon parameter (0 means default behavior)
+    cluster_selection_epsilon = trial.suggest_float(
+        "cluster_selection_epsilon", 0.0, 0.3, step=0.05
     )
 
-    # Compute correlation and derive a distance matrix (distance = 1 - correlation)
+    logger.info(
+        f"Trial {trial.number}: Testing parameters: "
+        f"min_cluster_size = {min_cluster_size}, min_samples = {min_samples}, "
+        f"cluster_selection_epsilon = {cluster_selection_epsilon}"
+    )
+
+    # Compute the correlation matrix and derive a distance matrix (distance = 1 - correlation)
     corr_matrix = compute_correlation_matrix(returns_df)
     distance_matrix = 1 - corr_matrix
 
-    # Perform HDBSCAN clustering using the precomputed distance matrix
+    # Run HDBSCAN with the suggested parameters
     clusterer = hdbscan.HDBSCAN(
-        metric="precomputed", min_cluster_size=min_cluster_size, min_samples=min_samples
+        metric="precomputed",
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        cluster_selection_epsilon=cluster_selection_epsilon,
     )
     cluster_labels = clusterer.fit_predict(distance_matrix)
 
+    # Evaluate clusters: this function penalizes giant clusters
     quality = evaluate_clusters(returns_df, cluster_labels, max_cluster_fraction=0.5)
     if quality < 0:
         logger.info(
             f"Trial {trial.number}: Invalid clustering (e.g., giant cluster). Quality = {quality}"
         )
         return -1.0  # Penalize invalid clustering outcomes
+
     logger.info(
         f"Trial {trial.number}: Average intra-cluster correlation = {quality:.4f}"
     )
