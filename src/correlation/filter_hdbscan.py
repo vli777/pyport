@@ -56,12 +56,12 @@ def filter_correlated_groups_hdbscan(
         param in cached_params
         for param in [
             "min_cluster_size",
-            "min_samples_fraction",
+            "min_samples",
             "cluster_selection_epsilon",
         ]
     ):
         min_cluster_size = cached_params["min_cluster_size"]
-        min_samples = cached_params["min_samples_fraction"]
+        min_samples = cached_params["min_samples"]
         cluster_selection_epsilon = cached_params["cluster_selection_epsilon"]
     else:
         reoptimize = True
@@ -71,11 +71,12 @@ def filter_correlated_groups_hdbscan(
             returns_df=returns_df, n_trials=50
         )
         min_cluster_size = best_params["min_cluster_size"]
-        min_samples = best_params["min_samples_fraction"]
+        min_samples_fraction = best_params["min_samples_fraction"]
+        min_samples = int(np.ceil(min_cluster_size * min_samples_fraction))
         cluster_selection_epsilon = best_params["cluster_selection_epsilon"]
 
         cached_params["min_cluster_size"] = min_cluster_size
-        cached_params["min_samples_fraction"] = min_samples
+        cached_params["min_samples"] = min_samples
         cached_params["cluster_selection_epsilon"] = cluster_selection_epsilon
 
         save_parameters_to_pickle(cached_params, cache_filename)
