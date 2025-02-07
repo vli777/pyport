@@ -67,7 +67,7 @@ def kappa_ratio(returns: pd.Series, order: int = 3, mar: float = 0.0) -> float:
 
 
 def calculate_portfolio_alpha(
-    filtered_returns: pd.DataFrame,
+    portfolio_returns: pd.DataFrame,
     market_returns: pd.Series,
     risk_free_rate: float = 0.0,
 ) -> float:
@@ -75,19 +75,19 @@ def calculate_portfolio_alpha(
     Calculate the portfolio's alpha using the CAPM model.
 
     Args:
-        filtered_returns (pd.DataFrame): Returns of filtered tickers.
+        portfolio_returns (pd.DataFrame): Portfolio returns.
         market_returns (pd.Series): Market index returns.
         risk_free_rate (float, optional): Risk-free rate. Defaults to 0.0.
 
     Returns:
         float: Portfolio alpha.
     """
-    if filtered_returns.empty or market_returns.empty:
+    if portfolio_returns.empty or market_returns.empty:
         logger.warning("Filtered or market returns are empty. Returning alpha=0.0")
         return 0.0
 
     # Compute portfolio return dynamically
-    portfolio_returns = filtered_returns.mean(axis=1)
+    portfolio_returns = portfolio_returns.mean(axis=1)
 
     # Align market_returns with portfolio_returns and **forward-fill missing data**
     market_returns = market_returns.reindex(portfolio_returns.index).ffill()
@@ -175,10 +175,10 @@ def calculate_portfolio_performance(
     portfolio_cumulative_returns = (portfolio_returns + 1).cumprod()
 
     # 4) Combine daily & cumulative returns
-    portfolio_returns_df = portfolio_returns.to_frame(name="SIM_PORT")
+    portfolio_portfolio_returns = portfolio_returns.to_frame(name="SIM_PORT")
     portfolio_cumulative_df = portfolio_cumulative_returns.to_frame(name="SIM_PORT")
 
-    all_daily_returns = returns.join(portfolio_returns_df)
+    all_daily_returns = returns.join(portfolio_portfolio_returns)
     all_cumulative_returns = (portfolio_cumulative_df - 1).join(
         returns.add(1).cumprod() - 1
     )

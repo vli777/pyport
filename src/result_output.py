@@ -1,9 +1,11 @@
+from pathlib import Path
 import sys
 from typing import Any, Dict, Optional
 import pandas as pd
 
 from config import Config
 from utils.performance_metrics import (
+    calculate_portfolio_alpha,
     calculate_portfolio_performance,
     kappa_ratio,
     max_drawdown,
@@ -74,6 +76,27 @@ def output(
     max_dd = max_drawdown(portfolio_cumulative_returns)
     time_uw = time_under_water(portfolio_cumulative_returns)
 
+    # --- Load SPY data and compute market returns over the same period
+    spy_file = Path(config.data_dir) / "SPY.parquet"
+    try:
+        spy_data = pd.read_parquet(spy_file)
+    except Exception as e:
+        logger.error(f"Error loading SPY data from {spy_file}: {e}")
+        raise
+
+    if "Adj Close" in spy_data.columns:
+        market_returns = spy_data["Adj Close"].pct_change().dropna()
+    elif "Close" in spy_data.columns:
+        market_returns = spy_data["Close"].pct_change().dropna()
+    else:
+        raise ValueError("SPY data missing 'Adj Close' or 'Close' columns.")
+
+    # Filter market_returns to match the analysis period
+    market_returns = market_returns.loc[start_date:end_date]
+    alpha = calculate_portfolio_alpha(
+        portfolio_returns=portfolio_returns, market_returns=market_returns
+    )
+
     # Logging results
     if inputs is not None:
         logger.info(f"\n\nWatchlist Inputs: {inputs}")
@@ -87,6 +110,7 @@ def output(
     logger.info(f"Portfolio volatility: {round(volatility * 100, 2)}%")
     logger.info(f"Max drawdown: {round(max_dd * 100, 2)}%")
     logger.info(f"Time under water: {time_uw} days")
+    logger.info(f"Portfolio Alpha vs SPY: {alpha:.4f}")
     logger.info(f"Cumulative return: {cumulative_pct}%")
     logger.info(f"Portfolio allocation weights (min {config.min_weight:.2f}):")
 
