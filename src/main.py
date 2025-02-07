@@ -65,11 +65,11 @@ def iterative_pipeline_runner(
     for epoch in range(max_epochs):
         print(f"Epoch {epoch + 1}")
 
-        # Enable plots only in the first epoch
+        # Enable filters only in the first epoch
         if epoch > 0:
-            config.plot_clustering = False
-            config.plot_anomalies = False
-            config.plot_reversion = False
+            config.use_anomaly_filter = False
+            config.use_decorrelation = False
+            config.use_mean_reversion = False
 
         # Run the pipeline
         result = run_pipeline(
@@ -138,6 +138,6 @@ if __name__ == "__main__":
     final_result = iterative_pipeline_runner(
         config=config,
         initial_symbols=None,  # Or provide initial symbols as needed
-        max_epochs=1,
+        max_epochs=10,
         run_local=True,
     )
