@@ -69,8 +69,8 @@ def run_pipeline(
             f"Loading data for symbols: {all_symbols} from {start_date} to {end_date}"
         )
         try:
-            # data = process_symbols(
-            data = download_multi_ticker_data(
+            data = process_symbols(
+                # data = download_multi_ticker_data(
                 symbols=all_symbols,
                 start_date=start_date,
                 end_date=end_date,

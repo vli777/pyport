@@ -88,12 +88,12 @@ def process_input_files(input_file_paths):
                             logger.debug(
                                 f"Checking validity for ticker: {cleaned_line}"
                             )
-                            if is_valid_ticker(cleaned_line):
-                                symbols.add(cleaned_line)
-                            else:
-                                logger.warning(
-                                    f"Ignoring invalid ticker symbol: {cleaned_line}"
-                                )
+                            # if is_valid_ticker(cleaned_line):
+                            symbols.add(cleaned_line)
+                            # else:
+                            #     logger.warning(
+                            #         f"Ignoring invalid ticker symbol: {cleaned_line}"
+                            #     )
                         else:
                             logger.warning(
                                 f"Ticker '{original}' cleaned to '{cleaned_line}' does not match pattern."
@@ -328,8 +328,9 @@ def force_unique_index(df):
     return df_reset.drop_duplicates(subset=idx_name, keep="first").set_index(idx_name)
 
 
-
-def download_multi_ticker_data(symbols, start_date, end_date, data_path, download=False) -> pd.DataFrame:
+def download_multi_ticker_data(
+    symbols, start_date, end_date, data_path, download=False
+) -> pd.DataFrame:
     """
     Downloads data for multiple tickers at once using yfinance.download.
     It checks for cached data in `data_path` (as individual Parquet files). For any ticker
@@ -348,7 +349,7 @@ def download_multi_ticker_data(symbols, start_date, end_date, data_path, downloa
     """
     data_path = Path(data_path)
     data_path.mkdir(parents=True, exist_ok=True)
-    
+
     tickers_to_download = []
     cached_data = {}
 
@@ -375,7 +376,7 @@ def download_multi_ticker_data(symbols, start_date, end_date, data_path, downloa
             start=start_date,
             end=end_date,
             auto_adjust=False,
-            threads=True
+            threads=True,
         )
         # When using multiple tickers, the resulting DataFrame typically has a MultiIndex on columns.
         if isinstance(df_downloaded.columns, pd.MultiIndex):
@@ -384,7 +385,7 @@ def download_multi_ticker_data(symbols, start_date, end_date, data_path, downloa
                 if symbol in df_downloaded.columns.levels[0]:
                     df_symbol = df_downloaded[symbol].copy()
                     # Remove duplicate indices if any
-                    df_symbol = df_symbol.loc[~df_symbol.index.duplicated(keep='first')]
+                    df_symbol = df_symbol.loc[~df_symbol.index.duplicated(keep="first")]
                     # (Optional) Reformat the DataFrame if needed
                     df_symbol = format_to_df_format(df_symbol, symbol)
                     cached_data[symbol] = df_symbol
@@ -395,12 +396,12 @@ def download_multi_ticker_data(symbols, start_date, end_date, data_path, downloa
         else:
             # In some cases, yf.download may return a dict-like structure.
             for symbol, df_symbol in df_downloaded.items():
-                df_symbol = df_symbol.loc[~df_symbol.index.duplicated(keep='first')]
+                df_symbol = df_symbol.loc[~df_symbol.index.duplicated(keep="first")]
                 df_symbol = format_to_df_format(df_symbol, symbol)
                 cached_data[symbol] = df_symbol
                 file_path = data_path / f"{symbol}.parquet"
                 df_symbol.to_parquet(file_path)
-    
+
     # Combine cached data into a single DataFrame with multi-index columns
     combined_data = None
     for symbol, df in cached_data.items():
@@ -409,16 +410,18 @@ def download_multi_ticker_data(symbols, start_date, end_date, data_path, downloa
         if combined_data is None:
             combined_data = df
         else:
-            combined_data = combined_data.join(df, how='outer')
-            combined_data = combined_data.loc[~combined_data.index.duplicated(keep='first')]
-    
+            combined_data = combined_data.join(df, how="outer")
+            combined_data = combined_data.loc[
+                ~combined_data.index.duplicated(keep="first")
+            ]
+
     if combined_data is not None:
         combined_data.sort_index(inplace=True)
         combined_data.ffill(inplace=True)
         combined_data.bfill(inplace=True)
         # Optionally, drop rows that are completely NaN
-        combined_data.dropna(how='all', inplace=True)
+        combined_data.dropna(how="all", inplace=True)
     else:
         combined_data = pd.DataFrame()
-    
+
     return combined_data
