@@ -1,4 +1,6 @@
+import time
 from typing import Optional
+import unicodedata
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -11,49 +13,102 @@ from utils.date_utils import get_last_date
 from .logger import logger
 
 
-def is_valid_ticker(symbol):
-    try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        return True
-    except:
-        return False
+def is_valid_ticker(symbol, retries=3, delay=20):
+    """
+    Checks if a ticker is valid using yfinance.
+    Retries if transient errors occur (such as rate limits or unauthorized responses).
+    """
+    for attempt in range(1, retries + 1):
+        try:
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            # If info is not empty, assume the ticker is valid.
+            if info:
+                return True
+            else:
+                logger.error(f"No info returned for {symbol}.")
+                return False
+        except Exception as e:
+            error_msg = str(e)
+            # If the error seems transient, retry.
+            if "Too Many Requests" in error_msg or "Unauthorized" in error_msg:
+                logger.warning(
+                    f"Attempt {attempt}/{retries} for {symbol} failed with error: {error_msg}"
+                )
+                time.sleep(delay)
+            else:
+                logger.error(f"Error validating ticker {symbol}: {error_msg}")
+                return False
+    # If all attempts fail, consider the ticker invalid.
+    return False
+
+
+def clean_ticker(ticker):
+    """
+    Normalize the ticker string by removing special characters and converting to uppercase.
+    """
+    # Normalize to NFKD, then encode to ASCII (ignoring errors) and decode back to a string.
+    normalized = unicodedata.normalize("NFKD", ticker)
+    ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
+    # Remove any non-alphabetical characters.
+    cleaned = re.sub(r"[^A-Za-z]", "", ascii_text)
+    return cleaned.upper()
 
 
 def process_input_files(input_file_paths):
     """
-    Reads CSV files, extracts valid ticker symbols, and returns a sorted list of unique symbols.
+    Reads CSV files, cleans ticker symbols by removing special characters and encoding issues,
+    writes the cleaned tickers back to the CSV, and extracts valid ticker symbols.
     A valid ticker consists solely of uppercase alphabetical characters and passes the `is_valid_ticker` check.
     """
     symbols = set()
 
     for file_path in input_file_paths:
-        # Ensure the file has a .csv suffix
+        # Ensure the file has a .csv suffix.
         if file_path.suffix.lower() != ".csv":
             file_path = file_path.with_suffix(".csv")
 
+        cleaned_lines = []
         try:
             with file_path.open("r", encoding="utf-8") as file:
                 for line in file:
-                    # Convert each ticker to uppercase so that mixed-case entries are normalized.
-                    ticker = line.strip().upper()
-                    # Skip empty or commented lines.
-                    if not ticker or ticker.startswith("#"):
+                    original = line.strip()
+                    if not original:
                         continue
+                    # Leave comments unchanged.
+                    if original.startswith("#"):
+                        cleaned_line = original
+                    else:
+                        cleaned_line = clean_ticker(original)
+                    cleaned_lines.append(cleaned_line)
 
-                    # Only allow fully alphabetic tickers.
-                    if re.fullmatch(r"[A-Z]+", ticker):
-                        logger.debug(f"Checking validity for ticker: {ticker}")
-                        if is_valid_ticker(ticker):
-                            symbols.add(ticker)
+                    # Process non-comment lines.
+                    if not cleaned_line.startswith("#") and cleaned_line:
+                        if re.fullmatch(r"[A-Z]+", cleaned_line):
+                            logger.debug(
+                                f"Checking validity for ticker: {cleaned_line}"
+                            )
+                            if is_valid_ticker(cleaned_line):
+                                symbols.add(cleaned_line)
+                            else:
+                                logger.warning(
+                                    f"Ignoring invalid ticker symbol: {cleaned_line}"
+                                )
                         else:
-                            logger.warning(f"Ignoring invalid ticker symbol: {ticker}")
+                            logger.warning(
+                                f"Ticker '{original}' cleaned to '{cleaned_line}' does not match pattern."
+                            )
+            # Overwrite the file with cleaned tickers.
+            with file_path.open("w", encoding="utf-8") as file:
+                for cl in cleaned_lines:
+                    file.write(cl + "\n")
         except FileNotFoundError:
             logger.warning(f"File not found: {file_path}")
         except Exception as e:
             logger.warning(f"Error processing file {file_path}: {e}")
 
-    logger.info(f"Processed file: {file_path}")
+        logger.info(f"Processed file: {file_path}")
+
     return sorted(symbols)
 
 
@@ -260,3 +315,14 @@ def ensure_unique_timestamps(
             f"{symbol}: Removed {len(duplicates.unique())} duplicated timestamps."
         )
     return df
+
+
+def force_unique_index(df):
+    """
+    Reset the index, drop duplicates based on the index column, and reassign the index.
+    This uses the current index name if available; otherwise, it uses "index".
+    """
+    idx_name = df.index.name if df.index.name is not None else "index"
+    df_reset = df.reset_index()
+    # Now use the actual index column name for dropping duplicates.
+    return df_reset.drop_duplicates(subset=idx_name, keep="first").set_index(idx_name)
