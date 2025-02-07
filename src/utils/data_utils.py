@@ -13,7 +13,7 @@ from utils.date_utils import get_last_date
 from .logger import logger
 
 
-def is_valid_ticker(symbol, retries=0, delay=0):
+def is_valid_ticker(symbol, retries=3, delay=20):
     """
     Checks if a ticker is valid using yfinance.
     Retries if transient errors occur (such as rate limits or unauthorized responses).
