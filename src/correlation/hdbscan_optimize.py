@@ -2,8 +2,10 @@ import numpy as np
 import pandas as pd
 import optuna
 import hdbscan
+import math
+
 from correlation.correlation_utils import compute_correlation_matrix
-from utils import logger
+from utils.logger import logger
 
 
 def evaluate_clusters(
@@ -12,16 +14,8 @@ def evaluate_clusters(
     max_cluster_fraction: float = 0.5,
 ) -> float:
     """
-    Evaluate the clustering quality by calculating the average intra-cluster correlation.
-    Penalize results if any cluster (excluding noise) is too large.
-
-    Args:
-        returns_df (pd.DataFrame): Asset returns (dates as index, assets as columns).
-        cluster_labels (np.ndarray): Cluster labels from the clustering algorithm.
-        max_cluster_fraction (float): Maximum allowable fraction of assets in a cluster.
-
-    Returns:
-        float: Average intra-cluster correlation, or -1.0 if a giant cluster is found.
+    Evaluate clustering quality by calculating average intra-cluster correlation.
+    Penalize if any cluster (excluding noise) is too large or if there are too few clusters.
     """
     # Exclude noise points (label == -1)
     valid_labels = cluster_labels[cluster_labels != -1]
@@ -35,13 +29,16 @@ def evaluate_clusters(
     if np.any(counts / total_assets > max_cluster_fraction):
         return -1.0
 
+    # Penalize if there are too few clusters
+    min_cluster_count = max(3, math.ceil(math.sqrt(total_assets) / 2))
+    if len(unique_labels) < min_cluster_count:
+        return -1.0
+
     correlations = []
-    # Calculate intra-cluster correlations for clusters with more than one asset
     for label in unique_labels:
         assets = returns_df.columns[cluster_labels == label]
         if len(assets) > 1:
             corr_matrix = returns_df[assets].corr().values
-            # Extract the upper-triangle values (excluding the diagonal)
             mask = np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
             correlations.extend(corr_matrix[mask])
 
@@ -52,39 +49,45 @@ def objective_hdbscan_decorrelation(
     trial: optuna.Trial, returns_df: pd.DataFrame
 ) -> float:
     """
-    Args:
-        trial (optuna.Trial): Current Optuna trial.
-        returns_df (pd.DataFrame): DataFrame with dates as index and asset returns as columns.
-
-    Returns:
-        float: The average intra-cluster correlation as the quality metric (to maximize).
+    Optimize HDBSCAN parameters for clustering asset returns.
+    This function tunes:
+      - min_cluster_size over a range surrounding the √(n_assets) heuristic,
+      - min_samples (as a fraction of min_cluster_size), and
+      - cluster_selection_epsilon.
     """
-    # Suggest a minimum cluster size between 2 and 10.
-    min_cluster_size = trial.suggest_int("min_cluster_size", 2, 10)
+    n_assets = returns_df.shape[1]
+    # Compute baseline min_cluster_size using √(n_assets)
+    sqrt_n = math.ceil(math.sqrt(n_assets))
+    # Define a range around the baseline—for example, ±3 (ensuring a lower bound of 3)
+    min_cluster_size_lower = max(3, sqrt_n - 3)
+    min_cluster_size_upper = sqrt_n + 3
+    min_cluster_size = trial.suggest_int(
+        "min_cluster_size", min_cluster_size_lower, min_cluster_size_upper
+    )
 
-    # Instead of allowing min_samples to be low (which may allow giant, loosely connected clusters),
-    # require that min_samples is a high fraction of min_cluster_size.
+    # Tune min_samples as a fraction of min_cluster_size
     min_samples_fraction = trial.suggest_float(
         "min_samples_fraction", 0.8, 1.0, step=0.05
     )
     min_samples = int(np.ceil(min_cluster_size * min_samples_fraction))
 
-    # Suggest a cluster_selection_epsilon parameter (0 means default behavior)
+    # Tune cluster_selection_epsilon over a wider range
     cluster_selection_epsilon = trial.suggest_float(
-        "cluster_selection_epsilon", 0.0, 0.3, step=0.05
+        "cluster_selection_epsilon", 0.0, 1.0, step=0.1
     )
 
     logger.info(
         f"Trial {trial.number}: Testing parameters: "
-        f"min_cluster_size = {min_cluster_size}, min_samples = {min_samples}, "
+        f"min_cluster_size = {min_cluster_size} (range: {min_cluster_size_lower}-{min_cluster_size_upper}), "
+        f"min_samples = {min_samples}, "
         f"cluster_selection_epsilon = {cluster_selection_epsilon}"
     )
 
-    # Compute the correlation matrix and derive a distance matrix (distance = 1 - correlation)
+    # Compute correlation and distance matrices
     corr_matrix = compute_correlation_matrix(returns_df)
     distance_matrix = 1 - corr_matrix
 
-    # Run HDBSCAN with the suggested parameters
+    # Run HDBSCAN clustering
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
         min_cluster_size=min_cluster_size,
@@ -93,14 +96,14 @@ def objective_hdbscan_decorrelation(
     )
     cluster_labels = clusterer.fit_predict(distance_matrix)
 
-    # Evaluate clusters: this function penalizes giant clusters
-    quality = evaluate_clusters(returns_df, cluster_labels, max_cluster_fraction=0.5)
+    quality = evaluate_clusters(
+        returns_df, cluster_labels, max_cluster_fraction=0.5, min_cluster_count=5
+    )
     if quality < 0:
         logger.info(
-            f"Trial {trial.number}: Invalid clustering (e.g., giant cluster). Quality = {quality}"
+            f"Trial {trial.number}: Invalid clustering (giant cluster or too few clusters). Quality = {quality}"
         )
-        return -1.0  # Penalize invalid clustering outcomes
-
+        return -1.0
     logger.info(
         f"Trial {trial.number}: Average intra-cluster correlation = {quality:.4f}"
     )
@@ -111,15 +114,7 @@ def run_hdbscan_decorrelation_study(
     returns_df: pd.DataFrame, n_trials: int = 50
 ) -> dict:
     """
-    Run an Optuna study to optimize HDBSCAN parameters for clustering asset returns.
-    The goal is to produce tight clusters (with high intra‑cluster correlations) without one giant cluster.
-
-    Args:
-        returns_df (pd.DataFrame): DataFrame with dates as index and asset returns as columns.
-        n_trials (int): Number of Optuna trials to run.
-
-    Returns:
-        dict: Best parameters found by the study.
+    Run an Optuna study to optimize HDBSCAN parameters.
     """
     study = optuna.create_study(direction="maximize")
     study.optimize(
