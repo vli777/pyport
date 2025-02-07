@@ -163,8 +163,7 @@ def run_pipeline(
         try:
             decorrelated_tickers = filter_correlated_groups_dbscan(
                 returns_df=returns_df,
-                risk_free_rate=config.risk_free_rate,
-                eps=0.7,
+                risk_free_rate=config.risk_free_rate,                
                 min_samples=2,
                 top_n_per_cluster=config.top_n_candidates,
                 plot=config.plot_clustering,
