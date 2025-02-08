@@ -102,6 +102,7 @@ def run_dbscan_decorrelation_study(
     study.optimize(
         lambda trial: objective_dbscan_decorrelation(trial, returns_df, min_samples),
         n_trials=n_trials,
+        sampler=optuna.samplers.TPESampler(seed=42),
     )
 
     best_params = study.best_trial.params
