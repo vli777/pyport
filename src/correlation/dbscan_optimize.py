@@ -11,12 +11,12 @@ def evaluate_dbscan_clusters(
     returns_df: pd.DataFrame, cluster_labels: np.ndarray
 ) -> float:
     """
-    Evaluate DBSCAN clustering quality by computing the average intra‑cluster correlation.
+    Evaluate DBSCAN clustering quality by computing the average intra-cluster correlation.
     Only clusters with at least two assets are considered. Noise (label == -1) or singletons
     are ignored.
 
     Returns:
-        float: Average intra‑cluster correlation (the higher, the better).
+        float: Average intra-cluster correlation (the higher, the better).
                Returns -1.0 if no valid clusters are found.
     """
     corr_matrix = compute_correlation_matrix(returns_df)

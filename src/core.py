@@ -165,7 +165,6 @@ def run_pipeline(
             decorrelated_tickers = filter_correlated_groups_hdbscan(
                 returns_df=returns_df,
                 risk_free_rate=config.risk_free_rate,
-                min_samples=2,
                 top_n_per_cluster=config.top_n_candidates,
                 plot=config.plot_clustering,
                 cache_dir="optuna_cache",
@@ -334,7 +333,7 @@ def run_pipeline(
             logger.info(
                 f"Test mode active: saved full_df.csv and limited data to {visible_length} records."
             )
-
+        
         logger.info(f"Running optimization with {valid_symbols}")
         run_optimization_and_save(
             df=df_period,

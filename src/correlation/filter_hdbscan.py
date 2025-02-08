@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from datetime import date
 from typing import List, Union
@@ -16,8 +17,8 @@ from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_
 def filter_correlated_groups_hdbscan(
     returns_df: pd.DataFrame,
     risk_free_rate: float = 0.0,
-    min_cluster_size: Union[int, None] = None,
     min_samples: int = 2,
+    epsilon: float = 0.3,
     top_n_per_cluster: int = 1,
     plot: bool = False,
     cache_dir: str = "optuna_cache",
@@ -55,14 +56,12 @@ def filter_correlated_groups_hdbscan(
     if all(
         param in cached_params
         for param in [
-            "min_cluster_size",
             "min_samples",
-            "cluster_selection_epsilon",
+            "epsilon",
         ]
     ):
-        min_cluster_size = cached_params["min_cluster_size"]
         min_samples = cached_params["min_samples"]
-        cluster_selection_epsilon = cached_params["cluster_selection_epsilon"]
+        epsilon = cached_params["epsilon"]
     else:
         reoptimize = True
 
@@ -70,28 +69,25 @@ def filter_correlated_groups_hdbscan(
         best_params = run_hdbscan_decorrelation_study(
             returns_df=returns_df, n_trials=50
         )
-        min_cluster_size = best_params["min_cluster_size"]
-        min_samples_fraction = best_params["min_samples_fraction"]
-        min_samples = int(np.ceil(min_cluster_size * min_samples_fraction))
-        cluster_selection_epsilon = best_params["cluster_selection_epsilon"]
-
-        cached_params["min_cluster_size"] = min_cluster_size
-        cached_params["min_samples"] = min_samples
-        cached_params["cluster_selection_epsilon"] = cluster_selection_epsilon
-
+        min_samples = best_params["min_samples"]
+        epsilon = best_params["epsilon"]
+        cached_params = {
+            "min_samples": min_samples,
+            "epsilon": epsilon,
+        }
         save_parameters_to_pickle(cached_params, cache_filename)
 
-    # Compute the correlation matrix
+    # Compute correlation and convert to distance.
     corr_matrix = compute_correlation_matrix(returns_df)
-    # Convert correlation to distance: distance = 1 - correlation.
     distance_matrix = 1 - corr_matrix
 
     # Cluster assets with HDBSCAN using the precomputed distance matrix.
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
-        min_cluster_size=min_cluster_size,
+        min_cluster_size=2,
         min_samples=min_samples,
-        cluster_selection_epsilon=cluster_selection_epsilon,
+        cluster_selection_epsilon=epsilon,
+        cluster_selection_method="leaf",
     )
     cluster_labels = clusterer.fit_predict(distance_matrix)
 
@@ -99,8 +95,8 @@ def filter_correlated_groups_hdbscan(
     clusters = {}
     for ticker, label in zip(returns_df.columns, cluster_labels):
         clusters.setdefault(label, []).append(ticker)
-
-    logger.info(f"Total clusters found: {len(clusters)}")
+    num_clusters = len(np.unique(cluster_labels[cluster_labels != -1]))
+    logger.info(f"Total clusters found: {num_clusters}")
 
     # Compute performance metrics (this function should compute a composite score or similar)
     perf_series = compute_performance_metrics(returns_df, risk_free_rate)
@@ -149,7 +145,11 @@ def visualize_clusters_tsne(
     asset_data = returns_df.T
 
     # Optionally, you can standardize the data here if needed.
-    tsne = TSNE(perplexity=perplexity, max_iter=max_iter, random_state=42)
+    tsne = TSNE(
+        perplexity=min(perplexity, math.ceil(math.sqrt(asset_data.shape[1]))),
+        max_iter=max_iter,
+        random_state=42,
+    )
     tsne_results = tsne.fit_transform(asset_data)
 
     # Create a DataFrame for plotting.

@@ -11,13 +11,11 @@ from utils.logger import logger
 def evaluate_clusters(
     returns_df: pd.DataFrame,
     cluster_labels: np.ndarray,
-    max_cluster_fraction: float = 0.5,
 ) -> float:
     """
-    Evaluate clustering quality by calculating average intra-cluster correlation.
-    Penalize if any cluster (excluding noise) is too large or if there are too few clusters.
+    Evaluate clustering quality by computing the average intra-cluster correlation.
     """
-    # Exclude noise points (label == -1)
+    # Exclude noise points
     valid_labels = cluster_labels[cluster_labels != -1]
     if len(valid_labels) == 0:
         return -1.0  # No valid clusters
@@ -25,13 +23,9 @@ def evaluate_clusters(
     total_assets = returns_df.shape[1]
     unique_labels, counts = np.unique(valid_labels, return_counts=True)
 
-    # Penalize if any cluster is too large
-    if np.any(counts / total_assets > max_cluster_fraction):
-        return -1.0
-
-    # Penalize if there are too few clusters
-    min_cluster_count = max(3, math.ceil(math.sqrt(total_assets) / 2))
-    if len(unique_labels) < min_cluster_count:
+    # Penalize if there are too few clusters overall
+    min_cluster_count = math.ceil(math.sqrt(total_assets))
+    if len(unique_labels) < min_cluster_count / 2:
         return -1.0
 
     correlations = []
@@ -41,7 +35,6 @@ def evaluate_clusters(
             corr_matrix = returns_df[assets].corr().values
             mask = np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
             correlations.extend(corr_matrix[mask])
-
     return np.mean(correlations) if correlations else -1.0
 
 
@@ -52,36 +45,14 @@ def objective_hdbscan_decorrelation(
     Optimize HDBSCAN parameters for clustering asset returns.
     This function tunes:
       - min_cluster_size over a range surrounding the √(n_assets) heuristic,
-      - min_samples (as a fraction of min_cluster_size), and
-      - cluster_selection_epsilon.
+      - min_samples, and
+      - epsilon.
     """
     n_assets = returns_df.shape[1]
-    # Compute baseline min_cluster_size using √(n_assets)
     sqrt_n = math.ceil(math.sqrt(n_assets))
-    # Define a range around the baseline—for example, ±3 (ensuring a lower bound of 3)
-    min_cluster_size_lower = max(3, sqrt_n - 3)
-    min_cluster_size_upper = sqrt_n + 3
-    min_cluster_size = trial.suggest_int(
-        "min_cluster_size", min_cluster_size_lower, min_cluster_size_upper
-    )
 
-    # Tune min_samples as a fraction of min_cluster_size
-    min_samples_fraction = trial.suggest_float(
-        "min_samples_fraction", 0.8, 1.0, step=0.05
-    )
-    min_samples = int(np.ceil(min_cluster_size * min_samples_fraction))
-
-    # Tune cluster_selection_epsilon over a wider range
-    cluster_selection_epsilon = trial.suggest_float(
-        "cluster_selection_epsilon", 0.0, 1.0, step=0.1
-    )
-
-    logger.info(
-        f"Trial {trial.number}: Testing parameters: "
-        f"min_cluster_size = {min_cluster_size} (range: {min_cluster_size_lower}-{min_cluster_size_upper}), "
-        f"min_samples = {min_samples}, "
-        f"cluster_selection_epsilon = {cluster_selection_epsilon}"
-    )
+    min_samples = trial.suggest_int("min_samples", 2, sqrt_n, step = 1)
+    epsilon = trial.suggest_float("epsilon", 0.0, 1.0, step=0.01)
 
     # Compute correlation and distance matrices
     corr_matrix = compute_correlation_matrix(returns_df)
@@ -90,22 +61,20 @@ def objective_hdbscan_decorrelation(
     # Run HDBSCAN clustering
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
-        min_cluster_size=min_cluster_size,
+        min_cluster_size=2,
         min_samples=min_samples,
-        cluster_selection_epsilon=cluster_selection_epsilon,
+        cluster_selection_epsilon=epsilon,
+        cluster_selection_method="leaf",
     )
     cluster_labels = clusterer.fit_predict(distance_matrix)
 
-    quality = evaluate_clusters(
-        returns_df, cluster_labels, max_cluster_fraction=0.5, min_cluster_count=5
-    )
+    quality = evaluate_clusters(returns_df, cluster_labels)
     if quality < 0:
-        logger.info(
-            f"Trial {trial.number}: Invalid clustering (giant cluster or too few clusters). Quality = {quality}"
-        )
+        logger.info(f"Trial {trial.number}: Invalid clustering. Quality={quality}")
         return -1.0
+    num_clusters = len(np.unique(cluster_labels[cluster_labels != -1]))
     logger.info(
-        f"Trial {trial.number}: Average intra-cluster correlation = {quality:.4f}"
+        f"Trial {trial.number}: Quality={quality:.4f}, Number of clusters={num_clusters}"
     )
     return quality
 
