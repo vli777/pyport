@@ -3,6 +3,8 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
+from utils.logger import logger
+
 
 def plot_reversion_params(data_dict):
     """
@@ -115,6 +117,10 @@ def plot_reversion_signals(data):
     # Convert data to DataFrame
     df = pd.DataFrame(list(data.items()), columns=["Asset", "Value"])
     df = df[df["Value"] != 0]  # Remove zero values if any
+    if df.empty:
+        logger.info("No non-zero values remaining in reversion signals. Skipping plot.")
+        return
+
     df = df.sort_values(by="Value")
 
     # Determine min and max for scaling
