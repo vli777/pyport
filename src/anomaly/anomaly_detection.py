@@ -124,13 +124,12 @@ def remove_anomalous_stocks(
         else "No stocks were removed."
     )
 
-    if plot and cache:
+    if plot and cache and anomalous_stocks:
         optimization_summary = list(cache.values())
         plot_optimization_summary(
             optimization_summary=optimization_summary,
             max_anomaly_fraction=max_anomaly_fraction,
         )
-    if plot and anomalous_stocks:
         plot_anomaly_overview(anomalous_stocks, cache, returns_df)
 
     return valid_tickers
