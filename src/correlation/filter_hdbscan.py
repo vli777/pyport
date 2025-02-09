@@ -42,24 +42,13 @@ def filter_correlated_groups_hdbscan(
     Returns:
         list(str): A list of selected ticker symbols after decorrelation.
     """
-    # Ensure the cache directory exists
+    # Load from cache
     cache_path = Path(cache_dir)
     cache_path.mkdir(parents=True, exist_ok=True)
-
-    # Create a cache filename (this can be based on date range, etc.)
-    # start_date = returns_df.index.min().strftime("%Y%m%d")
-    # end_date = returns_df.index.max().strftime("%Y%m%d")
     cache_filename = cache_path / "hdbscan_params.pkl"
     cached_params = load_parameters_from_pickle(cache_filename) or {}
 
-    # Use cached parameters if available, otherwise reoptimize
-    if all(
-        param in cached_params
-        for param in [
-            "min_samples",
-            "epsilon",
-        ]
-    ):
+    if all(param in cached_params for param in ["min_samples", "epsilon"]):
         min_samples = cached_params["min_samples"]
         epsilon = cached_params["epsilon"]
     else:
@@ -71,17 +60,14 @@ def filter_correlated_groups_hdbscan(
         )
         min_samples = best_params["min_samples"]
         epsilon = best_params["epsilon"]
-        cached_params = {
-            "min_samples": min_samples,
-            "epsilon": epsilon,
-        }
+        cached_params = {"min_samples": min_samples, "epsilon": epsilon}
         save_parameters_to_pickle(cached_params, cache_filename)
 
-    # Compute correlation and convert to distance.
+    # Compute correlation and convert to a normalized distance matrix
     corr_matrix = compute_correlation_matrix(returns_df)
-    distance_matrix = 1 - corr_matrix
+    distance_matrix = (1 - corr_matrix) / 2  # Normalized to 0–1
 
-    # Cluster assets with HDBSCAN using the precomputed distance matrix.
+    # Cluster assets using HDBSCAN with the normalized distance matrix
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
         min_cluster_size=2,

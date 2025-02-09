@@ -61,9 +61,9 @@ def objective_dbscan_decorrelation(
     eps = trial.suggest_float("eps", 0.01, 1.0, log=True)
     logger.info(f"Trial {trial.number}: Testing eps = {eps:.4f}")
 
-    # Compute correlation and derive the distance matrix (distance = 1 - correlation)
+    # Compute correlation and normalized distance matrix (0 to 1)
     corr_matrix = compute_correlation_matrix(returns_df)
-    distance_matrix = 1 - corr_matrix
+    distance_matrix = (1 - corr_matrix) / 2
 
     # Run DBSCAN clustering with the trial-suggested eps.
     dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
