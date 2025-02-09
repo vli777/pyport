@@ -19,7 +19,6 @@ def filter_correlated_groups_hdbscan(
     risk_free_rate: float = 0.0,
     min_samples: int = 2,
     epsilon: float = 0.3,
-    top_n_per_cluster: int = 1,
     plot: bool = False,
     cache_dir: str = "optuna_cache",
     reoptimize: bool = False,
@@ -34,7 +33,6 @@ def filter_correlated_groups_hdbscan(
         risk_free_rate (float): Risk-free rate for performance metric calculation.
         min_cluster_size (int, optional): The minimum cluster size for HDBSCAN.
         min_samples (int): Minimum samples for a core point in HDBSCAN.
-        top_n_per_cluster (int): How many top assets to select from each cluster.
         plot (bool): If True, display a visualization of clusters.
         cache_dir (str): Directory path to cache optimized HDBSCAN parameters.
         reoptimize (bool): If True, force re-optimization of HDBSCAN parameters.
@@ -48,19 +46,32 @@ def filter_correlated_groups_hdbscan(
     cache_filename = cache_path / "hdbscan_params.pkl"
     cached_params = load_parameters_from_pickle(cache_filename) or {}
 
-    if all(param in cached_params for param in ["min_samples", "epsilon"]):
-        min_samples = cached_params["min_samples"]
+    if all(
+        param in cached_params
+        for param in [
+            "epsilon",
+            "alpha",
+            "cluster_selection_epsilon_max",
+        ]
+    ):
         epsilon = cached_params["epsilon"]
+        alpha = cached_params["alpha"]
+        cluster_selection_epsilon_max = cached_params["cluster_selection_epsilon_max"]
     else:
         reoptimize = True
 
     if reoptimize:
         best_params = run_hdbscan_decorrelation_study(
-            returns_df=returns_df, n_trials=50
+            returns_df=returns_df, n_trials=500
         )
-        min_samples = best_params["min_samples"]
         epsilon = best_params["epsilon"]
-        cached_params = {"min_samples": min_samples, "epsilon": epsilon}
+        alpha = best_params["alpha"]
+        cluster_selection_epsilon_max = best_params["cluster_selection_epsilon_max"]
+        cached_params = {
+            "epsilon": epsilon,
+            "alpha": alpha,
+            "cluster_selection_epsilon_max": cluster_selection_epsilon_max,
+        }
         save_parameters_to_pickle(cached_params, cache_filename)
 
     # Compute correlation and convert to a normalized distance matrix
@@ -70,10 +81,11 @@ def filter_correlated_groups_hdbscan(
     # Cluster assets using HDBSCAN with the normalized distance matrix
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
+        alpha=alpha,
         min_cluster_size=2,
-        min_samples=min_samples,
         cluster_selection_epsilon=epsilon,
         cluster_selection_method="leaf",
+        cluster_selection_epsilon_max=cluster_selection_epsilon_max,
     )
     cluster_labels = clusterer.fit_predict(distance_matrix)
 
@@ -95,6 +107,7 @@ def filter_correlated_groups_hdbscan(
             selected_tickers.extend(tickers)
         else:
             group_perf = perf_series[tickers].sort_values(ascending=False)
+            top_n_per_cluster = max(1, int(0.25 * len(tickers)))
             top_candidates = group_perf.index.tolist()[:top_n_per_cluster]
             selected_tickers.extend(top_candidates)
             logger.info(
@@ -116,7 +129,10 @@ def filter_correlated_groups_hdbscan(
 
 
 def visualize_clusters_tsne(
-    returns_df: pd.DataFrame, cluster_labels, perplexity: int = 30, max_iter: int = 1000
+    returns_df: pd.DataFrame,
+    cluster_labels,
+    perplexity: float = 30,
+    max_iter: int = 1000,
 ):
     """
     Visualize asset clusters using t-SNE and Plotly.

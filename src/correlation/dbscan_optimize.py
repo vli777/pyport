@@ -45,7 +45,7 @@ def objective_dbscan_decorrelation(
 ) -> float:
     """
     Optuna objective function to optimize the eps parameter for DBSCAN.
-    The goal is to maximize the average intra‑cluster correlation (i.e. each cluster’s
+    The goal is to maximize the average intra-cluster correlation (i.e. each cluster's
     members are highly correlated), so that when we select only the top performer
     from each cluster, the remaining portfolio consists of decorrelated assets.
 
@@ -55,7 +55,7 @@ def objective_dbscan_decorrelation(
         min_samples (int): Minimum samples for DBSCAN.
 
     Returns:
-        float: The average intra‑cluster correlation as the objective (to maximize).
+        float: The average intra-cluster correlation as the objective (to maximize).
     """
     # Suggest an eps value in a reasonable range (adjust as needed)
     eps = trial.suggest_float("eps", 0.01, 1.0, log=True)
@@ -77,7 +77,7 @@ def objective_dbscan_decorrelation(
         )
         return -1.0  # Penalize trials that fail to produce clusters
     logger.info(
-        f"Trial {trial.number}: Average intra‑cluster correlation = {quality:.4f}"
+        f"Trial {trial.number}: Average intra-cluster correlation = {quality:.4f}"
     )
     return quality
 
@@ -86,7 +86,7 @@ def run_dbscan_decorrelation_study(
     returns_df: pd.DataFrame, min_samples: int = 2, n_trials: int = 50
 ) -> dict:
     """
-    Run an Optuna study to optimize DBSCAN’s eps so that clusters are as tight as possible.
+    Run an Optuna study to optimize DBSCAN's eps so that clusters are as tight as possible.
     A tight (high correlation) cluster means that by selecting the top performer from each
     cluster, you end up with a portfolio of decorrelated assets.
 
