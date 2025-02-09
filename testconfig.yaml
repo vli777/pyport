@@ -23,11 +23,11 @@ plot_clustering: bool # Where to plot hierarchical clustering dendrogram
 plot_anomalies: bool # Whether to plot anomalies detected by Kalman filter
 plot_reversion: bool # Whether to plot mean reversion parameters
 
-top_n_candidates: int # Optional fixed number of top candidates to select from cluster groups
-mean_reversion_strength: float # Optional (0, 1.0] how much mean reversion signals should adjust weights
 use_mean_reversion: bool # Whether to adjust allocation weights with zscore signals
 use_anomaly_filter: bool # Whether to filter assets with anomalous returns
 use_decorrelation: bool # Whether to filter correlated assets
+
+mean_reversion_strength: float # How much to weight mean reversion signals when adjusting weights
 
 test_mode: bool # Whether to enable test mode
 test_data_visible_pct: float # Percentage of test data to show
