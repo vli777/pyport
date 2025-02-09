@@ -57,17 +57,15 @@ def apply_mean_reversion(
     ticker_params = global_cache
     print(f"Loaded Ticker Parameters for {len(ticker_params)} tickers.")
 
-    # Build the cluster group mapping
-
-    if config.plot_reversion:
+    if config.plot_reversion and ticker_params:
         plot_reversion_params(data_dict=ticker_params)
 
     # Use the global cache (ticker_params) to compute composite signals.
     composite_signals = calculate_continuous_composite_signal(
         group_signals=group_reversion_signals, ticker_params=ticker_params
     )
-                
-    if config.plot_reversion:
+
+    if config.plot_reversion and composite_signals:
         plot_reversion_signals(data=composite_signals)
 
     # Propagate signals based on pairwise similarity:
