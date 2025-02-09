@@ -12,21 +12,7 @@ def plot_reversion_params(data_dict):
     and generates an interactive Plotly figure with two subplots:
     - Left: Daily Window vs. Z-Threshold
     - Right: Weekly Window vs. Z-Threshold
-
-    Features:
-    - Hovering shows Ticker, Window, Z-Threshold, and Cluster
-    - Jittering applied to prevent overlapping points
-
-    Parameters:
-    data_dict (dict): Dictionary with tickers as keys and parameter dicts as values.
-                      Expected format:
-                      {
-                          "AAPL": {"window_daily": 30, "z_threshold_daily": 1.5, "window_weekly": 5, "z_threshold_weekly": 2.0, "cluster": 1},
-                          "TSLA": {"window_daily": 25, "z_threshold_daily": 1.2, "window_weekly": 6, "z_threshold_weekly": 2.5, "cluster": 2},
-                          ...
-                      }
     """
-
     # Convert dictionary to DataFrame
     df = (
         pd.DataFrame.from_dict(data_dict, orient="index")
@@ -34,22 +20,19 @@ def plot_reversion_params(data_dict):
         .rename(columns={"index": "ticker"})
     )
 
+    # Convert all cluster values to strings, then map each unique string to a numeric code.
+    df["cluster_str"] = df["cluster"].apply(str)
+    unique_clusters = {label: idx for idx, label in enumerate(sorted(df["cluster_str"].unique()))}
+    df["cluster_numeric"] = df["cluster_str"].map(unique_clusters)
+
     # Apply jitter to prevent overlap
     jitter_scale = 0.2
-    df["window_daily_jitter"] = df["window_daily"] + np.random.normal(
-        0, jitter_scale, df.shape[0]
-    )
-    df["z_threshold_daily_jitter"] = df["z_threshold_daily"] + np.random.normal(
-        0, jitter_scale, df.shape[0]
-    )
-    df["window_weekly_jitter"] = df["window_weekly"] + np.random.normal(
-        0, jitter_scale, df.shape[0]
-    )
-    df["z_threshold_weekly_jitter"] = df["z_threshold_weekly"] + np.random.normal(
-        0, jitter_scale, df.shape[0]
-    )
+    df["window_daily_jitter"] = df["window_daily"] + np.random.normal(0, jitter_scale, df.shape[0])
+    df["z_threshold_daily_jitter"] = df["z_threshold_daily"] + np.random.normal(0, jitter_scale, df.shape[0])
+    df["window_weekly_jitter"] = df["window_weekly"] + np.random.normal(0, jitter_scale, df.shape[0])
+    df["z_threshold_weekly_jitter"] = df["z_threshold_weekly"] + np.random.normal(0, jitter_scale, df.shape[0])
 
-    # Create subplots
+    # Create the figure with two subplots
     fig = go.Figure()
 
     # Left subplot: Daily Window vs. Z-Threshold
@@ -58,9 +41,10 @@ def plot_reversion_params(data_dict):
             x=df["window_daily_jitter"],
             y=df["z_threshold_daily_jitter"],
             mode="markers",
-            marker=dict(color=df["cluster"], colorscale="viridis", size=8, opacity=0.7),
+            marker=dict(color=df["cluster_numeric"], colorscale="viridis", size=8, opacity=0.7),
             text=df.apply(
-                lambda row: f"Ticker: {row['ticker']}<br>Window: {row['window_daily']}<br>Z-Threshold: {row['z_threshold_daily']}<br>Cluster: {row['cluster']}",
+                lambda row: f"Ticker: {row['ticker']}<br>Window: {row['window_daily']}<br>"
+                            f"Z-Threshold: {row['z_threshold_daily']}<br>Cluster: {row['cluster']}",
                 axis=1,
             ),
             hoverinfo="text",
@@ -76,9 +60,10 @@ def plot_reversion_params(data_dict):
             x=df["window_weekly_jitter"],
             y=df["z_threshold_weekly_jitter"],
             mode="markers",
-            marker=dict(color=df["cluster"], colorscale="viridis", size=8, opacity=0.7),
+            marker=dict(color=df["cluster_numeric"], colorscale="viridis", size=8, opacity=0.7),
             text=df.apply(
-                lambda row: f"Ticker: {row['ticker']}<br>Window: {row['window_weekly']}<br>Z-Threshold: {row['z_threshold_weekly']}<br>Cluster: {row['cluster']}",
+                lambda row: f"Ticker: {row['ticker']}<br>Window: {row['window_weekly']}<br>"
+                            f"Z-Threshold: {row['z_threshold_weekly']}<br>Cluster: {row['cluster']}",
                 axis=1,
             ),
             hoverinfo="text",
