@@ -14,9 +14,9 @@ from process_symbols import process_symbols
 from result_output import output
 from anomaly.anomaly_detection import remove_anomalous_stocks
 from boxplot import generate_boxplot_data
-from correlation.tsne_dbscan import filter_correlated_groups_dbscan
 from reversion.mean_reversion import apply_mean_reversion
 from correlation.filter_hdbscan import filter_correlated_groups_hdbscan
+from reversion.reversion_plots import plot_reversion_signals
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -282,13 +282,15 @@ def run_pipeline(
         logger.error(f"Error slicing df_all: {e}")
         raise
 
+    #####################################
+    ##########  OPTIMIZATION  ###########
+    #####################################
     # Iterate through each time period and perform optimization
     logger.info("Running optimization...")
     for period in sorted_time_periods:
         if period != longest_period:
             config.plot_anomalies = False
             config.plot_clustering = False
-            config.plot_reversion = False
 
         start, end = calculate_start_end_dates(period)
         logger.debug(f"Processing period: {period} from {start} to {end}")
@@ -340,6 +342,9 @@ def run_pipeline(
             years=period,
         )
 
+    ################################
+    ######  POST-PROCESSING  #######
+    ################################
     logger.info("Post-processing optimization results...")
 
     if not stack:
@@ -396,7 +401,7 @@ def run_pipeline(
     # Step 2: Apply mean reversion if enabled
     if config.use_mean_reversion:
         logger.info("\nApplying mean reversion on normalized weights...")
-        mean_reverted_weights = apply_mean_reversion(
+        mean_reverted_weights, reversion_signals = apply_mean_reversion(
             baseline_allocation=normalized_avg_weights,
             returns_df=returns_df,
             config=config,
@@ -437,6 +442,7 @@ def run_pipeline(
             "daily_returns": post_daily_returns,
             "cumulative_returns": post_cumulative_returns,
             "boxplot_stats": post_boxplot_stats,
+            "reversion_signals": reversion_signals,
         }
 
     # Optional plotting (only on local runs)
