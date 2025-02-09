@@ -3,6 +3,7 @@ import pandas as pd
 import optuna
 import hdbscan
 import math
+from sklearn.metrics import silhouette_score
 
 from correlation.correlation_utils import compute_correlation_matrix
 from utils.logger import logger
@@ -51,12 +52,12 @@ def objective_hdbscan_decorrelation(
     n_assets = returns_df.shape[1]
     sqrt_n = math.ceil(math.sqrt(n_assets))
 
-    min_samples = trial.suggest_int("min_samples", 2, sqrt_n, step = 1)
+    min_samples = trial.suggest_int("min_samples", 2, sqrt_n, step=1)
     epsilon = trial.suggest_float("epsilon", 0.0, 1.0, step=0.01)
 
-    # Compute correlation and distance matrices
+    # Compute correlation and normalized distance matrix (0 to 1)
     corr_matrix = compute_correlation_matrix(returns_df)
-    distance_matrix = 1 - corr_matrix
+    distance_matrix = (1 - corr_matrix) / 2
 
     # Run HDBSCAN clustering
     clusterer = hdbscan.HDBSCAN(
@@ -68,15 +69,33 @@ def objective_hdbscan_decorrelation(
     )
     cluster_labels = clusterer.fit_predict(distance_matrix)
 
-    quality = evaluate_clusters(returns_df, cluster_labels)
-    if quality < 0:
-        logger.info(f"Trial {trial.number}: Invalid clustering. Quality={quality}")
+    quality_corr = evaluate_clusters(returns_df, cluster_labels)
+    if quality_corr < 0:
+        logger.info(
+            f"Trial {trial.number}: Invalid clustering. Quality_corr={quality_corr}"
+        )
         return -1.0
-    num_clusters = len(np.unique(cluster_labels[cluster_labels != -1]))
+
+    # Compute silhouette score on non-noise points
+    valid_indices = cluster_labels != -1
+    unique_labels = np.unique(cluster_labels[valid_indices])
+    if len(unique_labels) > 1:
+        sil_score = silhouette_score(
+            distance_matrix[valid_indices][:, valid_indices],
+            cluster_labels[valid_indices],
+            metric="precomputed",
+        )
+    else:
+        sil_score = -1.0
+
+    # Combine the metrics (here we average them; adjust weights as needed)
+    overall_quality = (quality_corr + sil_score) / 2.0
+    num_clusters = len(unique_labels)
     logger.info(
-        f"Trial {trial.number}: Quality={quality:.4f}, Number of clusters={num_clusters}"
+        f"Trial {trial.number}: Quality_corr={quality_corr:.4f}, Silhouette={sil_score:.4f}, "
+        f"Combined Quality={overall_quality:.4f}, Number of clusters={num_clusters}"
     )
-    return quality
+    return overall_quality
 
 
 def run_hdbscan_decorrelation_study(
