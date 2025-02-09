@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 import numpy as np
 import pandas as pd
-from sklearn.cluster import DBSCAN
 import hdbscan
 import hashlib
 
@@ -13,9 +12,6 @@ from utils.portfolio_utils import normalize_weights
 
 def cluster_stocks(
     returns_df: pd.DataFrame,
-    min_cluster_size: int = 2,
-    min_samples: int = 2,
-    cluster_selection_epsilon: float = 0.0,
     cache_dir: str = "optuna_cache",
 ) -> dict:
     # Ensure the cache directory exists
@@ -27,27 +23,32 @@ def cluster_stocks(
     if all(
         param in cached_params
         for param in [
-            "min_cluster_size",
-            "min_samples_fraction",
-            "cluster_selection_epsilon",
+            "epsilon",
+            "alpha",
+            "cluster_selection_epsilon_max",
         ]
     ):
-        min_cluster_size = cached_params["min_cluster_size"]
-        min_samples_fraction = cached_params["min_samples_fraction"]
-        min_samples = int(np.ceil(min_cluster_size * min_samples_fraction))
-        cluster_selection_epsilon = cached_params["cluster_selection_epsilon"]
+        epsilon = cached_params["epsilon"]
+        alpha = cached_params["alpha"]
+        cluster_selection_epsilon_max = cached_params["cluster_selection_epsilon_max"]
 
     distance_matrix = 1 - compute_correlation_matrix(returns_df)
+    np.random.seed(42)
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
-        cluster_selection_epsilon=cluster_selection_epsilon,
+        alpha=alpha,
+        min_cluster_size=2,
+        cluster_selection_epsilon=epsilon,
+        cluster_selection_method="leaf",
+        cluster_selection_epsilon_max=cluster_selection_epsilon_max,
     )
     cluster_labels = clusterer.fit_predict(distance_matrix)
 
     clusters = {}
     for ticker, label in zip(returns_df.columns, cluster_labels):
+        if label == -1:
+            # Treat each noise ticker as its own cluster.
+            clusters[ticker] = [ticker]
         clusters.setdefault(label, []).append(ticker)
     return clusters
 
