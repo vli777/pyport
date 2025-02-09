@@ -61,6 +61,8 @@ def iterative_pipeline_runner(
     symbols = initial_symbols
     previous_top_symbols = set()
     final_result = None
+    plot_done = False
+    reversion_plotted = False
 
     for epoch in range(max_epochs):
         print(f"Epoch {epoch + 1}")
@@ -69,7 +71,6 @@ def iterative_pipeline_runner(
         if epoch > 0:
             config.use_anomaly_filter = False
             config.use_decorrelation = False
-            config.use_mean_reversion = False
 
         # Run the pipeline
         result = run_pipeline(
@@ -107,11 +108,8 @@ def iterative_pipeline_runner(
                 f"Stopping epochs as the number of portfolio holdings ({len(valid_symbols)}) is <= the configured portfolio max size of {config.portfolio_max_size}."
             )
 
-            # Run final pipeline with plots enabled
-            final_result = run_pipeline(
-                config=config,
-                symbols_override=valid_symbols[: config.portfolio_max_size],
-            )
+            # Use the last valid result instead of running the pipeline again
+            final_result = result
             break
 
         # Update symbols for the next epoch
@@ -119,14 +117,20 @@ def iterative_pipeline_runner(
         symbols = valid_symbols
         final_result = result
 
+    # Ensure reversion parameters are only plotted once
+    if config.plot_reversion and not reversion_plotted:
+        config.plot_reversion = False  # Disable further reversion plotting
+        reversion_plotted = True
+
     # Ensure plotting is only done in the final result
-    if run_local:
+    if run_local and not plot_done:
         plot_graphs(
             daily_returns=final_result["daily_returns"],
             cumulative_returns=final_result["cumulative_returns"],
             config=config,
             symbols=final_result["symbols"],
         )
+        plot_done = True
 
     return final_result
 
@@ -138,6 +142,6 @@ if __name__ == "__main__":
     final_result = iterative_pipeline_runner(
         config=config,
         initial_symbols=None,  # Or provide initial symbols as needed
-        max_epochs=10,
+        max_epochs=1,
         run_local=True,
     )
