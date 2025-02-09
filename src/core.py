@@ -165,20 +165,10 @@ def run_pipeline(
             decorrelated_tickers = filter_correlated_groups_hdbscan(
                 returns_df=returns_df,
                 risk_free_rate=config.risk_free_rate,
-                top_n_per_cluster=config.top_n_candidates,
                 plot=config.plot_clustering,
                 cache_dir="optuna_cache",
                 reoptimize=False,
             )
-            # decorrelated_tickers = filter_correlated_groups_dbscan(
-            #     returns_df=returns_df,
-            #     risk_free_rate=config.risk_free_rate,
-            #     min_samples=2,
-            #     top_n_per_cluster=config.top_n_candidates,
-            #     plot=config.plot_clustering,
-            #     cache_dir="optuna_cache",
-            #     reoptimize=False,
-            # )
 
             valid_symbols = [
                 symbol for symbol in original_symbols if symbol in decorrelated_tickers
@@ -295,6 +285,11 @@ def run_pipeline(
     # Iterate through each time period and perform optimization
     logger.info("Running optimization...")
     for period in sorted_time_periods:
+        if period != longest_period:
+            config.plot_anomalies = False
+            config.plot_clustering = False
+            config.plot_reversion = False
+
         start, end = calculate_start_end_dates(period)
         logger.debug(f"Processing period: {period} from {start} to {end}")
 
@@ -333,7 +328,7 @@ def run_pipeline(
             logger.info(
                 f"Test mode active: saved full_df.csv and limited data to {visible_length} records."
             )
-        
+
         logger.info(f"Running optimization with {valid_symbols}")
         run_optimization_and_save(
             df=df_period,
