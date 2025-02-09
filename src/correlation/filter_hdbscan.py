@@ -17,7 +17,6 @@ from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_
 def filter_correlated_groups_hdbscan(
     returns_df: pd.DataFrame,
     risk_free_rate: float = 0.0,
-    min_samples: int = 2,
     epsilon: float = 0.3,
     plot: bool = False,
     cache_dir: str = "optuna_cache",
@@ -107,7 +106,20 @@ def filter_correlated_groups_hdbscan(
             selected_tickers.extend(tickers)
         else:
             group_perf = perf_series[tickers].sort_values(ascending=False)
-            top_n_per_cluster = max(1, int(0.25 * len(tickers)))
+
+            if len(tickers) < 10:
+                top_n_per_cluster = len(
+                    tickers
+                )  # For very small clusters, keep all tickers.
+            elif len(tickers) < 20:
+                top_n_per_cluster = max(
+                    1, int(0.50 * len(tickers))
+                )  # For medium clusters, keep top 50%.
+            else:
+                top_n_per_cluster = max(
+                    1, int(0.33 * len(tickers))
+                )  # For large clusters, keep top 33%.
+
             top_candidates = group_perf.index.tolist()[:top_n_per_cluster]
             selected_tickers.extend(top_candidates)
             logger.info(
