@@ -17,11 +17,15 @@ def objective_hdbscan_decorrelation(trial: optuna.Trial, returns_df) -> float:
     too large (which may indicate that obvious subgroups like semiconductors are merged).
     """
     # Tune parameters over a broad range.
-    epsilon = trial.suggest_float("epsilon", 0.0, 0.3, step=0.01)
-    alpha = trial.suggest_float("alpha", 0.1, 1.0, step=0.01)
+    epsilon = trial.suggest_float(
+        "epsilon", 0.15, 0.3, step=0.01
+    )  # clusters below this (dist) are merged
+    alpha = trial.suggest_float(
+        "alpha", 0.1, 1.0, step=0.01
+    )  # distance scaling used in robust single linkage
     cluster_selection_epsilon_max = trial.suggest_float(
-        "cluster_selection_epsilon_max", 0.3, 0.5, step=0.01
-    )
+        "cluster_selection_epsilon_max", 0.3, 1.0, step=0.01
+    )  # clusters above this are broken up
 
     # Compute the correlation matrix and convert it to a normalized distance matrix [0,1]
     corr_matrix = compute_correlation_matrix(returns_df)  # Your user-defined function
@@ -36,6 +40,7 @@ def objective_hdbscan_decorrelation(trial: optuna.Trial, returns_df) -> float:
     ) / 2  # 0 when perfectly correlated, 1 when perfectly anti-correlated
 
     # Run HDBSCAN clustering on the precomputed distance matrix.
+    np.random.seed(42)
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
         alpha=alpha,
@@ -72,10 +77,9 @@ def objective_hdbscan_decorrelation(trial: optuna.Trial, returns_df) -> float:
     cluster_sizes = [np.sum(cluster_labels == label) for label in unique_labels]
     max_cluster_fraction = max(cluster_sizes) / n_assets
     num_clusters = len(unique_labels)
-    # For example, if any cluster contains more than 10% of all stocks,
-    # apply a penalty. Adjust threshold and weight as needed.
+
     penalty = 0.0
-    threshold = 0.05  # Allow clusters up to 2% of total stocks without penalty.
+    threshold = 0.05  # Allow clusters up to 5% of total stocks without penalty.
     penalty_weight = 0.5  # Weight of the penalty term.
     if max_cluster_fraction > threshold:
         penalty += penalty_weight * (max_cluster_fraction - threshold)

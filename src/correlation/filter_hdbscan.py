@@ -61,7 +61,7 @@ def filter_correlated_groups_hdbscan(
 
     if reoptimize:
         best_params = run_hdbscan_decorrelation_study(
-            returns_df=returns_df, n_trials=500
+            returns_df=returns_df, n_trials=100
         )
         epsilon = best_params["epsilon"]
         alpha = best_params["alpha"]
@@ -77,7 +77,8 @@ def filter_correlated_groups_hdbscan(
     corr_matrix = compute_correlation_matrix(returns_df)
     distance_matrix = (1 - corr_matrix) / 2  # Normalized to 0–1
 
-    # Cluster assets using HDBSCAN with the normalized distance matrix
+    # Cluster assets using HDBSCAN with the normalized distance matrix    
+    np.random.seed(42)
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
         alpha=alpha,
@@ -160,7 +161,7 @@ def visualize_clusters_tsne(
 
     # Optionally, you can standardize the data here if needed.
     tsne = TSNE(
-        perplexity=min(perplexity, math.ceil(math.sqrt(asset_data.shape[1]))),
+        perplexity=perplexity,
         max_iter=max_iter,
         random_state=42,
     )
