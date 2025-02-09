@@ -16,8 +16,7 @@ from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_
 
 def filter_correlated_groups_hdbscan(
     returns_df: pd.DataFrame,
-    risk_free_rate: float = 0.0,
-    epsilon: float = 0.3,
+    risk_free_rate: float = 0.0,    
     plot: bool = False,
     cache_dir: str = "optuna_cache",
     reoptimize: bool = False,
@@ -30,8 +29,6 @@ def filter_correlated_groups_hdbscan(
     Args:
         returns_df (pd.DataFrame): DataFrame with dates as index and assets as columns.
         risk_free_rate (float): Risk-free rate for performance metric calculation.
-        min_cluster_size (int, optional): The minimum cluster size for HDBSCAN.
-        min_samples (int): Minimum samples for a core point in HDBSCAN.
         plot (bool): If True, display a visualization of clusters.
         cache_dir (str): Directory path to cache optimized HDBSCAN parameters.
         reoptimize (bool): If True, force re-optimization of HDBSCAN parameters.
