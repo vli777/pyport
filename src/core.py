@@ -15,8 +15,10 @@ from result_output import output
 from anomaly.anomaly_detection import remove_anomalous_stocks
 from boxplot import generate_boxplot_data
 from reversion.mean_reversion import apply_mean_reversion
-from correlation.filter_hdbscan import filter_correlated_groups_hdbscan
-from reversion.reversion_plots import plot_reversion_signals
+from correlation.filter_hdbscan import (
+    filter_correlated_groups_hdbscan,
+    get_cluster_labels,
+)
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -113,7 +115,9 @@ def run_pipeline(
             )
             raise
 
-    def preprocess_data(df: pd.DataFrame, config: Config) -> pd.DataFrame:
+    def preprocess_data(
+        df: pd.DataFrame, config: Config
+    ) -> Tuple[pd.DataFrame, dict[str, Any]]:
         """
         Preprocess the input DataFrame to calculate returns and optionally remove anomalous stocks.
 
@@ -125,6 +129,10 @@ def run_pipeline(
             pd.DataFrame: Processed DataFrame with daily returns, with optional anomaly filtering and decorrelation applied.
         """
         returns_df = calculate_returns(df)
+        # Create asset cluster map
+        asset_cluster_map = get_cluster_labels(
+            returns_df=returns_df, cache_dir="optuna_cache", reoptimize=False
+        )
         filtered_returns_df = returns_df  # Ensure it's always assigned
 
         if config.use_anomaly_filter:
@@ -141,7 +149,9 @@ def run_pipeline(
         # Apply decorrelation filter if enabled
         if config.use_decorrelation:
             logger.info("Filtering correlated assets...")
-            valid_symbols = filter_correlated_assets(filtered_returns_df, config)
+            valid_symbols = filter_correlated_assets(
+                filtered_returns_df, config, asset_cluster_map
+            )
 
             valid_symbols = [
                 symbol
@@ -152,9 +162,13 @@ def run_pipeline(
         filtered_returns_df = filtered_returns_df[valid_symbols]  # Always valid
 
         # Remove rows where all columns are NaN after all filtering steps
-        return filtered_returns_df.dropna(how="all")
+        return filtered_returns_df.dropna(how="all"), asset_cluster_map
 
-    def filter_correlated_assets(returns_df: pd.DataFrame, config: Config) -> List[str]:
+    def filter_correlated_assets(
+        returns_df: pd.DataFrame,
+        config: Config,
+        asset_cluster_map: Dict[str, int],
+    ) -> List[str]:
         """
         Apply mean reversion and decorrelation filters to return valid asset symbols.
         Falls back to the original returns_df columns if filtering results in an empty list.
@@ -164,10 +178,9 @@ def run_pipeline(
         try:
             decorrelated_tickers = filter_correlated_groups_hdbscan(
                 returns_df=returns_df,
+                asset_cluster_map=asset_cluster_map,
                 risk_free_rate=config.risk_free_rate,
                 plot=config.plot_clustering,
-                cache_dir="optuna_cache",
-                reoptimize=False,
             )
 
             valid_symbols = [
@@ -262,7 +275,9 @@ def run_pipeline(
 
     # Ensure we use the **largest valid date range** for returns_df
     all_dates = df_all.index  # Keep full range before filtering
-    returns_df = preprocess_data(df_all, config)  # apply all pre-optimization filters
+
+    # apply all pre-optimization filters
+    returns_df, asset_cluster_map = preprocess_data(df=df_all, config=config)
 
     valid_symbols = list(returns_df.columns)
     if not valid_symbols:
@@ -401,7 +416,8 @@ def run_pipeline(
     # Step 2: Apply mean reversion if enabled
     if config.use_mean_reversion:
         logger.info("\nApplying mean reversion on normalized weights...")
-        mean_reverted_weights, reversion_signals = apply_mean_reversion(
+        mean_reverted_weights = apply_mean_reversion(
+            asset_cluster_map=asset_cluster_map,
             baseline_allocation=normalized_avg_weights,
             returns_df=returns_df,
             config=config,
@@ -442,7 +458,6 @@ def run_pipeline(
             "daily_returns": post_daily_returns,
             "cumulative_returns": post_cumulative_returns,
             "boxplot_stats": post_boxplot_stats,
-            "reversion_signals": reversion_signals,
         }
 
     # Optional plotting (only on local runs)
