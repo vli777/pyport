@@ -7,70 +7,78 @@ def compute_stateful_signal_with_decay(
     params: dict,
     target_decay: float = 0.5,
     reset_factor: float = 0.5,
+    sensitivity: float = 1.0,
+    baseline: float = 1.0,
 ) -> pd.Series:
     """
-    Compute a stateful signal with separate thresholds for overbought (short) and oversold (long)
-    conditions. For instance, the state is triggered to -1 (overbought/short) when the z-score
-    exceeds z_threshold_positive, and to +1 (oversold/long) when the z-score is below -z_threshold_negative.
-    The signal then decays over time.
-
+    Compute a continuous adjustment factor for a ticker's allocation based on a stateful signal.
+    
+    The signal is generated using rolling z-scores and is triggered as follows:
+      - If the z-score exceeds z_threshold_positive, the state is set to -1 (overbought/short),
+        which will reduce the allocation.
+      - If the z-score falls below -z_threshold_negative, the state is set to +1 (oversold/long),
+        which will increase the allocation.
+      - The state decays over time, and resets when the z-score falls back below a fraction of the trigger threshold.
+    
+    The final adjustment factor is computed as:
+         adjustment_factor = baseline * (1 + sensitivity * (state * signal_magnitude * decay_multiplier))
+    
+    A baseline of 1 means no change from the current allocation. Values above 1 boost the allocation;
+    values below 1 reduce it (with strongly overbought conditions potentially driving it toward 0).
+    
     Args:
         series (pd.Series): Price or return series.
-        params (dict): Should contain:
-            - "window": rolling window size,
-            - "z_threshold_positive": threshold for triggering an overbought state,
+        params (dict): Must contain:
+            - "window": rolling window size.
+            - "z_threshold_positive": threshold for triggering an overbought state.
             - "z_threshold_negative": threshold for triggering an oversold state.
-        target_decay (float): Fraction of the original signal remaining after optimal_window days.
+        target_decay (float): Fraction of the original signal remaining after the optimal window.
         reset_factor (float): Factor to derive the reset threshold from the trigger threshold.
-
+        sensitivity (float): How strongly the raw signal affects the adjustment.
+        baseline (float): The baseline allocation (default 1.0).
+    
     Returns:
-        pd.Series: The stateful signal time series.
+        pd.Series: A time series of allocation adjustment factors.
     """
     window = int(params.get("window", 20))
     trigger_threshold_pos = params.get("z_threshold_positive", 1.5)
     trigger_threshold_neg = params.get("z_threshold_negative", 1.5)
 
-    # Define reset thresholds for each side.
+    # Define reset thresholds.
     reset_threshold_pos = trigger_threshold_pos * reset_factor
     reset_threshold_neg = trigger_threshold_neg * reset_factor
 
-    optimal_window = window  # For simplicity, assume the same window applies for decay
+    optimal_window = window  # For simplicity, use the same window for decay.
     decay_rate = target_decay ** (1 / optimal_window)
 
     # Compute rolling z-scores.
     rolling_mean = series.rolling(window=window, min_periods=window).mean()
-    rolling_std = (
-        series.rolling(window=window, min_periods=window).std().replace(0, np.nan)
-    )
+    rolling_std = series.rolling(window=window, min_periods=window).std().replace(0, np.nan)
     z_scores = (series - rolling_mean) / rolling_std
 
     # Initialize arrays.
-    state = np.zeros(
-        len(series)
-    )  # 0: neutral, -1: overbought (short), +1: oversold (long)
+    state = np.zeros(len(series))      # 0: neutral, -1: overbought, +1: oversold.
     state_age = np.zeros(len(series))
-    signal = np.zeros(len(series))
+    raw_signal = np.zeros(len(series))
 
-    # Identify trigger conditions.
-    # For overbought, we need z > trigger_threshold_pos.
-    # For oversold, we need z < -trigger_threshold_neg.
+    # Iterate over the series.
     for i in range(1, len(series)):
         if np.isnan(z_scores.iloc[i]):
             continue
 
         if state[i - 1] == 0:
             if z_scores.iloc[i] > trigger_threshold_pos:
-                state[i] = -1  # Trigger overbought/short state.
+                state[i] = -1  # Overbought (signal to reduce weight).
                 state_age[i] = 0
             elif z_scores.iloc[i] < -trigger_threshold_neg:
-                state[i] = 1  # Trigger oversold/long state.
+                state[i] = 1   # Oversold (signal to increase weight).
                 state_age[i] = 0
         else:
             # Continue previous state.
             state[i] = state[i - 1]
             state_age[i] = state_age[i - 1] + 1
 
-            # Reset conditions.
+            # Reset the state if the z-score falls back below the reset threshold.
             if state[i] == -1 and z_scores.iloc[i] < reset_threshold_pos:
                 state[i] = 0
                 state_age[i] = 0
@@ -78,9 +86,10 @@ def compute_stateful_signal_with_decay(
                 state[i] = 0
                 state_age[i] = 0
 
-        # Compute decayed signal.
+        # Compute decay multiplier.
         decay_multiplier = decay_rate ** state_age[i] if state[i] != 0 else 0
-        # Use the appropriate threshold for checking if the signal magnitude qualifies.
+
+        # Choose the appropriate threshold.
         if state[i] == -1:
             thresh = trigger_threshold_pos
         elif state[i] == 1:
@@ -88,12 +97,20 @@ def compute_stateful_signal_with_decay(
         else:
             thresh = 0
 
-        signal_magnitude = (
-            abs(z_scores.iloc[i]) if abs(z_scores.iloc[i]) >= thresh else 0
-        )
-        signal[i] = state[i] * signal_magnitude * decay_multiplier
+        signal_magnitude = abs(z_scores.iloc[i]) if abs(z_scores.iloc[i]) >= thresh else 0
+        raw_signal[i] = state[i] * signal_magnitude * decay_multiplier
 
-    return pd.Series(signal, index=series.index)
+        # Debug output for nonzero states.
+        if state[i] != 0:
+            print(f"{series.name} @ {series.index[i]}: z_score={z_scores.iloc[i]:.2f}, "
+                  f"state={state[i]}, age={state_age[i]}, raw_signal={raw_signal[i]:.2f}")
+
+    # Compute the final adjustment factor.
+    # A value of baseline means no change; values above baseline increase allocation,
+    # values below baseline reduce allocation.
+    adjustment_factor = baseline * (1 + sensitivity * raw_signal)
+    adjustment_factor = np.clip(adjustment_factor, 0, None)  # Ensure non-negative.
+    return pd.Series(adjustment_factor, index=series.index)
 
 
 def compute_ticker_stateful_signals(
