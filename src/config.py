@@ -35,13 +35,11 @@ class Config:
     plot_anomalies: bool
     plot_clustering: bool
     plot_reversion: bool
-
+    
     use_anomaly_filter: bool
-    use_decorrelation: bool
+    use_decorrelation: bool    
     use_mean_reversion: bool
-
-    mean_reversion_strength: float
-
+    
     test_mode: bool
     test_data_visible_pct: float
     model_config: ModelConfig = field(default_factory=ModelConfig)
