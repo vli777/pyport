@@ -47,7 +47,13 @@ def reversion_weights_objective(
     returns_df: pd.DataFrame,
 ) -> float:
     """
-    Optimize the weights of different time scale signals for mean reversion.
+    Optimize the weight adjustment for mean reversion signals.
+
+    The idea is to start with an equal-weight baseline allocation. The daily and weekly signals,
+    which are continuous adjustment factors, are combined using a weight parameter.
+    The combined signal is then normalized relative to the maximum observed signal value
+    (using 1 as the baseline reference). This normalized signal is used to adjust the baseline allocation.
+    The adjusted weights are normalized to sum to 1, and the strategy is simulated.
 
     Args:
         trial (optuna.trial.Trial): Optuna trial object.
@@ -56,23 +62,56 @@ def reversion_weights_objective(
         returns_df (pd.DataFrame): Log returns DataFrame.
 
     Returns:
-        float: composite score from returns and performance ratios for the optimized strategy.
+        float: Composite score from the simulated strategy.
     """
-    weight_daily = trial.suggest_float("weight_daily", 0.0, 1.0, step=0.1)
+    # Let the optimizer choose the weight for the daily signal.
+    weight_daily = trial.suggest_float("weight_daily", 0.1, 1.0, step=0.1)
     weight_weekly = 1.0 - weight_daily
 
-    # Combine the precomputed dataframes using vectorized operations
-    combined_signals = (
-        weight_daily * daily_signals_df + weight_weekly * weekly_signals_df
+    # Combine daily and weekly signals (using the last row, e.g. the most recent signals).
+    combined_signal = (
+        weight_daily * daily_signals_df.iloc[-1]
+        + weight_weekly * weekly_signals_df.iloc[-1]
     )
 
+    # Define a baseline allocation: equal weight among assets with valid returns.
     valid_stocks = returns_df.dropna(axis=1, how="all").columns
-    combined_signals = combined_signals[valid_stocks]
+    n = len(valid_stocks)
+    baseline_allocation = pd.Series(1.0 / n, index=valid_stocks)
 
-    aligned_returns = returns_df[valid_stocks].reindex(combined_signals.index)
-    positions_df = combined_signals.shift(1).fillna(0)
+    # We assume the baseline signal is 1 (i.e. no adjustment).
+    # Use the maximum value of the combined signal as the reference.
+    reference_max = combined_signal.max()
+    if reference_max <= 1:
+        normalized_signal = (
+            combined_signal - 1
+        )  # no upward adjustment possible if all signals ≤ 1
+    else:
+        normalized_signal = (combined_signal - 1) / (reference_max - 1)
 
-    # Run the simulation and calculate a composite score.
-    _, metrics = simulate_strategy(aligned_returns, positions_df)
+    # Set a sensitivity factor (you may tune this if desired).
+    sensitivity = 1.0
+
+    # Compute the adjustment factor.
+    adjustment_factor = 1 + sensitivity * normalized_signal
+    adjustment_factor = adjustment_factor.clip(lower=0)  # ensure nonnegative factors
+
+    # Adjust the baseline allocation by these factors.
+    prelim_weights = baseline_allocation * adjustment_factor
+    adjusted_weights = prelim_weights / prelim_weights.sum()  # Normalize to sum to 1
+
+    # For simulation, construct a positions DataFrame that uses these adjusted weights for each day.
+    positions_df = pd.DataFrame(
+        [adjusted_weights] * len(returns_df),
+        index=returns_df.index,
+        columns=valid_stocks,
+    )
+    # Shift positions to avoid lookahead bias.
+    positions_df = positions_df.shift(1).bfill()
+
+    # Simulate the strategy.
+    _, metrics = simulate_strategy(
+        returns_df[valid_stocks].reindex(positions_df.index), positions_df
+    )
 
     return composite_score(metrics)

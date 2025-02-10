@@ -3,82 +3,166 @@ import pandas as pd
 
 
 def compute_stateful_signal_with_decay(
-    series, params, target_decay=0.5, reset_factor=0.5
-):
+    series: pd.Series,
+    params: dict,
+    target_decay: float = 0.5,
+    reset_factor: float = 0.5,
+    sensitivity: float = 1.0,
+    baseline: float = 1.0,
+) -> pd.Series:
     """
-    Compute a stateful signal that locks in an overbought/oversold state when the
-    rolling z-score exceeds the trigger threshold, then decays the signal over time.
+    Compute a continuous adjustment factor for a ticker's allocation based on a stateful signal.
 
-    The function uses the group parameters:
-      - "window_daily": rolling window size for computing the z-score.
-      - "z_threshold_daily": the threshold determined (by optuna) that triggers a state.
+    The signal is generated using rolling z-scores and is triggered as follows:
+      - If the z-score exceeds z_threshold_positive, the state is set to -1 (overbought/short),
+        which will reduce the allocation.
+      - If the z-score falls below -z_threshold_negative, the state is set to +1 (oversold/long),
+        which will increase the allocation.
+      - The state decays over time, and resets when the z-score falls back below a fraction of the trigger threshold.
 
-    From these, we derive:
-      - trigger_threshold = z_threshold_daily
-      - reset_threshold = trigger_threshold * reset_factor
-      - optimal_window = window_daily (assumed for decay timing)
-      - decay_rate is chosen so that after optimal_window days the signal decays to target_decay of its initial value.
+    The final adjustment factor is computed as:
+         adjustment_factor = baseline * (1 + sensitivity * (state * signal_magnitude * decay_multiplier))
+
+    A baseline of 1 means no change from the current allocation. Values above 1 boost the allocation;
+    values below 1 reduce it (with strongly overbought conditions potentially driving it toward 0).
 
     Args:
         series (pd.Series): Price or return series.
-        params (dict): Should contain "window_daily" and "z_threshold_daily".
-        target_decay (float): Fraction of the original signal remaining after optimal_window days.
-                              For example, 0.5 means the signal should be about 50% after optimal_window days.
-        reset_factor (float): Factor to determine reset_threshold from trigger_threshold.
-                              For example, 0.5 means reset_threshold = trigger_threshold * 0.5.
+        params (dict): Must contain:
+            - "window": rolling window size.
+            - "z_threshold_positive": threshold for triggering an overbought state.
+            - "z_threshold_negative": threshold for triggering an oversold state.
+        target_decay (float): Fraction of the original signal remaining after the optimal window.
+        reset_factor (float): Factor to derive the reset threshold from the trigger threshold.
+        sensitivity (float): How strongly the raw signal affects the adjustment.
+        baseline (float): The baseline allocation (default 1.0).
 
     Returns:
-        dict: Mapping of date -> stateful signal.
+        pd.Series: A time series of allocation adjustment factors.
     """
-    window = int(params.get("window_daily", 20))
-    trigger_threshold = params.get("z_threshold_daily", 1.5)
-    optimal_window = window  # We assume the optimal reversion window is the same as the rolling window.
-    reset_threshold = trigger_threshold * reset_factor
+    window = int(params.get("window", 20))
+    trigger_threshold_pos = params.get("z_threshold_positive", 1.5)
+    trigger_threshold_neg = params.get("z_threshold_negative", 1.5)
 
-    state = 0  # 0: neutral, -1: overbought, +1: oversold.
-    state_age = 0  # Number of days since the signal was locked in.
-    stateful_signal = {}
+    # Define reset thresholds.
+    reset_threshold_pos = trigger_threshold_pos * reset_factor
+    reset_threshold_neg = trigger_threshold_neg * reset_factor
 
-    # Compute the daily z-scores.
+    # Compute rolling z-scores.
     rolling_mean = series.rolling(window=window, min_periods=window).mean()
     rolling_std = (
         series.rolling(window=window, min_periods=window).std().replace(0, np.nan)
     )
     z_scores = (series - rolling_mean) / rolling_std
 
-    # Compute the daily decay rate such that after 'optimal_window' days the signal decays to target_decay of its initial value.
-    decay_rate = target_decay ** (1 / optimal_window)
+    # Compute adaptive decay rate based on realized volatility
+    rolling_vol = rolling_std.copy()
+    adaptive_decay_rate = target_decay ** (rolling_vol / rolling_vol.mean())
 
-    for date, z in z_scores.items():
-        if pd.isna(z):
-            stateful_signal[date] = 0
+    # Initialize arrays.
+    state = np.zeros(len(series))  # 0: neutral, -1: overbought, +1: oversold.
+    state_age = np.zeros(len(series))
+    raw_signal = np.zeros(len(series))
+
+    # Iterate over the series.
+    for i in range(1, len(series)):
+        if np.isnan(z_scores.iloc[i]):
             continue
 
-        if state == 0:
-            # Check for trigger: if z exceeds the threshold (positive or negative).
-            if z > trigger_threshold:
-                state = -1  # Overbought state; represent as -1.
-                state_age = 0
-            elif z < -trigger_threshold:
-                state = 1  # Oversold state; represent as +1.
-                state_age = 0
+        if state[i - 1] == 0:
+            if z_scores.iloc[i] > trigger_threshold_pos:
+                state[i] = -1  # Overbought (signal to reduce weight).
+                state_age[i] = 0
+            elif z_scores.iloc[i] < -trigger_threshold_neg:
+                state[i] = 1  # Oversold (signal to increase weight).
+                state_age[i] = 0
         else:
-            state_age += 1
-            # Reset the state if the z-score has decayed to below the reset threshold.
-            if state == -1 and z < reset_threshold:
-                state = 0
-                state_age = 0
-            elif state == 1 and z > -reset_threshold:
-                state = 0
-                state_age = 0
+            # Continue previous state.
+            state[i] = state[i - 1]
+            state_age[i] = state_age[i - 1] + 1
 
-        # Apply exponential decay to the signal.
-        decay_multiplier = decay_rate**state_age if state != 0 else 0
-        # Use the absolute z-score as the signal magnitude (only if it meets the trigger requirement).
-        signal_magnitude = abs(z) if abs(z) >= trigger_threshold else 0
-        stateful_signal[date] = state * signal_magnitude * decay_multiplier
+            # Reset the state if the z-score falls back below the reset threshold.
+            if state[i] == -1 and z_scores.iloc[i] < reset_threshold_pos:
+                state[i] = 0
+                state_age[i] = 0
+            elif state[i] == 1 and z_scores.iloc[i] > -reset_threshold_neg:
+                state[i] = 0
+                state_age[i] = 0
 
-    return stateful_signal
+        # Compute decay multiplier.
+        decay_multiplier = (
+            adaptive_decay_rate.iloc[i] ** state_age[i] if state[i] != 0 else 0
+        )
+
+        # Determine magnitude
+        thresh = (
+            trigger_threshold_pos
+            if state[i] == -1
+            else trigger_threshold_neg if state[i] == 1 else 0
+        )
+        signal_magnitude = (
+            abs(z_scores.iloc[i]) if abs(z_scores.iloc[i]) >= thresh else 0
+        )
+        raw_signal[i] = state[i] * signal_magnitude * decay_multiplier
+
+        # Debug output for nonzero states.
+        if state[i] != 0:
+            print(
+                f"{series.name} @ {series.index[i]}: z_score={z_scores.iloc[i]:.2f}, "
+                f"state={state[i]}, age={state_age[i]}, raw_signal={raw_signal[i]:.2f}"
+            )
+
+    # Compute the final adjustment factor.
+    # A value of baseline means no change; values above baseline increase allocation,
+    # values below baseline reduce allocation.
+    adjustment_factor = baseline * (1 + sensitivity * raw_signal)
+    adjustment_factor = np.clip(adjustment_factor, 0, None)  # Ensure non-negative.
+    return pd.Series(adjustment_factor, index=series.index)
+
+
+def compute_ticker_stateful_signals(
+    ticker_series: pd.Series,
+    params: dict,
+    target_decay: float = 0.5,
+    reset_factor: float = 0.5,
+) -> dict:
+    """
+    Compute stateful signals for a ticker on both daily and weekly data.
+
+    Returns:
+        dict: {
+            "daily": pd.Series,
+            "weekly": pd.Series
+        }
+    """
+    # Build daily parameters dictionary.
+    daily_params = {
+        "window": int(params.get("window_daily", 20)),
+        "z_threshold_positive": params.get("z_threshold_daily_positive", 1.5),
+        "z_threshold_negative": params.get("z_threshold_daily_negative", 1.5),
+    }
+    daily_signal = compute_stateful_signal_with_decay(
+        ticker_series,
+        daily_params,
+        target_decay=target_decay,
+        reset_factor=reset_factor,
+    )
+
+    # Build weekly parameters dictionary.
+    weekly_series = ticker_series.resample("W").last()
+    weekly_params = {
+        "window": int(params.get("window_weekly", 5)),
+        "z_threshold_positive": params.get("z_threshold_weekly_positive", 1.5),
+        "z_threshold_negative": params.get("z_threshold_weekly_negative", 1.5),
+    }
+    weekly_signal = compute_stateful_signal_with_decay(
+        weekly_series,
+        weekly_params,
+        target_decay=target_decay,
+        reset_factor=reset_factor,
+    )
+
+    return {"daily": daily_signal, "weekly": weekly_signal}
 
 
 def compute_group_stateful_signals(
@@ -89,33 +173,23 @@ def compute_group_stateful_signals(
     reset_factor: float = 0.5,
 ) -> dict:
     """
-    Given a group of tickers and their returns along with optimized parameters,
-    compute the stateful daily signals (with decay) for each ticker.
+    Given a group of tickers and their returns, compute stateful signals for each ticker.
 
-    The parameters (in params) should include at least:
-      - "window_daily": rolling window size for computing the z-score.
-      - "z_threshold_daily": the trigger threshold from optimization.
-
-    Optionally, you can also pass:
-      - "target_decay": desired fraction remaining after the window (default 0.5).
-      - "reset_factor": factor to derive reset_threshold (default 0.5).
-
-    Returns a dictionary with keys:
-       - "tickers": the list of tickers
-       - "daily": dict mapping ticker -> {date: stateful signal}
+    Returns:
+        dict: Mapping from ticker to its signals, e.g.
+            {
+                "AAPL": {"daily": {date: signal, ...}, "weekly": {date: signal, ...}},
+                "MSFT": {...},
+                ...
+            }
     """
-    daily_signals = {}
-
+    signals = {}
     for ticker in tickers:
         series = group_returns[ticker].dropna()
         if series.empty:
-            daily_signals[ticker] = {}
+            signals[ticker] = {"daily": {}, "weekly": {}}
         else:
-            daily_signals[ticker] = compute_stateful_signal_with_decay(
+            signals[ticker] = compute_ticker_stateful_signals(
                 series, params, target_decay=target_decay, reset_factor=reset_factor
             )
-
-    return {
-        "tickers": tickers,
-        "daily": daily_signals,
-    }
+    return signals

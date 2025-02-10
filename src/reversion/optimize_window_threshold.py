@@ -42,7 +42,7 @@ def optimize_robust_mean_reversion(
     best_params = (
         study.best_trial.params
         if study.best_trial
-        else {"window": 20, "z_threshold": 1.5}
+        else {"window": 20, "z_threshold_positive": 1.5, "z_threshold_negative": 1.8}
     )
     return best_params, study
 
@@ -63,15 +63,29 @@ def robust_mean_reversion_objective(
         )
 
     window = suggest_window(trial, test_window_range)
-    z_threshold = trial.suggest_float("z_threshold", 1.0, 3.0, step=0.1)
+    z_threshold_negative = trial.suggest_float(
+        "z_threshold_negative", 1.0, 3.0, step=0.1
+    )
+    z_threshold_positive = trial.suggest_float(
+        "z_threshold_positive", 1.0, 3.0, step=0.1
+    )
 
     robust_z = calculate_robust_zscores(returns_df, window)
-    # Generate signals on all tickers at once; result is a DataFrame of {date x ticker}
+    # Generate signals:
+    #  - If the z-score is below -z_threshold_negative, signal long (1).
+    #  - If it is above z_threshold_positive, signal short (-1).
+    #  - Otherwise, signal 0.
+    # Compute continuous signals:
     signals = np.where(
-        robust_z.values < -z_threshold,
-        1,
-        np.where(robust_z.values > z_threshold, -1, 0),
+        robust_z.values < -z_threshold_negative,
+        (np.abs(robust_z.values) - z_threshold_negative) / z_threshold_negative,
+        np.where(
+            robust_z.values > z_threshold_positive,
+            -((robust_z.values - z_threshold_positive) / z_threshold_positive),
+            0,
+        ),
     )
+
     signals_df = pd.DataFrame(signals, index=robust_z.index, columns=robust_z.columns)
 
     positions_df = signals_df.shift(1).fillna(0)

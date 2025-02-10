@@ -1,9 +1,18 @@
+from pathlib import Path
 import sys
 from typing import Any, Dict, Optional
 import pandas as pd
 
 from config import Config
-from utils.performance_metrics import calculate_portfolio_performance, sharpe_ratio
+from utils.performance_metrics import (
+    calculate_portfolio_alpha,
+    calculate_portfolio_performance,
+    kappa_ratio,
+    max_drawdown,
+    portfolio_volatility,
+    sharpe_ratio,
+    time_under_water,
+)
 from utils import logger
 from utils.portfolio_utils import (
     trim_weights,
@@ -61,19 +70,47 @@ def output(
         (all_daily_returns, all_cumulative_returns),
     ) = calculate_portfolio_performance(data[list(clean_weights.keys())], clean_weights)
 
-    try:
-        sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
-    except ZeroDivisionError:
-        sharpe = 0
+    sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
+    kappa = kappa_ratio(portfolio_returns)
+    volatility = portfolio_volatility(portfolio_returns)
+    max_dd = max_drawdown(portfolio_cumulative_returns)
+    time_uw = time_under_water(portfolio_cumulative_returns)
 
-    # logger.info stats
+    # --- Load market data and compute market returns over the same period
+    market_file = Path(config.data_dir) / "SPY.parquet"
+    try:
+        market_data = pd.read_parquet(market_file)
+    except Exception as e:
+        logger.error(f"Error loading market data from {market_file}: {e}")
+        raise
+
+    if "Adj Close" in market_data.columns:
+        market_returns = market_data["Adj Close"].pct_change().dropna()
+    elif "Close" in market_data.columns:
+        market_returns = market_data["Close"].pct_change().dropna()
+    else:
+        raise ValueError("{market_file} data missing 'Adj Close' or 'Close' columns.")
+
+    # Filter market_returns to match the analysis period
+    # market_returns = market_returns.loc[start_date:end_date]
+    # alpha = calculate_portfolio_alpha(
+    #     portfolio_returns=portfolio_returns, market_returns=market_returns
+    # )
+
+    # Logging results
     if inputs is not None:
         logger.info(f"\n\nWatchlist Inputs: {inputs}")
-    logger.info(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
 
+    logger.info(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
     cumulative_pct = round((portfolio_cumulative_returns.iloc[-1] - 1) * 100, 2)
+
     logger.info(f"Optimization method: {optimization_model}")
     logger.info(f"Sharpe ratio: {round(sharpe, 2)}")
+    logger.info(f"Kappa ratio: {round(kappa, 2)}")
+    logger.info(f"Portfolio volatility: {round(volatility * 100, 2)}%")
+    logger.info(f"Max drawdown: {round(max_dd * 100, 2)}%")
+    logger.info(f"Time under water: {time_uw} days")
+    # logger.info(f"Portfolio Alpha vs Market: {alpha:.4f}")
     logger.info(f"Cumulative return: {cumulative_pct}%")
     logger.info(f"Portfolio allocation weights (min {config.min_weight:.2f}):")
 

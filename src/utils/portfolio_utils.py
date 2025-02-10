@@ -76,7 +76,7 @@ def convert_to_dict(weights: Any, asset_names: list) -> Dict[str, float]:
         raise TypeError("Unsupported weight type: must be ndarray, DataFrame, or dict.")
 
 
-def normalize_weights(weights, min_weight: float) -> pd.Series:
+def normalize_weights(weights, min_weight: float = 0.0) -> pd.Series:
     """
     Normalize the weights by filtering out values below min_weight and scaling the remaining weights to sum to 1.
     If no weights meet the min_weight threshold, the original weights are returned, scaled to sum to 1.

@@ -3,27 +3,28 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
+from utils.logger import logger
+
 
 def plot_reversion_params(data_dict):
     """
     Converts a dictionary of mean reversion parameters into a DataFrame
     and generates an interactive Plotly figure with two subplots:
-    - Left: Daily Window vs. Z-Threshold
-    - Right: Weekly Window vs. Z-Threshold
+      - Left: Daily Window vs. Z-Threshold (Positive and Negative)
+      - Right: Weekly Window vs. Z-Threshold (Positive and Negative)
 
-    Features:
-    - Hovering shows Ticker, Window, Z-Threshold, and Cluster
-    - Jittering applied to prevent overlapping points
-
-    Parameters:
-    data_dict (dict): Dictionary with tickers as keys and parameter dicts as values.
-                      Expected format:
-                      {
-                          "AAPL": {"window_daily": 30, "z_threshold_daily": 1.5, "window_weekly": 5, "z_threshold_weekly": 2.0, "cluster": 1},
-                          "TSLA": {"window_daily": 25, "z_threshold_daily": 1.2, "window_weekly": 6, "z_threshold_weekly": 2.5, "cluster": 2},
-                          ...
-                      }
+    Expects data_dict to contain the following keys (at minimum):
+      - "cluster"
+      - "window_daily"
+      - "z_threshold_daily_positive"
+      - "z_threshold_daily_negative"
+      - "window_weekly"
+      - "z_threshold_weekly_positive"
+      - "z_threshold_weekly_negative"
     """
+    if not data_dict:
+        print("No data available for plotting reversion parameters.")
+        return
 
     # Convert dictionary to DataFrame
     df = (
@@ -32,55 +33,156 @@ def plot_reversion_params(data_dict):
         .rename(columns={"index": "ticker"})
     )
 
+    required_columns = {
+        "cluster",
+        "window_daily",
+        "z_threshold_daily_positive",
+        "z_threshold_daily_negative",
+        "window_weekly",
+        "z_threshold_weekly_positive",
+        "z_threshold_weekly_negative",
+    }
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        print(f"Missing columns in data: {missing_columns}")
+        return
+
+    # Convert all cluster values to strings and then map to numeric codes.
+    df["cluster_str"] = df["cluster"].apply(str)
+    unique_clusters = {
+        label: idx for idx, label in enumerate(sorted(df["cluster_str"].unique()))
+    }
+    df["cluster_numeric"] = df["cluster_str"].map(unique_clusters)
+
     # Apply jitter to prevent overlap
     jitter_scale = 0.2
     df["window_daily_jitter"] = df["window_daily"] + np.random.normal(
         0, jitter_scale, df.shape[0]
     )
-    df["z_threshold_daily_jitter"] = df["z_threshold_daily"] + np.random.normal(
-        0, jitter_scale, df.shape[0]
-    )
+    df["z_threshold_daily_positive_jitter"] = df[
+        "z_threshold_daily_positive"
+    ] + np.random.normal(0, jitter_scale, df.shape[0])
+    df["z_threshold_daily_negative_jitter"] = df[
+        "z_threshold_daily_negative"
+    ] + np.random.normal(0, jitter_scale, df.shape[0])
     df["window_weekly_jitter"] = df["window_weekly"] + np.random.normal(
         0, jitter_scale, df.shape[0]
     )
-    df["z_threshold_weekly_jitter"] = df["z_threshold_weekly"] + np.random.normal(
-        0, jitter_scale, df.shape[0]
-    )
+    df["z_threshold_weekly_positive_jitter"] = df[
+        "z_threshold_weekly_positive"
+    ] + np.random.normal(0, jitter_scale, df.shape[0])
+    df["z_threshold_weekly_negative_jitter"] = df[
+        "z_threshold_weekly_negative"
+    ] + np.random.normal(0, jitter_scale, df.shape[0])
 
-    # Create subplots
+    # Create the figure with two subplots
     fig = go.Figure()
 
-    # Left subplot: Daily Window vs. Z-Threshold
+    # Left subplot: Daily parameters
+    # Trace for Daily Positive Z-Thresholds
     fig.add_trace(
         go.Scatter(
             x=df["window_daily_jitter"],
-            y=df["z_threshold_daily_jitter"],
+            y=df["z_threshold_daily_positive_jitter"],
             mode="markers",
-            marker=dict(color=df["cluster"], colorscale="viridis", size=8, opacity=0.7),
+            marker=dict(
+                color=df["cluster_numeric"],
+                colorscale="viridis",
+                size=8,
+                opacity=0.7,
+                symbol="circle",
+            ),
             text=df.apply(
-                lambda row: f"Ticker: {row['ticker']}<br>Window: {row['window_daily']}<br>Z-Threshold: {row['z_threshold_daily']}<br>Cluster: {row['cluster']}",
+                lambda row: f"Ticker: {row['ticker']}<br>"
+                f"Window (Daily): {row['window_daily']}<br>"
+                f"Positive Z-Threshold: {row['z_threshold_daily_positive']}<br>"
+                f"Cluster: {row['cluster']}",
                 axis=1,
             ),
             hoverinfo="text",
-            name="Daily",
+            name="Daily Positive",
             xaxis="x1",
             yaxis="y1",
         )
     )
 
-    # Right subplot: Weekly Window vs. Z-Threshold
+    # Trace for Daily Negative Z-Thresholds
     fig.add_trace(
         go.Scatter(
-            x=df["window_weekly_jitter"],
-            y=df["z_threshold_weekly_jitter"],
+            x=df["window_daily_jitter"],
+            y=df["z_threshold_daily_negative_jitter"],
             mode="markers",
-            marker=dict(color=df["cluster"], colorscale="viridis", size=8, opacity=0.7),
+            marker=dict(
+                color=df["cluster_numeric"],
+                colorscale="viridis",
+                size=8,
+                opacity=0.7,
+                symbol="square",
+            ),
             text=df.apply(
-                lambda row: f"Ticker: {row['ticker']}<br>Window: {row['window_weekly']}<br>Z-Threshold: {row['z_threshold_weekly']}<br>Cluster: {row['cluster']}",
+                lambda row: f"Ticker: {row['ticker']}<br>"
+                f"Window (Daily): {row['window_daily']}<br>"
+                f"Negative Z-Threshold: {row['z_threshold_daily_negative']}<br>"
+                f"Cluster: {row['cluster']}",
                 axis=1,
             ),
             hoverinfo="text",
-            name="Weekly",
+            name="Daily Negative",
+            xaxis="x1",
+            yaxis="y1",
+        )
+    )
+
+    # Right subplot: Weekly parameters
+    # Trace for Weekly Positive Z-Thresholds
+    fig.add_trace(
+        go.Scatter(
+            x=df["window_weekly_jitter"],
+            y=df["z_threshold_weekly_positive_jitter"],
+            mode="markers",
+            marker=dict(
+                color=df["cluster_numeric"],
+                colorscale="viridis",
+                size=8,
+                opacity=0.7,
+                symbol="circle",
+            ),
+            text=df.apply(
+                lambda row: f"Ticker: {row['ticker']}<br>"
+                f"Window (Weekly): {row['window_weekly']}<br>"
+                f"Positive Z-Threshold: {row['z_threshold_weekly_positive']}<br>"
+                f"Cluster: {row['cluster']}",
+                axis=1,
+            ),
+            hoverinfo="text",
+            name="Weekly Positive",
+            xaxis="x2",
+            yaxis="y2",
+        )
+    )
+
+    # Trace for Weekly Negative Z-Thresholds
+    fig.add_trace(
+        go.Scatter(
+            x=df["window_weekly_jitter"],
+            y=df["z_threshold_weekly_negative_jitter"],
+            mode="markers",
+            marker=dict(
+                color=df["cluster_numeric"],
+                colorscale="viridis",
+                size=8,
+                opacity=0.7,
+                symbol="square",
+            ),
+            text=df.apply(
+                lambda row: f"Ticker: {row['ticker']}<br>"
+                f"Window (Weekly): {row['window_weekly']}<br>"
+                f"Negative Z-Threshold: {row['z_threshold_weekly_negative']}<br>"
+                f"Cluster: {row['cluster']}",
+                axis=1,
+            ),
+            hoverinfo="text",
+            name="Weekly Negative",
             xaxis="x2",
             yaxis="y2",
         )
@@ -88,14 +190,14 @@ def plot_reversion_params(data_dict):
 
     # Update layout with two subplots
     fig.update_layout(
-        title="Mean Reversion Clusters: Daily vs. Weekly",
+        title="Mean Reversion Clusters: Daily vs. Weekly Parameters",
         grid=dict(rows=1, columns=2, pattern="independent"),
         xaxis=dict(title="Window (Daily)", domain=[0.0, 0.45]),
-        yaxis=dict(title="Z-Threshold"),
+        yaxis=dict(title="Z-Threshold (Daily)"),
         xaxis2=dict(title="Window (Weekly)", domain=[0.55, 1.0]),
-        yaxis2=dict(title="Z-Threshold", anchor="x2"),
+        yaxis2=dict(title="Z-Threshold (Weekly)", anchor="x2"),
         template="plotly_white",
-        legend_title="Dataset",
+        legend_title="Parameter Type",
     )
 
     fig.show()
@@ -111,52 +213,51 @@ def plot_reversion_signals(data):
         data (dict): Keys are asset tickers, values are Z-score-based signals.
                      Negative => Overbought region, Positive => Oversold region.
     """
+    if not data:
+        print("No reversion signals available for plotting.")
+        return
 
     # Convert data to DataFrame
     df = pd.DataFrame(list(data.items()), columns=["Asset", "Value"])
-    df = df[df["Value"] != 0]  # Remove zero values if any
+    df = df[df["Value"].apply(lambda x: isinstance(x, (int, float)))]
+    if df.empty:
+        print(
+            "No non-zero numeric values remaining in reversion signals. Skipping plot."
+        )
+        return
+
     df = df.sort_values(by="Value")
 
     # Determine min and max for scaling
     min_val = df["Value"].min()  # most negative
     max_val = df["Value"].max()  # most positive
-    # For symmetric axis, we span from -max_abs to +max_abs
     max_abs = max(abs(min_val), abs(max_val))
 
-    # Color gradients
-    #   Negative: small negative (close to 0) -> orange, large negative -> deep red
-    #   Positive: small positive (close to 0) -> yellow, large positive -> deep green
+    # Color gradients for negative (orange to deep red) and positive (yellow to green)
     def get_bar_color(value):
         if value < 0:
-            # Normalize in [0, 1], 0 => near 0, 1 => min_val
             norm = abs(value) / abs(min_val) if min_val != 0 else 0
-            # Orange (255,150,0) -> Red (150,0,0)
-            r = 255 - int((255 - 150) * norm)  # 255 -> 150
-            g = 150 - int(150 * norm)  # 150 -> 0
+            r = 255 - int((255 - 150) * norm)
+            g = 150 - int(150 * norm)
             b = 0
         else:
-            # Normalize in [0, 1], 0 => 0, 1 => max_val
             norm = value / max_val if max_val != 0 else 0
-            # Yellow (255,255,100) -> Green (0,200,0)
-            r = 255 - int(255 * norm)  # 255 -> 0
-            g = 255 - int((255 - 200) * norm)  # 255 -> 200
-            b = 100 - int(100 * norm)  # 100 -> 0
+            r = 255 - int(255 * norm)
+            g = 255 - int((255 - 200) * norm)
+            b = 100 - int(100 * norm)
         return (r, g, b)
 
-    # Determine bar color and text color
     bar_colors = []
     text_colors = []
     for val in df["Value"]:
         r, g, b = get_bar_color(val)
         bar_colors.append(f"rgb({r},{g},{b})")
-        # Decide if bar is dark or light for text contrast
         brightness = 0.299 * r + 0.587 * g + 0.114 * b
         text_colors.append("black" if brightness > 140 else "white")
 
     df["BarColor"] = bar_colors
     df["TextColor"] = text_colors
 
-    # Create the bar chart
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
@@ -168,41 +269,31 @@ def plot_reversion_signals(data):
             textposition="inside",
             textfont=dict(color=df["TextColor"], size=16),
             hoverinfo="x+y+text",
-            width=0.8,  # Thicker bars
+            width=0.8,
         )
     )
 
-    # Hide y-axis ticks/labels (tickers now appear only inside bars)
-    fig.update_yaxes(
-        showticklabels=True,
-        showgrid=False,
-        zeroline=True,
-        showline=True,
-    )
-
-    # Center the x-axis around 0, keep the zero line visible
+    fig.update_yaxes(showticklabels=True, showgrid=False, zeroline=True, showline=True)
     fig.update_xaxes(
         range=[-max_abs, max_abs],
-        zeroline=True,  # Show line at x=0
+        zeroline=True,
         zerolinecolor="grey",
         zerolinewidth=2,
         showgrid=False,
         showline=True,
-        showticklabels=True,  # Hide numeric tick labels
+        showticklabels=True,
     )
 
-    # Increase overall figure size for easier visibility
     fig.update_layout(
         paper_bgcolor="white",
         plot_bgcolor="white",
+        template="plotly_white",
         showlegend=False,
         margin=dict(l=40, r=40, t=40, b=40),
         font=dict(family="Arial", size=14),
         title="Z-Score Reversion Signals",
     )
 
-    # Add left/right annotations for Overbought/Oversold
-    # Rotated 90°, centered vertically
     fig.add_annotation(
         x=0.0,
         y=0.5,
