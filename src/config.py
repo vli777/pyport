@@ -35,11 +35,11 @@ class Config:
     plot_anomalies: bool
     plot_clustering: bool
     plot_reversion: bool
-    
+
     use_anomaly_filter: bool
-    use_decorrelation: bool    
+    use_decorrelation: bool
     use_mean_reversion: bool
-    
+
     test_mode: bool
     test_data_visible_pct: float
     model_config: ModelConfig = field(default_factory=ModelConfig)
@@ -86,10 +86,9 @@ class Config:
             plot_clustering=config_dict.get("plot_clustering", False),
             plot_anomalies=config_dict.get("plot_anomalies", False),
             plot_reversion=config_dict.get("plot_reversion", False),
-            use_mean_reversion=config_dict.get("use_mean_reversion", True),
             use_anomaly_filter=config_dict.get("use_anomaly_filter", True),
             use_decorrelation=config_dict.get("use_decorrelation", True),
-            mean_reversion_strength=config_dict.get("mean_reversion_strength", 0.3),
+            use_mean_reversion=config_dict.get("use_mean_reversion", True),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict.get("test_data_visible_pct", 0.1),
             model_config=model_config,
