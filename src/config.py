@@ -38,7 +38,8 @@ class Config:
 
     use_anomaly_filter: bool
     use_decorrelation: bool
-    use_mean_reversion: bool
+    use_z_reversion: bool
+    use_ou_reversion: bool
 
     test_mode: bool
     test_data_visible_pct: float
@@ -86,9 +87,10 @@ class Config:
             plot_clustering=config_dict.get("plot_clustering", False),
             plot_anomalies=config_dict.get("plot_anomalies", False),
             plot_reversion=config_dict.get("plot_reversion", False),
-            use_anomaly_filter=config_dict.get("use_anomaly_filter", True),
-            use_decorrelation=config_dict.get("use_decorrelation", True),
-            use_mean_reversion=config_dict.get("use_mean_reversion", True),
+            use_anomaly_filter=config_dict.get("use_anomaly_filter", False),
+            use_decorrelation=config_dict.get("use_decorrelation", False),
+            use_z_reversion=config_dict.get("use_z_reversion", False),
+            use_ou_reversion=config_dict.get("use_ou_reversion", False),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict.get("test_data_visible_pct", 0.1),
             model_config=model_config,

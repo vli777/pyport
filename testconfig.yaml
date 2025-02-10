@@ -6,7 +6,7 @@ input_files:
 
 models:
   float: # Time period in years, default 1.0
-    - str # Model name, default nested_clustering
+    - str # Model name, default "nested_clustering"
     # - str  # Other model names
 
 download: bool # Whether to download data
@@ -23,7 +23,8 @@ plot_clustering: bool # Where to plot hierarchical clustering dendrogram
 plot_anomalies: bool # Whether to plot anomalies detected by Kalman filter
 plot_reversion: bool # Whether to plot mean reversion parameters
 
-use_mean_reversion: bool # Whether to adjust allocation weights with zscore signals
+use_z_reversion: bool # Whether to adjust weights with zscore-based mean reversion
+use_ou_reversion: bool # Whether to adjust weights with OU process mean reversion
 use_anomaly_filter: bool # Whether to filter assets with anomalous returns
 use_decorrelation: bool # Whether to filter correlated assets
 
