@@ -1,0 +1,100 @@
+import optuna
+from optuna.integration import SkoptSampler
+import pandas as pd
+
+from reversion.reversion_utils import (
+    adjust_allocation_with_mean_reversion,
+    propagate_signals_by_similarity,
+)
+from reversion.strategy_metrics import composite_score, simulate_strategy
+
+
+def alpha_objective(
+    trial,
+    returns_df: pd.DataFrame,
+    historical_vol: float,
+    baseline_allocation: pd.Series,
+    composite_signals: dict,
+    group_mapping: dict,
+    rebalance_period: int = 30,
+) -> float:
+    """
+    Optuna objective function for tuning base_alpha.
+    Uses volatility-conditioned priors and rebalances dynamically.
+    """
+    # Set prior mean based on historical volatility
+    mean_alpha = min(0.1, max(0.01, 0.5 * historical_vol))
+    trial.set_user_attr("prior_alpha", mean_alpha)  # Store prior for reference
+
+    # Sample base_alpha within a reasonable range
+    base_alpha = trial.suggest_float("base_alpha", 0.01, 0.5, log=True)
+
+    # Expand allocations into a dynamic positions DataFrame
+    positions_df = pd.DataFrame(index=returns_df.index, columns=returns_df.columns)
+
+    for i, date in enumerate(returns_df.index):
+        if i % rebalance_period == 0:
+            # Recompute mean reversion signals every rebalance period
+            updated_composite_signals = propagate_signals_by_similarity(
+                composite_signals, group_mapping, returns_df
+            )
+            # Adjust allocations dynamically
+            final_allocation = adjust_allocation_with_mean_reversion(
+                baseline_allocation=baseline_allocation,
+                composite_signals=updated_composite_signals,
+                alpha=base_alpha,
+                allow_short=False,
+            )
+
+        # Store the latest allocation
+        positions_df.loc[date] = final_allocation
+
+    # Simulate strategy performance
+    strategy_returns, metrics = simulate_strategy(returns_df, positions_df)
+
+    # Return composite performance score
+    return composite_score(metrics)
+
+
+def tune_reversion_alpha(
+    returns_df: pd.DataFrame,
+    baseline_allocation: pd.Series,
+    composite_signals: dict,
+    group_mapping: dict,
+    n_trials: int = 50,
+    patience: int = 10,  # Stop early if no improvement
+) -> float:
+    """
+    Uses Bayesian optimization (SkoptSampler) to tune base_alpha efficiently.
+    """
+    # Compute historical realized volatility
+    historical_vol = returns_df.rolling(window=180).std().mean().mean()
+
+    study = optuna.create_study(
+        direction="maximize",
+        sampler=SkoptSampler(),  # Bayesian Optimization
+    )
+
+    # Use early stopping to reduce unnecessary trials
+    early_stopping_callback = optuna.integration.MedianPruner(
+        n_startup_trials=5, n_warmup_steps=patience
+    )
+
+    study.optimize(
+        lambda trial: alpha_objective(
+            trial,
+            returns_df,
+            historical_vol,
+            baseline_allocation,
+            composite_signals,
+            group_mapping,
+        ),
+        n_trials=n_trials,
+        callbacks=[early_stopping_callback],
+    )
+
+    # Get the best base_alpha
+    best_base_alpha = study.best_params["base_alpha"]
+    print(f"Optimal base_alpha: {best_base_alpha}")
+
+    return best_base_alpha

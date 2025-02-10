@@ -11,6 +11,7 @@ from reversion.reversion_utils import (
     is_cache_stale,
     propagate_signals_by_similarity,
 )
+from reversion.optimize_reversion_strength import tune_reversion_alpha
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
@@ -91,8 +92,14 @@ def apply_mean_reversion(
     )
 
     # Adjust the baseline allocation using the updated composite signals.
+    base_alpha = tune_reversion_alpha(
+        returns_df=returns_df,
+        baseline_allocation=baseline_allocation,
+        composite_signals=updated_composite_signals,
+        group_mapping=group_mapping,
+    )
     realized_volatility = returns_df.rolling(window=30).std().mean(axis=1)
-    adaptive_alpha = 0.2 / (1 + realized_volatility.iloc[-1])
+    adaptive_alpha = base_alpha / (1 + realized_volatility.iloc[-1])
     final_allocation = adjust_allocation_with_mean_reversion(
         baseline_allocation=baseline_allocation,
         composite_signals=updated_composite_signals,

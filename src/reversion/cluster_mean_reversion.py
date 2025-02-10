@@ -6,7 +6,6 @@ from reversion.optimize_window_threshold import optimize_robust_mean_reversion
 from reversion.reversion_utils import (
     format_asset_cluster_map,
 )
-from reversion.optimize_period_weights import find_optimal_weights
 from reversion.reversion_signals import (
     compute_stateful_signal_with_decay,
 )
@@ -40,7 +39,9 @@ def cluster_mean_reversion(
         if not tickers_in_returns:
             continue
 
-        group_returns: pd.DataFrame = returns_df[tickers_in_returns].dropna(how="all", axis=1)
+        group_returns: pd.DataFrame = returns_df[tickers_in_returns].dropna(
+            how="all", axis=1
+        )
         if group_returns.empty:
             continue
 
@@ -63,7 +64,9 @@ def cluster_mean_reversion(
                 "z_threshold_positive": group_params["z_threshold_weekly_positive"],
                 "z_threshold_negative": group_params["z_threshold_weekly_negative"],
             }
-            print(f"DEBUG: Using cached window/threshold parameters for cluster {cluster_label}")
+            print(
+                f"DEBUG: Using cached window/threshold parameters for cluster {cluster_label}"
+            )
         else:
             # Optimize window and thresholds.
             best_params_daily, _ = optimize_robust_mean_reversion(
@@ -81,13 +84,21 @@ def cluster_mean_reversion(
             )
             daily_params = {
                 "window": round(best_params_daily.get("window", 20), 1),
-                "z_threshold_positive": round(best_params_daily.get("z_threshold_positive", 1.5), 1),
-                "z_threshold_negative": round(best_params_daily.get("z_threshold_negative", 1.5), 1),
+                "z_threshold_positive": round(
+                    best_params_daily.get("z_threshold_positive", 1.5), 1
+                ),
+                "z_threshold_negative": round(
+                    best_params_daily.get("z_threshold_negative", 1.5), 1
+                ),
             }
             weekly_params = {
                 "window": round(best_params_weekly.get("window", 5), 1),
-                "z_threshold_positive": round(best_params_weekly.get("z_threshold_positive", 1.5), 1),
-                "z_threshold_negative": round(best_params_weekly.get("z_threshold_negative", 1.5), 1),
+                "z_threshold_positive": round(
+                    best_params_weekly.get("z_threshold_positive", 1.5), 1
+                ),
+                "z_threshold_negative": round(
+                    best_params_weekly.get("z_threshold_negative", 1.5), 1
+                ),
             }
             # Set default weights (e.g. 0.7 for daily, 0.3 for weekly).
             group_params = {
@@ -100,7 +111,9 @@ def cluster_mean_reversion(
                 "weight_daily": 0.7,  # default weight (can be tuned offline)
                 "weight_weekly": 0.3,
             }
-            print(f"DEBUG: Optimized window/threshold parameters for cluster {cluster_label}")
+            print(
+                f"DEBUG: Optimized window/threshold parameters for cluster {cluster_label}"
+            )
 
         # --- Compute stateful signals using the (cached or optimized) parameters ---
 
@@ -111,9 +124,14 @@ def cluster_mean_reversion(
             if series.empty:
                 daily_signals[t] = pd.Series(dtype=float)
             else:
-                daily_signals[t] = compute_stateful_signal_with_decay(series, daily_params)
+                daily_signals[t] = compute_stateful_signal_with_decay(
+                    series, daily_params
+                )
         daily_signals_df = pd.concat(daily_signals, axis=1).fillna(0)
-        print(f"Daily signals summary for cluster {cluster_label}:\n", daily_signals_df.describe())
+        print(
+            f"Daily signals summary for cluster {cluster_label}:\n",
+            daily_signals_df.describe(),
+        )
 
         # Compute weekly signals.
         weekly_signals = {}
@@ -122,13 +140,20 @@ def cluster_mean_reversion(
             if series_weekly.empty:
                 weekly_signals[t] = pd.Series(dtype=float)
             else:
-                weekly_signals[t] = compute_stateful_signal_with_decay(series_weekly, weekly_params)
+                weekly_signals[t] = compute_stateful_signal_with_decay(
+                    series_weekly, weekly_params
+                )
         weekly_signals_df = pd.concat(weekly_signals, axis=1).fillna(0)
-        print(f"DEBUG: Weekly signals (last rows) for cluster {cluster_label}:\n", weekly_signals_df.tail())
+        print(
+            f"DEBUG: Weekly signals (last rows) for cluster {cluster_label}:\n",
+            weekly_signals_df.tail(),
+        )
         print("Weekly signals summary:\n", weekly_signals_df.describe())
 
         # We no longer re-run weight optimization; assume weights are already in group_params.
-        print(f"Using cached weights: weight_daily={group_params['weight_daily']}, weight_weekly={group_params['weight_weekly']} for cluster {cluster_label}")
+        print(
+            f"Using cached weights: weight_daily={group_params['weight_daily']}, weight_weekly={group_params['weight_weekly']} for cluster {cluster_label}"
+        )
 
         # Update the cache for each ticker in this cluster.
         for ticker in tickers_in_returns:
@@ -137,7 +162,7 @@ def cluster_mean_reversion(
         # Build the group_signal dictionary.
         group_signal = {
             "tickers": tickers_in_returns,
-            "daily": daily_signals,   # dict: ticker -> pd.Series
+            "daily": daily_signals,  # dict: ticker -> pd.Series
             "weekly": weekly_signals,  # dict: ticker -> pd.Series
         }
         print(f"DEBUG: group_signal for cluster {cluster_label}:", group_signal)
