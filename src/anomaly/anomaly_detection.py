@@ -124,13 +124,12 @@ def remove_anomalous_stocks(
         else "No stocks were removed."
     )
 
-    if plot and cache:
+    if plot and cache and anomalous_stocks:
         optimization_summary = list(cache.values())
         plot_optimization_summary(
             optimization_summary=optimization_summary,
             max_anomaly_fraction=max_anomaly_fraction,
         )
-    if plot and anomalous_stocks:
         plot_anomaly_overview(anomalous_stocks, cache, returns_df)
 
     return valid_tickers
@@ -166,15 +165,15 @@ def optimize_threshold_for_ticker(
     def objective(trial):
         # Adjust the search space and anomaly detection function based on method.
         if method == "IF":
-            threshold = trial.suggest_float("threshold", 4.2, 6.9, step=0.1)
+            threshold = trial.suggest_float("threshold", 5.0, 8.0, step=0.1)
             anomaly_flags, _ = apply_isolation_forest(
                 returns_series, threshold=threshold, contamination=contamination
             )
         elif method == "KF":
-            threshold = trial.suggest_float("threshold", 5.0, 8.0, step=0.1)
+            threshold = trial.suggest_float("threshold", 5.0, 12.0, step=0.1)
             anomaly_flags, _ = apply_kalman_filter(returns_series, threshold=threshold)
         elif method == "Z-score":
-            threshold = trial.suggest_float("threshold", 2.0, 4.0, step=0.1)
+            threshold = trial.suggest_float("threshold", 3.0, 10.0, step=0.1)
             anomaly_flags, _ = apply_fixed_zscore(returns_series, threshold=threshold)
         else:
             raise ValueError(f"Unsupported method: {method}")

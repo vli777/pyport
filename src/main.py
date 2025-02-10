@@ -2,8 +2,11 @@ import sys
 from typing import List, Optional
 from config import Config
 from core import run_pipeline
+
 from plotly_graphs import plot_graphs
-from utils import logger
+from reversion.reversion_plots import plot_reversion_params, plot_reversion_signals
+from utils.caching_utils import load_parameters_from_pickle
+from utils.logger import logger
 
 
 def iterative_pipeline_runner(
@@ -12,32 +15,8 @@ def iterative_pipeline_runner(
     max_epochs: Optional[int] = 1,
     min_weight: Optional[float] = None,
     portfolio_max_size: Optional[int] = None,
-    top_n_candidates: Optional[int] = None,
     run_local: bool = False,
 ):
-    """
-    Runs the pipeline iteratively, updating config with provided arguments if valid.
-
-    Parameters:
-    ----------
-    config : Config
-        The configuration object for the pipeline.
-    initial_symbols : list, optional
-        List of initial symbols to start the pipeline.
-    max_epochs : int, optional
-        Maximum number of epochs.
-    min_weight : float, optional
-        Minimum asset allocation weight to be considered.
-    portfolio_max_size : int, optional
-        Number of top symbols to select for the next epoch.
-    run_local : bool, optional
-        Whether to run the pipeline locally.
-
-    Returns:
-    -------
-    dict
-        Results of the final pipeline run.
-    """
     # Update config with provided arguments if they are valid
     if min_weight is not None:
         if isinstance(min_weight, float):
@@ -51,25 +30,20 @@ def iterative_pipeline_runner(
         else:
             raise TypeError("portfolio_max_size must be an integer")
 
-    if top_n_candidates is not None:
-        if isinstance(top_n_candidates, int):
-            config.top_n_candidates = top_n_candidates
-        else:
-            raise TypeError("top_n_candidates must be an integer")
-
     # initial_symbols and run_local are handled separately as they may not be part of config
     symbols = initial_symbols
     previous_top_symbols = set()
     final_result = None
+    plot_done = False
+    reversion_plotted = False
 
-    for epoch in range(max_epochs + 1):
+    for epoch in range(max_epochs):
         print(f"Epoch {epoch + 1}")
 
-        # Enable plots only in the first epoch
+        # Enable filters only in the first epoch
         if epoch > 0:
-            config.plot_clustering = False
-            config.plot_anomalies = False
-            config.plot_reversion = False
+            config.use_anomaly_filter = False
+            config.use_decorrelation = False
 
         # Run the pipeline
         result = run_pipeline(
@@ -107,11 +81,8 @@ def iterative_pipeline_runner(
                 f"Stopping epochs as the number of portfolio holdings ({len(valid_symbols)}) is <= the configured portfolio max size of {config.portfolio_max_size}."
             )
 
-            # Run final pipeline with plots enabled
-            final_result = run_pipeline(
-                config=config,
-                symbols_override=valid_symbols[: config.portfolio_max_size],
-            )
+            # Use the last valid result instead of running the pipeline again
+            final_result = result
             break
 
         # Update symbols for the next epoch
@@ -119,14 +90,30 @@ def iterative_pipeline_runner(
         symbols = valid_symbols
         final_result = result
 
+    # Plot reversion signals if configured
+    if config.plot_reversion and not reversion_plotted:
+        reversion_cache_file = "optuna_cache/reversion_cache_global.pkl"
+        reversion_cache = load_parameters_from_pickle(reversion_cache_file)
+
+        reversion_params = reversion_cache["params"]
+        if isinstance(reversion_params, dict):
+            plot_reversion_params(data_dict=reversion_params)
+
+        reversion_signals = reversion_cache["signals"]
+        if isinstance(reversion_signals, dict):
+            plot_reversion_signals(reversion_signals)
+
+        reversion_plotted = True
+
     # Ensure plotting is only done in the final result
-    if run_local:
+    if run_local and not plot_done:
         plot_graphs(
             daily_returns=final_result["daily_returns"],
             cumulative_returns=final_result["cumulative_returns"],
             config=config,
             symbols=final_result["symbols"],
         )
+        plot_done = True
 
     return final_result
 

@@ -14,10 +14,13 @@ from process_symbols import process_symbols
 from result_output import output
 from anomaly.anomaly_detection import remove_anomalous_stocks
 from boxplot import generate_boxplot_data
-from correlation.tsne_dbscan import filter_correlated_groups_dbscan
 from reversion.mean_reversion import apply_mean_reversion
+from correlation.filter_hdbscan import (
+    filter_correlated_groups_hdbscan,
+    get_cluster_labels,
+)
 from utils.caching_utils import cleanup_cache
-from utils.data_utils import process_input_files
+from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
 from utils.portfolio_utils import (
     normalize_weights,
@@ -69,6 +72,7 @@ def run_pipeline(
         )
         try:
             data = process_symbols(
+                # data = download_multi_ticker_data(
                 symbols=all_symbols,
                 start_date=start_date,
                 end_date=end_date,
@@ -111,7 +115,9 @@ def run_pipeline(
             )
             raise
 
-    def preprocess_data(df: pd.DataFrame, config: Config) -> pd.DataFrame:
+    def preprocess_data(
+        df: pd.DataFrame, config: Config
+    ) -> Tuple[pd.DataFrame, dict[str, Any]]:
         """
         Preprocess the input DataFrame to calculate returns and optionally remove anomalous stocks.
 
@@ -123,6 +129,10 @@ def run_pipeline(
             pd.DataFrame: Processed DataFrame with daily returns, with optional anomaly filtering and decorrelation applied.
         """
         returns_df = calculate_returns(df)
+        # Create asset cluster map
+        asset_cluster_map = get_cluster_labels(
+            returns_df=returns_df, cache_dir="optuna_cache", reoptimize=False
+        )
         filtered_returns_df = returns_df  # Ensure it's always assigned
 
         if config.use_anomaly_filter:
@@ -139,7 +149,9 @@ def run_pipeline(
         # Apply decorrelation filter if enabled
         if config.use_decorrelation:
             logger.info("Filtering correlated assets...")
-            valid_symbols = filter_correlated_assets(filtered_returns_df, config)
+            valid_symbols = filter_correlated_assets(
+                filtered_returns_df, config, asset_cluster_map
+            )
 
             valid_symbols = [
                 symbol
@@ -150,9 +162,13 @@ def run_pipeline(
         filtered_returns_df = filtered_returns_df[valid_symbols]  # Always valid
 
         # Remove rows where all columns are NaN after all filtering steps
-        return filtered_returns_df.dropna(how="all")
+        return filtered_returns_df.dropna(how="all"), asset_cluster_map
 
-    def filter_correlated_assets(returns_df: pd.DataFrame, config: Config) -> List[str]:
+    def filter_correlated_assets(
+        returns_df: pd.DataFrame,
+        config: Config,
+        asset_cluster_map: Dict[str, int],
+    ) -> List[str]:
         """
         Apply mean reversion and decorrelation filters to return valid asset symbols.
         Falls back to the original returns_df columns if filtering results in an empty list.
@@ -160,15 +176,11 @@ def run_pipeline(
         original_symbols = list(returns_df.columns)  # Preserve original symbols
 
         try:
-            decorrelated_tickers = filter_correlated_groups_dbscan(
+            decorrelated_tickers = filter_correlated_groups_hdbscan(
                 returns_df=returns_df,
+                asset_cluster_map=asset_cluster_map,
                 risk_free_rate=config.risk_free_rate,
-                eps=0.7,
-                min_samples=2,
-                top_n_per_cluster=config.top_n_candidates,
                 plot=config.plot_clustering,
-                cache_dir="optuna_cache",
-                reoptimize=False,
             )
 
             valid_symbols = [
@@ -231,6 +243,10 @@ def run_pipeline(
 
         return normalized_weights
 
+    ###############################
+    ########    MAIN    ###########
+    ###############################
+
     # Load and validate symbols
     try:
         all_symbols = load_symbols()
@@ -259,7 +275,9 @@ def run_pipeline(
 
     # Ensure we use the **largest valid date range** for returns_df
     all_dates = df_all.index  # Keep full range before filtering
-    returns_df = preprocess_data(df_all, config)  # apply all pre-optimization filters
+
+    # apply all pre-optimization filters
+    returns_df, asset_cluster_map = preprocess_data(df=df_all, config=config)
 
     valid_symbols = list(returns_df.columns)
     if not valid_symbols:
@@ -279,9 +297,16 @@ def run_pipeline(
         logger.error(f"Error slicing df_all: {e}")
         raise
 
+    #####################################
+    ##########  OPTIMIZATION  ###########
+    #####################################
     # Iterate through each time period and perform optimization
     logger.info("Running optimization...")
     for period in sorted_time_periods:
+        if period != longest_period:
+            config.plot_anomalies = False
+            config.plot_clustering = False
+
         start, end = calculate_start_end_dates(period)
         logger.debug(f"Processing period: {period} from {start} to {end}")
 
@@ -332,6 +357,9 @@ def run_pipeline(
             years=period,
         )
 
+    ################################
+    ######  POST-PROCESSING  #######
+    ################################
     logger.info("Post-processing optimization results...")
 
     if not stack:
@@ -389,6 +417,7 @@ def run_pipeline(
     if config.use_mean_reversion:
         logger.info("\nApplying mean reversion on normalized weights...")
         mean_reverted_weights = apply_mean_reversion(
+            asset_cluster_map=asset_cluster_map,
             baseline_allocation=normalized_avg_weights,
             returns_df=returns_df,
             config=config,

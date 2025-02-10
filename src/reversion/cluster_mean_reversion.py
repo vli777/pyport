@@ -1,13 +1,18 @@
+from typing import Dict
 import numpy as np
 import pandas as pd
 
 from reversion.optimize_window_threshold import optimize_robust_mean_reversion
-from reversion.reversion_utils import cluster_stocks, group_ticker_params_by_cluster
-from reversion.optimize_period_weights import find_optimal_weights
-from reversion.reversion_signals import compute_group_stateful_signals
+from reversion.reversion_utils import (
+    format_asset_cluster_map,
+)
+from reversion.reversion_signals import (
+    compute_stateful_signal_with_decay,
+)
 
 
 def cluster_mean_reversion(
+    asset_cluster_map: Dict[str, int],
     returns_df: pd.DataFrame,
     n_trials: int = 50,
     n_jobs: int = -1,
@@ -16,102 +21,161 @@ def cluster_mean_reversion(
     if global_cache is None:
         global_cache = {}
 
-    clusters = cluster_stocks(returns_df)
+    # Format clusters using the asset_cluster_map.
+    clusters = format_asset_cluster_map(asset_cluster_map, global_cache)
     print(f"{len(clusters)} clusters found")
 
-    # Create a mapping from cluster -> known parameters (from previous runs)
-    known_group_params = group_ticker_params_by_cluster(global_cache)
+    overall_signals = {}  # This will be a flat dict keyed by ticker.
 
-    # This will hold the group signals in the desired format.
-    group_signals = {}
+    # Build a reverse mapping: for each ticker already in the cache, map ticker -> its params.
+    cached_ticker_params = {}
+    for ticker, params in global_cache.items():
+        if isinstance(params, dict) and "cluster" in params:
+            cached_ticker_params[ticker] = params
 
-    for label, tickers in clusters.items():
-        group_returns: pd.DataFrame = returns_df[tickers].dropna(how="all", axis=1)
+    for cluster_label, tickers in clusters.items():
+        # Filter tickers to those available in returns_df.
+        tickers_in_returns = [t for t in tickers if t in returns_df.columns]
+        if not tickers_in_returns:
+            continue
+
+        group_returns: pd.DataFrame = returns_df[tickers_in_returns].dropna(
+            how="all", axis=1
+        )
         if group_returns.empty:
             continue
 
-        # Try to find an existing group from the cache.
-        existing_group_id = None
-        existing_params = None
-        for ticker in tickers:
-            for cluster_id, group_data in known_group_params.items():
-                if ticker in group_data["tickers"]:
-                    existing_group_id = cluster_id
-                    existing_params = group_data["params"]
-                    break
-            if existing_group_id:
-                break  # Found at least one match
+        # Check for cached parameters in this cluster.
+        group_params = None
+        for ticker in tickers_in_returns:
+            if ticker in cached_ticker_params:
+                group_params = cached_ticker_params[ticker]
+                break
 
-        if existing_params:
-            # Apply existing parameters to all tickers in this group.
-            for ticker in tickers:
-                global_cache[ticker] = existing_params
-
-            # We must also compute daily and weekly signals using these parameters.
-            group_signal = compute_group_stateful_signals(
-                group_returns=group_returns, tickers=tickers, params=existing_params
+        if group_params is not None:
+            # Use the cached window/threshold parameters, including weights.
+            daily_params = {
+                "window": group_params["window_daily"],
+                "z_threshold_positive": group_params["z_threshold_daily_positive"],
+                "z_threshold_negative": group_params["z_threshold_daily_negative"],
+            }
+            weekly_params = {
+                "window": group_params["window_weekly"],
+                "z_threshold_positive": group_params["z_threshold_weekly_positive"],
+                "z_threshold_negative": group_params["z_threshold_weekly_negative"],
+            }
+            print(
+                f"DEBUG: Using cached window/threshold parameters for cluster {cluster_label}"
             )
-            group_signals[label] = group_signal
-            continue  # Skip re-optimization
+        else:
+            # Optimize window and thresholds.
+            best_params_daily, _ = optimize_robust_mean_reversion(
+                returns_df=group_returns,
+                test_window_range=range(5, 31, 5),
+                n_trials=n_trials,
+                n_jobs=n_jobs,
+            )
+            weekly_returns = group_returns.resample("W").last()
+            best_params_weekly, _ = optimize_robust_mean_reversion(
+                returns_df=weekly_returns,
+                test_window_range=range(1, 26),
+                n_trials=n_trials,
+                n_jobs=n_jobs,
+            )
+            daily_params = {
+                "window": round(best_params_daily.get("window", 20), 1),
+                "z_threshold_positive": round(
+                    best_params_daily.get("z_threshold_positive", 1.5), 1
+                ),
+                "z_threshold_negative": round(
+                    best_params_daily.get("z_threshold_negative", 1.5), 1
+                ),
+            }
+            weekly_params = {
+                "window": round(best_params_weekly.get("window", 5), 1),
+                "z_threshold_positive": round(
+                    best_params_weekly.get("z_threshold_positive", 1.5), 1
+                ),
+                "z_threshold_negative": round(
+                    best_params_weekly.get("z_threshold_negative", 1.5), 1
+                ),
+            }
+            # Set default weights (e.g. 0.7 for daily, 0.3 for weekly).
+            group_params = {
+                "window_daily": daily_params["window"],
+                "z_threshold_daily_positive": daily_params["z_threshold_positive"],
+                "z_threshold_daily_negative": daily_params["z_threshold_negative"],
+                "window_weekly": weekly_params["window"],
+                "z_threshold_weekly_positive": weekly_params["z_threshold_positive"],
+                "z_threshold_weekly_negative": weekly_params["z_threshold_negative"],
+                "weight_daily": 0.7,  # default weight (can be tuned offline)
+                "weight_weekly": 0.3,
+            }
+            print(
+                f"DEBUG: Optimized window/threshold parameters for cluster {cluster_label}"
+            )
 
-        # If no existing parameters found, optimize the group.
-        best_params_daily, _ = optimize_robust_mean_reversion(
-            returns_df=group_returns,
-            test_window_range=range(5, 31, 5),
-            n_trials=n_trials,
-            n_jobs=n_jobs,
+        # --- Compute stateful signals using the (cached or optimized) parameters ---
+
+        # Compute daily signals.
+        daily_signals = {}
+        for t in tickers_in_returns:
+            series = group_returns[t].dropna()
+            if series.empty:
+                daily_signals[t] = pd.Series(dtype=float)
+            else:
+                daily_signals[t] = compute_stateful_signal_with_decay(
+                    series, daily_params
+                )
+        daily_signals_df = pd.concat(daily_signals, axis=1).fillna(0)
+        print(
+            f"Daily signals summary for cluster {cluster_label}:\n",
+            daily_signals_df.describe(),
         )
 
-        # Optimize for weekly returns.
-        weekly_returns = group_returns.resample("W").last()
-        best_params_weekly, _ = optimize_robust_mean_reversion(
-            returns_df=weekly_returns,
-            test_window_range=range(1, 26),
-            n_trials=n_trials,
-            n_jobs=n_jobs,
+        # Compute weekly signals.
+        weekly_signals = {}
+        for t in tickers_in_returns:
+            series_weekly = group_returns[t].resample("W").last().dropna()
+            if series_weekly.empty:
+                weekly_signals[t] = pd.Series(dtype=float)
+            else:
+                weekly_signals[t] = compute_stateful_signal_with_decay(
+                    series_weekly, weekly_params
+                )
+        weekly_signals_df = pd.concat(weekly_signals, axis=1).fillna(0)
+        print(
+            f"DEBUG: Weekly signals (last rows) for cluster {cluster_label}:\n",
+            weekly_signals_df.tail(),
+        )
+        print("Weekly signals summary:\n", weekly_signals_df.describe())
+
+        # We no longer re-run weight optimization; assume weights are already in group_params.
+        print(
+            f"Using cached weights: weight_daily={group_params['weight_daily']}, weight_weekly={group_params['weight_weekly']} for cluster {cluster_label}"
         )
 
-        # Optimize the combination weights for daily and weekly signals.
-        daily_signals_df = pd.DataFrame.from_dict(
-            {
-                t: group_returns[t].to_dict()
-                for t in tickers
-                if t in group_returns.columns
-            },
-            orient="index",
-        ).T.fillna(0)
-        # Here you might want to compute true weekly signals; for now we copy daily.
-        weekly_signals_df = daily_signals_df.copy()
-
-        group_weights = find_optimal_weights(
-            daily_signals_df=daily_signals_df,
-            weekly_signals_df=weekly_signals_df,
-            returns_df=group_returns,
-            n_trials=n_trials,
-            n_jobs=n_jobs,
-        )
-
-        # Combine parameters into one dict for this cluster.
-        group_params = {
-            "window_daily": round(best_params_daily.get("window", 20), 1),
-            "z_threshold_daily": round(best_params_daily.get("z_threshold", 1.5), 1),
-            "window_weekly": round(best_params_weekly.get("window", 5), 1),
-            "z_threshold_weekly": round(best_params_weekly.get("z_threshold", 1.5), 1),
-            "weight_daily": round(group_weights.get("weight_daily", 0.7), 1),
-            "weight_weekly": round(group_weights.get("weight_weekly", 0.3), 1),
-            "cluster": label,  # Store the current label
-        }
-
-        # Update the global cache for all tickers in this group.
-        for ticker in tickers:
+        # Update the cache for each ticker in this cluster.
+        for ticker in tickers_in_returns:
             global_cache[ticker] = group_params
 
-        # Compute group signals (daily and weekly) using the optimized parameters.
-        group_signal = compute_group_stateful_signals(
-            group_returns=group_returns, tickers=tickers, params=group_params
-        )
-        group_signals[label] = group_signal
+        # Build the group_signal dictionary.
+        group_signal = {
+            "tickers": tickers_in_returns,
+            "daily": daily_signals,  # dict: ticker -> pd.Series
+            "weekly": weekly_signals,  # dict: ticker -> pd.Series
+        }
+        print(f"DEBUG: group_signal for cluster {cluster_label}:", group_signal)
 
-        print(f"Group {label}: {len(tickers)} tickers optimized.")
+        # Flatten group_signal so that each ticker becomes its own key.
+        if "tickers" in group_signal:
+            for ticker in group_signal["tickers"]:
+                overall_signals[ticker] = {
+                    "daily": group_signal["daily"].get(ticker, {}),
+                    "weekly": group_signal["weekly"].get(ticker, {}),
+                }
+        else:
+            overall_signals.update(group_signal)
+        print(f"Group {cluster_label}: {len(tickers_in_returns)} tickers optimized.")
 
-    return group_signals
+    return overall_signals

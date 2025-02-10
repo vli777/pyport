@@ -1,5 +1,6 @@
 from datetime import date
 from pathlib import Path
+from typing import Union
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
@@ -20,7 +21,7 @@ from utils.logger import logger
 def filter_correlated_groups_dbscan(
     returns_df: pd.DataFrame,
     risk_free_rate: float = 0.0,
-    eps: float = 0.2,
+    eps: Union[float, None] = None,
     min_samples: int = 2,
     top_n_per_cluster: int = 1,
     plot: bool = False,
@@ -56,8 +57,8 @@ def filter_correlated_groups_dbscan(
     start_date = returns_df.index.min().strftime("%Y%m%d")
     end_date = returns_df.index.max().strftime("%Y%m%d")
     today = date.today()
-    cache_filename = cache_path / f"dbscan_epsilon_{start_date}_{end_date}_{today}.pkl"
-    cached_params = load_parameters_from_pickle(cache_filename)
+    cache_filename = cache_path / f"dbscan_epsilon.pkl"
+    cached_params = load_parameters_from_pickle(cache_filename) or {}
 
     if eps is None:
         if "eps" in cached_params:

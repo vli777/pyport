@@ -11,12 +11,12 @@ def evaluate_dbscan_clusters(
     returns_df: pd.DataFrame, cluster_labels: np.ndarray
 ) -> float:
     """
-    Evaluate DBSCAN clustering quality by computing the average intra‑cluster correlation.
+    Evaluate DBSCAN clustering quality by computing the average intra-cluster correlation.
     Only clusters with at least two assets are considered. Noise (label == -1) or singletons
     are ignored.
 
     Returns:
-        float: Average intra‑cluster correlation (the higher, the better).
+        float: Average intra-cluster correlation (the higher, the better).
                Returns -1.0 if no valid clusters are found.
     """
     corr_matrix = compute_correlation_matrix(returns_df)
@@ -45,7 +45,7 @@ def objective_dbscan_decorrelation(
 ) -> float:
     """
     Optuna objective function to optimize the eps parameter for DBSCAN.
-    The goal is to maximize the average intra‑cluster correlation (i.e. each cluster’s
+    The goal is to maximize the average intra-cluster correlation (i.e. each cluster's
     members are highly correlated), so that when we select only the top performer
     from each cluster, the remaining portfolio consists of decorrelated assets.
 
@@ -55,15 +55,15 @@ def objective_dbscan_decorrelation(
         min_samples (int): Minimum samples for DBSCAN.
 
     Returns:
-        float: The average intra‑cluster correlation as the objective (to maximize).
+        float: The average intra-cluster correlation as the objective (to maximize).
     """
     # Suggest an eps value in a reasonable range (adjust as needed)
     eps = trial.suggest_float("eps", 0.01, 1.0, log=True)
     logger.info(f"Trial {trial.number}: Testing eps = {eps:.4f}")
 
-    # Compute correlation and derive the distance matrix (distance = 1 - correlation)
+    # Compute correlation and normalized distance matrix (0 to 1)
     corr_matrix = compute_correlation_matrix(returns_df)
-    distance_matrix = 1 - corr_matrix
+    distance_matrix = (1 - corr_matrix) / 2
 
     # Run DBSCAN clustering with the trial-suggested eps.
     dbscan = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed")
@@ -77,7 +77,7 @@ def objective_dbscan_decorrelation(
         )
         return -1.0  # Penalize trials that fail to produce clusters
     logger.info(
-        f"Trial {trial.number}: Average intra‑cluster correlation = {quality:.4f}"
+        f"Trial {trial.number}: Average intra-cluster correlation = {quality:.4f}"
     )
     return quality
 
@@ -86,7 +86,7 @@ def run_dbscan_decorrelation_study(
     returns_df: pd.DataFrame, min_samples: int = 2, n_trials: int = 50
 ) -> dict:
     """
-    Run an Optuna study to optimize DBSCAN’s eps so that clusters are as tight as possible.
+    Run an Optuna study to optimize DBSCAN's eps so that clusters are as tight as possible.
     A tight (high correlation) cluster means that by selecting the top performer from each
     cluster, you end up with a portfolio of decorrelated assets.
 
@@ -102,6 +102,7 @@ def run_dbscan_decorrelation_study(
     study.optimize(
         lambda trial: objective_dbscan_decorrelation(trial, returns_df, min_samples),
         n_trials=n_trials,
+        sampler=optuna.samplers.TPESampler(seed=42),
     )
 
     best_params = study.best_trial.params
