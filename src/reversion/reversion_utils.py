@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 import hashlib
-import datetime
+from datetime import datetime
 
 from correlation.correlation_utils import compute_correlation_matrix
 from utils.portfolio_utils import normalize_weights
@@ -40,9 +40,17 @@ def format_asset_cluster_map(
     return formatted_clusters
 
 
-def is_cache_stale(last_updated, threshold_days=365):
-    last_update = datetime.datetime.fromisoformat(last_updated)
-    return (datetime.datetime.now() - last_update).days > threshold_days
+def is_cache_stale(last_updated: str, max_age_days: int = 365) -> bool:
+    """Check if the cache is stale based on the last update timestamp."""
+    if not last_updated:  # Handle empty or None last_updated
+        return True  # Treat missing timestamp as stale
+
+    try:
+        last_update = datetime.fromisoformat(last_updated)
+    except ValueError:
+        return True  # If it's an invalid timestamp, consider it stale
+
+    return (datetime.now() - last_update).days >= max_age_days
 
 
 def compute_ticker_hash(tickers: list) -> str:
