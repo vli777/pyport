@@ -75,11 +75,17 @@ def robust_mean_reversion_objective(
     #  - If the z-score is below -z_threshold_negative, signal long (1).
     #  - If it is above z_threshold_positive, signal short (-1).
     #  - Otherwise, signal 0.
+    # Compute continuous signals:
     signals = np.where(
         robust_z.values < -z_threshold_negative,
-        1,
-        np.where(robust_z.values > z_threshold_positive, -1, 0),
+        (np.abs(robust_z.values) - z_threshold_negative) / z_threshold_negative,
+        np.where(
+            robust_z.values > z_threshold_positive,
+            -((robust_z.values - z_threshold_positive) / z_threshold_positive),
+            0,
+        ),
     )
+
     signals_df = pd.DataFrame(signals, index=robust_z.index, columns=robust_z.columns)
 
     positions_df = signals_df.shift(1).fillna(0)
