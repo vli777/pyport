@@ -71,18 +71,7 @@ def calculate_continuous_composite_signal(signals: dict, ticker_params: dict) ->
                 "MSFT": {"daily": {...}, "weekly": {...}},
                 ...
             }
-        ticker_params (dict): Global cache keyed by ticker with parameters, e.g.
-            {
-                "AAPL": {
-                    "window_daily": 25,
-                    "z_threshold_daily": 1.7,
-                    "window_weekly": 25,
-                    "z_threshold_weekly": 1.7,
-                    "weight_daily": 0.5,
-                    "weight_weekly": 0.5,
-                },
-                ...
-            }
+        ticker_params (dict): Global cache keyed by ticker with parameters
     Returns:
         dict: Mapping from ticker to its composite signal.
     """
@@ -211,45 +200,43 @@ def adjust_allocation_with_mean_reversion(
     """
     Adjust the baseline allocation using a continuous mean reversion signal.
     The adjustment is multiplicative:
-         new_weight = baseline_weight * (1 + alpha * composite_signal)
+         new_weight = baseline_weight * (1 + alpha * (composite_signal - 1))
+    so that if composite_signal == 1, the allocation remains unchanged.
+    If composite_signal > 1, the allocation increases; if composite_signal < 1, it decreases.
     Negative weights are clipped if shorts are not allowed, and the result is renormalized.
 
     Args:
         baseline_allocation (pd.Series): Series with index = ticker and values = baseline weights.
-        composite_signals (dict): Mapping from ticker to continuous signal (e.g. a z-score).
+        composite_signals (dict): Mapping from ticker to continuous signal (adjustment factor) with a baseline of 1.
         alpha (float): Sensitivity factor.
         allow_short (bool): If False, negative adjusted weights are set to zero.
 
     Returns:
         pd.Series: Adjusted and normalized allocation.
     """
-    # Ensure composite_signals is a Pandas Series with tickers as index
+    # Ensure composite_signals is a Pandas Series with tickers as index.
     composite_signals = pd.Series(composite_signals)
-
-    # Ensure baseline_allocation is also a Pandas Series
     if isinstance(baseline_allocation, dict):
         baseline_allocation = pd.Series(baseline_allocation)
 
-    # Apply mean reversion adjustment
     adjusted = baseline_allocation.copy()
+    # Subtract 1 so that a composite signal of 1 yields no change.
     for ticker in adjusted.index:
-        signal = composite_signals.get(ticker, 0)  # Default to 0 if missing
-        adjusted[ticker] *= 1 + alpha * signal
+        # Default composite signal to 1 (baseline) if missing.
+        signal = composite_signals.get(ticker, 1)
+        adjusted[ticker] *= 1 + alpha * (signal - 1)
 
     if not allow_short:
         adjusted = adjusted.clip(lower=0)
-        # Normalize so that the sum of weights equals 1.
         total = adjusted.sum()
         if total > 0:
             adjusted /= total
     else:
-        # When allowing shorts, normalize by the sum of absolute weights
         total = adjusted.abs().sum()
         if total > 0:
             adjusted /= total
 
     normalized_adjusted = normalize_weights(adjusted)
-
     return normalized_adjusted
 
 
