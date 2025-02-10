@@ -92,12 +92,17 @@ def iterative_pipeline_runner(
 
     # Plot reversion signals if configured
     if config.plot_reversion and not reversion_plotted:
-        global_cache_file = "optuna_cache/reversion_params_global.pkl"
-        global_cache = load_parameters_from_pickle(global_cache_file)
-        if isinstance(global_cache, dict):
-            plot_reversion_params(data_dict=global_cache)
-        if final_result.get("reversion_signals"):
-            plot_reversion_signals(final_result["reversion_signals"])
+        reversion_cache_file = "optuna_cache/reversion_cache_global.pkl"
+        reversion_cache = load_parameters_from_pickle(reversion_cache_file)
+
+        reversion_params = reversion_cache["params"]
+        if isinstance(reversion_params, dict):
+            plot_reversion_params(data_dict=reversion_params)
+
+        reversion_signals = reversion_cache["signals"]
+        if isinstance(reversion_signals, dict):
+            plot_reversion_signals(reversion_signals)
+
         reversion_plotted = True
 
     # Ensure plotting is only done in the final result
