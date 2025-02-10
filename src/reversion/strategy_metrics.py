@@ -21,8 +21,7 @@ def simulate_strategy(
             strategy_returns (pd.Series): Daily strategy returns.
             metrics (dict): Dictionary with cumulative_return, sharpe, and kappa.
     """
-    # Shift positions to avoid lookahead bias
-    strategy_returns = (positions_df.shift(1) * returns_df).sum(axis=1).fillna(0)
+    strategy_returns = (positions_df * returns_df).sum(axis=1).fillna(0)
     cumulative_return = (strategy_returns + 1).prod() - 1
     sr = sharpe_ratio(strategy_returns)
     kp = kappa_ratio(strategy_returns, order=3)
