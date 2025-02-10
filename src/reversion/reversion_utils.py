@@ -67,11 +67,12 @@ def calculate_continuous_composite_signal(signals: dict, ticker_params: dict) ->
     Args:
         signals (dict): Mapping from ticker to its signals, e.g.
             {
-                "AAPL": {"daily": {date: signal, ...}, "weekly": {date: signal, ...}},
+                "AAPL": {"daily": {date: signal, ...} or pd.Series, "weekly": {date: signal, ...} or pd.Series},
                 "MSFT": {"daily": {...}, "weekly": {...}},
                 ...
             }
-        ticker_params (dict): Global cache keyed by ticker with parameters
+        ticker_params (dict): Global cache keyed by ticker with parameters.
+
     Returns:
         dict: Mapping from ticker to its composite signal.
     """
@@ -83,22 +84,34 @@ def calculate_continuous_composite_signal(signals: dict, ticker_params: dict) ->
         wd = max(0.0, min(wd, 1.0))
         ww = params.get("weight_weekly", 0.3)
 
-        # Retrieve the latest daily signal value, if available.
-        daily_signal = sig_data.get("daily", {})
+        # Retrieve the daily signal, which might be a dict or a Pandas Series.
+        daily_signal = sig_data.get("daily", None)
         daily_val = 0
-        if daily_signal:
-            # Assumes the keys are comparable dates (or timestamps)
-            latest_date = max(daily_signal.keys())
-            daily_val = daily_signal[latest_date]
+        if daily_signal is not None:
+            if isinstance(daily_signal, pd.Series):
+                if not daily_signal.empty:
+                    latest_date = daily_signal.index.max()
+                    daily_val = daily_signal.loc[latest_date]
+            elif isinstance(daily_signal, dict):
+                if daily_signal:  # non-empty dictionary
+                    latest_date = max(daily_signal.keys())
+                    daily_val = daily_signal[latest_date]
 
-        # Similarly for weekly signals.
-        weekly_signal = sig_data.get("weekly", {})
+        # Retrieve the weekly signal.
+        weekly_signal = sig_data.get("weekly", None)
         weekly_val = 0
-        if weekly_signal:
-            latest_date = max(weekly_signal.keys())
-            weekly_val = weekly_signal[latest_date]
+        if weekly_signal is not None:
+            if isinstance(weekly_signal, pd.Series):
+                if not weekly_signal.empty:
+                    latest_date = weekly_signal.index.max()
+                    weekly_val = weekly_signal.loc[latest_date]
+            elif isinstance(weekly_signal, dict):
+                if weekly_signal:
+                    latest_date = max(weekly_signal.keys())
+                    weekly_val = weekly_signal[latest_date]
 
         composite[ticker] = wd * daily_val + ww * weekly_val
+
     return composite
 
 
