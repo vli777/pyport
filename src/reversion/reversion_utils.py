@@ -82,7 +82,7 @@ def calculate_continuous_composite_signal(signals: dict, ticker_params: dict) ->
         wd = params.get("weight_daily", 0.7)
         # Ensure weight_daily is within [0,1]
         wd = max(0.0, min(wd, 1.0))
-        ww = params.get("weight_weekly", 0.3)
+        ww = 1.0 - wd
 
         # Retrieve the daily signal, which might be a dict or a Pandas Series.
         daily_signal = sig_data.get("daily", None)
@@ -118,10 +118,10 @@ def calculate_continuous_composite_signal(signals: dict, ticker_params: dict) ->
 def propagate_signals_by_similarity(
     composite_signals: dict,
     group_mapping: dict,
-    baseline_allocation: Union[dict, pd.Series],
     returns_df: pd.DataFrame,
     signal_dampening: float = 0.5,
     lw_threshold: int = 50,
+    corr_window: int = 90,
 ) -> dict:
     """
     Propagate composite signals within clusters by blending each ticker's own signal
@@ -134,19 +134,15 @@ def propagate_signals_by_similarity(
     Args:
         composite_signals (dict): Original composite signals (ticker -> signal).
         group_mapping (dict): Mapping of cluster IDs to group info, which includes 'tickers'.
-        baseline_allocation (dict or pd.Series): Baseline allocation (should be a Series).
         returns_df (pd.DataFrame): Returns DataFrame (dates as index, tickers as columns).
         lw_threshold (int): Size threshold for using Ledoit Wolf vs Pearson correlation.
         signal_dampening (float): Dampening factor when propagating signals
+        corr_window (int): Rolling window for correlation computation.
 
     Returns:
         dict: Updated composite signals with propagated, normalized values.
     """
     updated_signals = composite_signals.copy()
-
-    # Ensure baseline_allocation is a pandas Series, though it isn't used directly here.
-    if isinstance(baseline_allocation, dict):
-        baseline_allocation = pd.Series(baseline_allocation)
 
     for cluster_id, group_data in group_mapping.items():
         tickers_in_group = group_data.get("tickers", [])
@@ -157,14 +153,12 @@ def propagate_signals_by_similarity(
         if not available_tickers:
             continue
 
-        # Subset returns for available tickers and drop columns that are completely NA.
-        cluster_returns = returns_df[available_tickers].dropna(how="all", axis=1)
-        if cluster_returns.empty:
-            continue
-
-        # Compute correlation (similarity) matrix for the cluster.
-        similarity_matrix = compute_correlation_matrix(
-            cluster_returns, lw_threshold=lw_threshold
+        # Compute rolling returns and correlation matrix using the utility function
+        cluster_returns = (
+            returns_df[available_tickers].rolling(window=corr_window).mean()
+        )
+        rolling_corr = compute_correlation_matrix(
+            cluster_returns, lw_threshold=lw_threshold, use_abs=True
         )
 
         # For each ticker, compute the weighted average of the signals from other tickers.
@@ -178,23 +172,21 @@ def propagate_signals_by_similarity(
                     continue
 
                 source_signal = composite_signals.get(source_ticker, 0)
-                if source_signal != 0:
-                    # Get the similarity; default to 0 if not available.
-                    similarity = 0
-                    if (source_ticker in similarity_matrix.index) and (
-                        ticker in similarity_matrix.columns
-                    ):
-                        similarity = similarity_matrix.at[source_ticker, ticker]
-                    # Use only positive correlations.
-                    if similarity > 0:
-                        weighted_sum += source_signal * similarity
-                        sum_similarity += similarity
+                similarity = (
+                    rolling_corr.at[source_ticker, ticker]
+                    if source_ticker in rolling_corr.index
+                    else 0
+                )
+
+                # Use positively correlated pairs only
+                if similarity > 0:
+                    weighted_sum += source_signal * similarity
+                    sum_similarity += similarity
 
             # Normalize the propagated signal by the total similarity weight.
-            if sum_similarity > 0:
-                propagated_signal = weighted_sum / sum_similarity
-            else:
-                propagated_signal = 0
+            propagated_signal = (
+                (weighted_sum / sum_similarity) if sum_similarity > 0 else 0
+            )
 
             # Combine the original and the normalized propagated signal.
             updated_signals[ticker] = (
@@ -227,23 +219,26 @@ def adjust_allocation_with_mean_reversion(
     Returns:
         pd.Series: Adjusted and normalized allocation.
     """
-    # Ensure composite_signals is a Pandas Series with tickers as index.
+
+    # Ensure composite_signals is a Pandas Series with tickers as index
     composite_signals = pd.Series(composite_signals)
     if isinstance(baseline_allocation, dict):
-        baseline_allocation = pd.Series(baseline_allocation)
+        baseline_allocation = pd.Series(baseline_allocation).astype(float)
 
+    # Apply mean reversion adjustment
+    composite_signals = composite_signals.reindex(
+        baseline_allocation.index, fill_value=0
+    )
     adjusted = baseline_allocation.copy()
-    # Subtract 1 so that a composite signal of 1 yields no change.
-    for ticker in adjusted.index:
-        # Default composite signal to 1 (baseline) if missing.
-        signal = composite_signals.get(ticker, 1)
-        adjusted[ticker] *= 1 + alpha * (signal - 1)
+    adjusted *= 1 + alpha * composite_signals
 
     if not allow_short:
-        adjusted = adjusted.clip(lower=0)
+        adjusted = adjusted.where(adjusted >= 0, adjusted * 0.1)
+        # Normalize so that the sum of weights equals 1.
         total = adjusted.sum()
         if total > 0:
             adjusted /= total
+        adjusted = adjusted / total if total > 0 else baseline_allocation
     else:
         total = adjusted.abs().sum()
         if total > 0:

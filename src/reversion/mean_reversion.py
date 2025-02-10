@@ -85,17 +85,18 @@ def apply_mean_reversion(
     updated_composite_signals = propagate_signals_by_similarity(
         composite_signals=composite_signals,
         group_mapping=group_mapping,
-        baseline_allocation=baseline_allocation,
         returns_df=returns_df,
         signal_dampening=0.5,
         lw_threshold=50,
     )
 
-    # Adjust the baseline allocation using the composite signals.
+    # Adjust the baseline allocation using the updated composite signals.
+    realized_volatility = returns_df.rolling(window=30).std().mean(axis=1)
+    adaptive_alpha = 0.2 / (1 + realized_volatility.iloc[-1])
     final_allocation = adjust_allocation_with_mean_reversion(
         baseline_allocation=baseline_allocation,
         composite_signals=updated_composite_signals,
-        alpha=config.mean_reversion_strength,
+        alpha=adaptive_alpha,
         allow_short=config.allow_short,
     )
 
