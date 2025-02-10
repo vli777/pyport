@@ -1,88 +1,77 @@
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
-import hdbscan
+
 import hashlib
+import datetime
 
 from correlation.correlation_utils import compute_correlation_matrix
-from utils.caching_utils import load_parameters_from_pickle
 from utils.portfolio_utils import normalize_weights
 
 
-def cluster_stocks(
-    returns_df: pd.DataFrame,
-    cache_dir: str = "optuna_cache",
-) -> dict:
-    # Ensure the cache directory exists
-    cache_path = Path(cache_dir)
-    cache_path.mkdir(parents=True, exist_ok=True)
-    cache_filename = cache_path / "hdbscan_params.pkl"
-    cached_params = load_parameters_from_pickle(cache_filename) or {}
+def format_asset_cluster_map(
+    asset_cluster_map: Dict[str, int], global_cache: Dict[str, Dict]
+) -> Dict[str, List[str]]:
+    """
+    Formats the asset_cluster_map so that each noise ticker (-1) is treated as its own cluster.
+    Also incorporates cluster information from global_cache to ensure consistency.
 
-    if all(
-        param in cached_params
-        for param in [
-            "epsilon",
-            "alpha",
-            "cluster_selection_epsilon_max",
-        ]
-    ):
-        epsilon = cached_params["epsilon"]
-        alpha = cached_params["alpha"]
-        cluster_selection_epsilon_max = cached_params["cluster_selection_epsilon_max"]
+    Args:
+        asset_cluster_map (dict): A dictionary mapping tickers to cluster IDs.
+        global_cache (dict): Cached parameters, including cluster assignments.
 
-    distance_matrix = 1 - compute_correlation_matrix(returns_df)
-    np.random.seed(42)
-    clusterer = hdbscan.HDBSCAN(
-        metric="precomputed",
-        alpha=alpha,
-        min_cluster_size=2,
-        cluster_selection_epsilon=epsilon,
-        cluster_selection_method="leaf",
-        cluster_selection_epsilon_max=cluster_selection_epsilon_max,
-    )
-    cluster_labels = clusterer.fit_predict(distance_matrix)
+    Returns:
+        dict: A formatted dictionary where each noise ticker is its own cluster.
+    """
+    formatted_clusters = {}
 
-    clusters = {}
-    for ticker, label in zip(returns_df.columns, cluster_labels):
-        if label == -1:
-            # Treat each noise ticker as its own cluster.
-            clusters[ticker] = [ticker]
-        clusters.setdefault(label, []).append(ticker)
-    return clusters
+    for ticker, cluster_id in asset_cluster_map.items():
+        # If cluster info exists in global_cache, use it
+        if ticker in global_cache and "cluster" in global_cache[ticker]:
+            cluster_id = global_cache[ticker]["cluster"]
+
+        # Ensure noise tickers (-1) are stored as their own clusters
+        if cluster_id == -1 or cluster_id == np.int64(-1):
+            formatted_clusters[ticker] = [ticker]
+        else:
+            formatted_clusters.setdefault(cluster_id, []).append(ticker)
+
+    return formatted_clusters
+
+
+def is_cache_stale(last_updated, threshold_days=365):
+    last_update = datetime.datetime.fromisoformat(last_updated)
+    return (datetime.datetime.now() - last_update).days > threshold_days
 
 
 def compute_ticker_hash(tickers: list) -> str:
     return hashlib.md5("".join(sorted(tickers)).encode("utf-8")).hexdigest()
 
 
-def calculate_continuous_composite_signal(
-    group_signals: dict, ticker_params: dict
-) -> dict:
+def calculate_continuous_composite_signal(signals: dict, ticker_params: dict) -> dict:
     """
-    Compute a continuous composite mean reversion signal for each ticker using
-    per-ticker parameters from the global cache.
+    Compute a composite mean reversion signal for each ticker.
 
     For each ticker, the composite signal is computed as:
-         composite[ticker] = weight_daily * daily_signal + weight_weekly * weekly_signal
+         composite[ticker] = weight_daily * latest_daily_signal + weight_weekly * latest_weekly_signal
 
     Args:
-        group_signals (dict): Dictionary keyed by group label with values:
+        signals (dict): Mapping from ticker to its signals, e.g.
             {
-                "tickers": [list of tickers],
-                "daily": {ticker: {date: continuous signal}, ...},
-                "weekly": {ticker: {date: continuous signal}, ...},
+                "AAPL": {"daily": {date: signal, ...}, "weekly": {date: signal, ...}},
+                "MSFT": {"daily": {...}, "weekly": {...}},
+                ...
             }
         ticker_params (dict): Global cache keyed by ticker with parameters, e.g.
             {
-                'AAPL': {
-                    'window_daily': 25,
-                    'z_threshold_daily': 1.7,
-                    'window_weekly': 25,
-                    'z_threshold_weekly': 1.7,
-                    'weight_daily': 0.5,
-                    'weight_weekly': 0.5,
+                "AAPL": {
+                    "window_daily": 25,
+                    "z_threshold_daily": 1.7,
+                    "window_weekly": 25,
+                    "z_threshold_weekly": 1.7,
+                    "weight_daily": 0.5,
+                    "weight_weekly": 0.5,
                 },
                 ...
             }
@@ -90,31 +79,29 @@ def calculate_continuous_composite_signal(
         dict: Mapping from ticker to its composite signal.
     """
     composite = {}
-    for group_label, group_data in group_signals.items():
-        daily_signals = group_data.get("daily", {})
-        weekly_signals = group_data.get("weekly", {})
-        for ticker in group_data.get("tickers", []):
-            params = ticker_params.get(ticker, {})
-            wd = params.get("weight_daily", 0.7)
-            # Ensure weight_daily is within [0,1]
-            wd = max(0.0, min(wd, 1.0))
-            ww = params.get("weight_weekly", 0.3)
-            # If both weights are from the same group they should sum to ~1.
-            # (They were set as weight_weekly = 1 - weight_daily in the optimization.)
+    for ticker, sig_data in signals.items():
+        params = ticker_params.get(ticker, {})
+        wd = params.get("weight_daily", 0.7)
+        # Ensure weight_daily is within [0,1]
+        wd = max(0.0, min(wd, 1.0))
+        ww = params.get("weight_weekly", 0.3)
 
-            # Get the latest daily signal if available.
-            daily_val = 0
-            if ticker in daily_signals and daily_signals[ticker]:
-                # Assuming dates are comparable (e.g., as strings or timestamps)
-                latest_date = max(daily_signals[ticker].keys())
-                daily_val = daily_signals[ticker][latest_date]
-            # Similarly for weekly signals.
-            weekly_val = 0
-            if ticker in weekly_signals and weekly_signals[ticker]:
-                latest_date = max(weekly_signals[ticker].keys())
-                weekly_val = weekly_signals[ticker][latest_date]
+        # Retrieve the latest daily signal value, if available.
+        daily_signal = sig_data.get("daily", {})
+        daily_val = 0
+        if daily_signal:
+            # Assumes the keys are comparable dates (or timestamps)
+            latest_date = max(daily_signal.keys())
+            daily_val = daily_signal[latest_date]
 
-            composite[ticker] = wd * daily_val + ww * weekly_val
+        # Similarly for weekly signals.
+        weekly_signal = sig_data.get("weekly", {})
+        weekly_val = 0
+        if weekly_signal:
+            latest_date = max(weekly_signal.keys())
+            weekly_val = weekly_signal[latest_date]
+
+        composite[ticker] = wd * daily_val + ww * weekly_val
     return composite
 
 
