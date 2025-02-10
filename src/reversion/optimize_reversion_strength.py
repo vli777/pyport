@@ -7,6 +7,8 @@ from reversion.reversion_utils import (
 )
 from reversion.strategy_metrics import composite_score, simulate_strategy
 
+# optuna.logging.set_verbosity(optuna.logging.ERROR)
+
 
 def alpha_objective(
     trial,
@@ -23,9 +25,11 @@ def alpha_objective(
     """
     # Set prior mean based on historical volatility
     mean_alpha = min(0.1, max(0.01, 0.5 * historical_vol))
+    low_alpha = max(0.01, 0.5 * mean_alpha)
+    high_alpha = min(0.5, 2 * mean_alpha)
 
-    # Sample base_alpha within a reasonable range
-    base_alpha = trial.suggest_float("base_alpha", 0.01, 0.5, log=True)
+    # Sample base_alpha within a reasonable range based on prior
+    base_alpha = trial.suggest_float("base_alpha", low_alpha, high_alpha, log=True)
 
     # Expand allocations into a dynamic positions DataFrame
     positions_df = pd.DataFrame(index=returns_df.index, columns=returns_df.columns)
@@ -69,11 +73,7 @@ def tune_reversion_alpha(
     study = optuna.create_study(
         direction="maximize",
         sampler=optuna.samplers.TPESampler(),
-    )
-
-    # Use early stopping to reduce unnecessary trials
-    early_stopping_callback = optuna.pruners.MedianPruner(
-        n_startup_trials=5, n_warmup_steps=patience
+        pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=patience),
     )
 
     study.optimize(
@@ -86,7 +86,7 @@ def tune_reversion_alpha(
             group_mapping,
         ),
         n_trials=n_trials,
-        callbacks=[early_stopping_callback],
+        n_jobs=-1,  # Parallelize across all cores
     )
 
     # Get the best base_alpha
