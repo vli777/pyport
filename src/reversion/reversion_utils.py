@@ -40,7 +40,7 @@ def format_asset_cluster_map(
     return formatted_clusters
 
 
-def is_cache_stale(last_updated: str, max_age_days: int = 365) -> bool:
+def is_cache_stale(last_updated: str, max_age_days: int = 180) -> bool:
     """Check if the cache is stale based on the last update timestamp."""
     if not last_updated:  # Handle empty or None last_updated
         return True  # Treat missing timestamp as stale
