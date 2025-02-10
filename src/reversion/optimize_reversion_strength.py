@@ -1,5 +1,4 @@
 import optuna
-from optuna.integration import SkoptSampler
 import pandas as pd
 
 from reversion.reversion_utils import (
@@ -24,7 +23,6 @@ def alpha_objective(
     """
     # Set prior mean based on historical volatility
     mean_alpha = min(0.1, max(0.01, 0.5 * historical_vol))
-    trial.set_user_attr("prior_alpha", mean_alpha)  # Store prior for reference
 
     # Sample base_alpha within a reasonable range
     base_alpha = trial.suggest_float("base_alpha", 0.01, 0.5, log=True)
@@ -64,19 +62,17 @@ def tune_reversion_alpha(
     n_trials: int = 50,
     patience: int = 10,  # Stop early if no improvement
 ) -> float:
-    """
-    Uses Bayesian optimization (SkoptSampler) to tune base_alpha efficiently.
-    """
+
     # Compute historical realized volatility
     historical_vol = returns_df.rolling(window=180).std().mean().mean()
 
     study = optuna.create_study(
         direction="maximize",
-        sampler=SkoptSampler(),  # Bayesian Optimization
+        sampler=optuna.samplers.TPESampler(),
     )
 
     # Use early stopping to reduce unnecessary trials
-    early_stopping_callback = optuna.integration.MedianPruner(
+    early_stopping_callback = optuna.pruners.MedianPruner(
         n_startup_trials=5, n_warmup_steps=patience
     )
 
