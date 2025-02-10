@@ -22,7 +22,7 @@ if not logger.handlers:
     console_handler.setLevel(logging.INFO)  # Console handler set to INFO level
 
     file_handler = RotatingFileHandler(
-        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5  # 5 MB
+        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, delay=True  # 5 MB
     )
     file_handler.setLevel(logging.DEBUG)  # File handler set to DEBUG level
 
