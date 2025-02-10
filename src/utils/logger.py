@@ -1,47 +1,40 @@
 # src/utils/logger.py
 
-import logging
-from logging.handlers import RotatingFileHandler
+from concurrent_log_handler import ConcurrentRotatingFileHandler
 from pathlib import Path
+import logging
 
-# Define the logs directory relative to the project root
+# Define the logs directory
 LOGS_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
-
-# Define the log file path
 LOG_FILE = LOGS_DIR / "app.log"
 
-# Create a custom logger
+# Create a logger
 logger = logging.getLogger("project_logger")
-logger.setLevel(logging.DEBUG)  # Set the lowest level to capture all types of logs
+logger.setLevel(logging.DEBUG)
 
-# Prevent adding multiple handlers if logger is imported multiple times
+# Prevent duplicate handlers
 if not logger.handlers:
-    # Create handlers
+    # Console Handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)  # Console handler set to INFO level
+    console_handler.setLevel(logging.INFO)
 
-    file_handler = RotatingFileHandler(
-        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, delay=True  # 5 MB
+    # Multi-process safe Rotating File Handler
+    file_handler = ConcurrentRotatingFileHandler(
+        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5
     )
-    file_handler.setLevel(logging.DEBUG)  # File handler set to DEBUG level
+    file_handler.setLevel(logging.DEBUG)
 
-    # Create formatters
-    console_formatter = logging.Formatter(
-        "[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-    )
-    file_formatter = logging.Formatter(
+    # Formatters
+    formatter = logging.Formatter(
         "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
+    console_handler.setFormatter(formatter)
+    file_handler.setFormatter(formatter)
 
-    # Assign formatters to handlers
-    console_handler.setFormatter(console_formatter)
-    file_handler.setFormatter(file_formatter)
-
-    # Add handlers to the logger
+    # Add Handlers
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
 
-# Optionally, disable propagation to prevent duplicate logs in certain configurations
 logger.propagate = False
