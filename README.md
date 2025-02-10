@@ -14,8 +14,12 @@ Modern Portfolio Optimization
 - Overall the results are very similar to the previous version which is a good sign for consistency!
 
 - [x] Anomaly detection with Isolation Forest
+![image](https://github.com/user-attachments/assets/bab5d481-98eb-441a-9f6a-aea95d30b204)
 - [x] HDBSCAN clustering for de-correlation
-- [x] Robust Z-score Mean Reversion with Volatility-Adaptive Parameters and Stateful Signals 
+![image](https://github.com/user-attachments/assets/2187106b-dad4-49cb-a005-597f50c9b089)
+- [x] Robust Z-score Mean Reversion with Volatility-Adaptive Parameters and Stateful Signals
+![image](https://github.com/user-attachments/assets/1c4a3c0f-6d34-4e2b-b8b4-66fa58e43bef)
+
 
 # January 2025
 - Reworked implementation of Nested Clustering (https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3469961) with vector ops => much faster!
@@ -23,6 +27,8 @@ Modern Portfolio Optimization
 - Integrated Optuna to dynamically find optimal thresholds for maximizing performance metrics and returns 
 
 - Daily and Cumulative Returns Statistics
+- ![image](https://github.com/user-attachments/assets/ab6fd50c-f9ae-49ff-a12c-b1526df83239)
+
 - Anomaly Detection for Automatic Filtering
 - Hierarchical Clustering for De-correlation
 - Dynamic Z-score Thresholds for Mean Reversion
