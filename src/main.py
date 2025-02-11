@@ -91,7 +91,12 @@ def iterative_pipeline_runner(
         final_result = result
 
     # Plot reversion signals if configured
-    if config.use_z_reversion and config.plot_reversion and not reversion_plotted:
+    if (
+        config.use_reversion
+        and config.reversion_type == "z"
+        and config.plot_reversion
+        and not reversion_plotted
+    ):
         reversion_cache_file = "optuna_cache/reversion_cache_global.pkl"
         reversion_cache = load_parameters_from_pickle(reversion_cache_file)
 

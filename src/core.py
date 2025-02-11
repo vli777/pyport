@@ -423,27 +423,28 @@ def run_pipeline(
     )
 
     # --- Mean Reversion Branches ---
-    if config.use_z_reversion:
-        final_result_dict = apply_z_reversion(
-            dfs=dfs,
-            normalized_avg_weights=normalized_avg_weights,
-            combined_input_files=combined_input_files,
-            combined_models=combined_models,
-            sorted_time_periods=sorted_time_periods,
-            config=config,
-            asset_cluster_map=asset_cluster_map,
-            returns_df=returns_df,
-        )
-    elif config.use_ou_reversion:
-        final_result_dict = apply_ou_reversion(
-            dfs=dfs,
-            normalized_avg_weights=normalized_avg_weights,
-            combined_input_files=combined_input_files,
-            combined_models=combined_models,
-            sorted_time_periods=sorted_time_periods,
-            config=config,
-            returns_df=returns_df,
-        )
+    if config.use_reversion:
+        if config.reversion_type == "z":
+            final_result_dict = apply_z_reversion(
+                dfs=dfs,
+                normalized_avg_weights=normalized_avg_weights,
+                combined_input_files=combined_input_files,
+                combined_models=combined_models,
+                sorted_time_periods=sorted_time_periods,
+                config=config,
+                asset_cluster_map=asset_cluster_map,
+                returns_df=returns_df,
+            )
+        else:
+            final_result_dict = apply_ou_reversion(
+                dfs=dfs,
+                normalized_avg_weights=normalized_avg_weights,
+                combined_input_files=combined_input_files,
+                combined_models=combined_models,
+                sorted_time_periods=sorted_time_periods,
+                config=config,
+                returns_df=returns_df,
+            )
 
     # Optional plotting (only on local runs)
     if run_local:

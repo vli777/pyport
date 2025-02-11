@@ -52,6 +52,8 @@ def apply_z_reversion(
         risk_contributions_pct,
     ) = compute_performance_results(
         data=dfs["data"],
+        start_date=str(dfs["start"]),
+        end_date=str(dfs["end"]),
         allocation_weights=mean_reverted_weights,
         sorted_symbols=sorted_symbols_post,
         combined_input_files=combined_input_files,
@@ -164,6 +166,8 @@ def apply_ou_reversion(
         risk_contributions_pct,
     ) = compute_performance_results(
         data=dfs["data"],
+        start_date=str(dfs["start"]),
+        end_date=str(dfs["end"]),
         allocation_weights=stat_arb_adjusted_allocation,
         sorted_symbols=sorted(normalized_avg_weights.keys()),
         combined_input_files=combined_input_files,
