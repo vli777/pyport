@@ -1,3 +1,4 @@
+from typing import Optional
 import numpy as np
 import pandas as pd
 import optuna
@@ -8,28 +9,31 @@ from stat_arb.cointegration import CointegrationAnalyzer
 from utils.performance_metrics import kappa_ratio, sharpe_ratio
 
 
-class MeanReversionPortfolio:
-    def __init__(
-        self, prices_df: pd.DataFrame, cointegration_analyzer: CointegrationAnalyzer
-    ):
+class MultiAssetReversion:
+    def __init__(self, prices_df: pd.DataFrame, det_order=0, k_ar_diff=1):
         """
-        Initializes a multi-asset mean reversion strategy.
+        Multi-asset mean reversion strategy based on cointegration.
 
         Args:
             prices_df (pd.DataFrame): Log-prices DataFrame.
-            cointegration_analyzer (CointegrationAnalyzer): Precomputed cointegration model.
+            det_order (int): Deterministic trend order for Johansen test.
+            k_ar_diff (int): Number of lag differences.
         """
         self.prices_df = prices_df
         self.returns_df = prices_df.pct_change().dropna()
-        self.cointegration_analyzer = cointegration_analyzer
-        self.spread_series = cointegration_analyzer.spread_series
-        self.hedge_ratios = cointegration_analyzer.get_hedge_ratios()
+        # Initialize cointegration analyzer internally
+        self.cointegration_analyzer = CointegrationAnalyzer(
+            prices_df, det_order, k_ar_diff
+        )
+        self.spread_series = self.cointegration_analyzer.spread_series
+        # Hedge ratios are computed and normalized within the cointegration analyzer
+        self.hedge_ratios = self.cointegration_analyzer.get_hedge_ratios()
 
-        # Compute Kelly and Risk Parity weights
+        # Compute Kelly and Risk Parity weights (for later portfolio optimization)
         self.kelly_fractions = self.compute_dynamic_kelly()
         self.risk_parity_weights = self.compute_risk_parity_weights()
 
-        # Optimize allocations using Optuna
+        # Optimize allocations using Optuna (for portfolio-level sizing)
         self.optimal_params = self.optimize_kelly_risk_parity()
 
     def compute_dynamic_kelly(self, risk_free_rate=0.0):
@@ -49,7 +53,6 @@ class MeanReversionPortfolio:
                 market_vol = rolling_vol.iloc[-1] if not rolling_vol.empty else vol
                 adaptive_kelly = raw_kelly / (1 + market_vol)
                 kelly_allocations[asset] = max(0, min(adaptive_kelly, 1))
-
         return pd.Series(kelly_allocations)
 
     def compute_risk_parity_weights(self):
@@ -82,13 +85,20 @@ class MeanReversionPortfolio:
 
         study = optuna.create_study(direction="maximize")
         study.optimize(objective, n_trials=50)
-
         return study.best_params
 
-    def generate_trading_signals(self, stop_loss, take_profit):
+    def generate_trading_signals(
+        self, stop_loss: Optional[float] = None, take_profit: Optional[float] = None
+    ) -> pd.DataFrame:
         """
         Generates buy/sell signals for the mean-reverting basket.
+
+        Returns:
+            pd.DataFrame: Signals DataFrame with "Ticker", "Position", "Entry Price", and "Exit Price".
         """
+        if stop_loss is None or take_profit is None:
+            stop_loss, take_profit = self.calculate_optimal_bounds()
+
         deviations = self.spread_series - self.spread_series.mean()
         long_positions = deviations < stop_loss
         short_positions = deviations > take_profit
@@ -96,6 +106,15 @@ class MeanReversionPortfolio:
         signals = pd.DataFrame(index=self.spread_series.index)
         signals["Position"] = np.where(
             long_positions, 1, np.where(short_positions, -1, 0)
+        )
+        # Set Ticker as a comma-separated list of all asset names in the basket
+        signals["Ticker"] = ", ".join(self.prices_df.columns)
+        # Use the spread series for entry/exit prices as a proxy for the basket value
+        signals["Entry Price"] = np.where(
+            signals["Position"] == 1, self.spread_series, np.nan
+        )
+        signals["Exit Price"] = np.where(
+            signals["Position"] == -1, self.spread_series, np.nan
         )
         return signals
 
@@ -116,26 +135,7 @@ class MeanReversionPortfolio:
             "Win Rate": (returns > 0).mean(),
             "Avg Return": returns.mean(),
         }
-
         return returns, metrics
-
-    def optimize_and_trade(self):
-        """
-        Full pipeline:
-        1. Optimize entry/exit bounds.
-        2. Generate trading signals.
-        3. Simulate strategy & return results.
-        """
-        stop_loss, take_profit = self.calculate_optimal_bounds()
-        signals = self.generate_trading_signals(stop_loss, take_profit)
-        returns, metrics = self.simulate_strategy(signals)
-
-        return {
-            "Optimal Stop-Loss": stop_loss,
-            "Optimal Take-Profit": take_profit,
-            "Metrics": metrics,
-            "Signals": signals,
-        }
 
     def calculate_optimal_bounds(self):
         """
@@ -151,3 +151,22 @@ class MeanReversionPortfolio:
         bounds = [(-2 * self.spread_series.std(), 0), (0, 2 * self.spread_series.std())]
         result = minimize(objective, x0=[-1, 1], bounds=bounds)
         return result.x
+
+    def optimize_and_trade(self):
+        """
+        Full pipeline:
+          1. Optimize entry/exit bounds.
+          2. Generate trading signals.
+          3. Simulate strategy & return results.
+          4. Return hedge ratios along with signals and metrics.
+        """
+        stop_loss, take_profit = self.calculate_optimal_bounds()
+        signals = self.generate_trading_signals(stop_loss, take_profit)
+        returns, metrics = self.simulate_strategy(signals)
+        return {
+            "Optimal Stop-Loss": stop_loss,
+            "Optimal Take-Profit": take_profit,
+            "Metrics": metrics,
+            "Signals": signals,
+            "Hedge Ratios": self.hedge_ratios.to_dict(),
+        }
