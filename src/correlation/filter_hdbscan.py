@@ -181,7 +181,15 @@ def get_cluster_labels(
     # Map each ticker to its corresponding cluster label
     asset_cluster_map = dict(zip(returns_df.columns, cluster_labels))
     cache_cluster_filename = cache_path / "hdbscan_clusters.pkl"
-    save_parameters_to_pickle(asset_cluster_map, cache_cluster_filename)
+
+    # Check if the cluster labels changed before saving
+    cached_clusters = load_parameters_from_pickle(cache_cluster_filename) or {}
+    # Save only if the cluster assignments have changed
+    if (
+        cached_clusters.keys() == asset_cluster_map.keys()
+        and cached_clusters == asset_cluster_map
+    ):
+        save_parameters_to_pickle(asset_cluster_map, cache_cluster_filename)
 
     # Log the total number of clusters found (ignoring noise labeled as -1)
     labels_in_order = np.array(
