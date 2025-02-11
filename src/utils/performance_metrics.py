@@ -189,3 +189,37 @@ def calculate_portfolio_performance(
         portfolio_cumulative_returns,
         (all_daily_returns, all_cumulative_returns),
     )
+
+
+def risk_return_contributions(
+    weights: np.ndarray, daily_returns: pd.DataFrame, cumulative_returns: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Computes the return and risk contributions for each stock in the portfolio.
+
+    Parameters:
+        weights (np.ndarray): Array of portfolio weights for each stock.
+        daily_returns (pd.DataFrame): DataFrame of daily returns for each stock.
+        cumulative_returns (np.ndarray): Array of cumulative returns for each stock.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: Normalized return and risk contributions as percentages.
+    """
+    # Compute standard deviation for risk
+    stock_risks = daily_returns.std(axis=0).values  # Std dev of each stock
+
+    # Compute return contributions
+    return_contributions = weights * cumulative_returns
+    return_contributions_pct = (
+        return_contributions / np.sum(return_contributions) * 100
+    )  # Normalize
+
+    # Compute risk contributions
+    risk_contributions = weights * stock_risks
+    risk_contributions_pct = (
+        risk_contributions / np.sum(risk_contributions) * 100
+    )  # Normalize
+
+    return return_contributions_pct, risk_contributions_pct
+
+

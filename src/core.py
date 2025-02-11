@@ -19,6 +19,7 @@ from correlation.filter_hdbscan import (
     filter_correlated_groups_hdbscan,
     get_cluster_labels,
 )
+from utils.performance_metrics import risk_return_contributions
 from stat_arb.multi_asset_plots import (
     plot_multi_asset_cumulative_returns,
     plot_multi_asset_signals,
@@ -396,7 +397,7 @@ def run_pipeline(
         return {}
 
     # Step 1: Compute pre-mean reversion results
-    pre_daily_returns, pre_cumulative_returns = output(
+    daily_returns, cumulative_returns = output(
         data=dfs["data"],
         allocation_weights=normalized_avg_weights,
         inputs=combined_input_files,
@@ -406,7 +407,28 @@ def run_pipeline(
         time_period=sorted_time_periods[0],
         config=config,
     )
-    pre_boxplot_stats = generate_boxplot_data(pre_daily_returns)
+    
+    pre_boxplot_stats = generate_boxplot_data(daily_returns)
+    # Ensure np_weights and cumulative returns are aligned
+    valid_stocks = [s for s in sorted_symbols if s in cumulative_returns.columns]
+
+    # Extract final row of cumulative returns
+    contribution_cumulative_returns = cumulative_returns.loc[
+        cumulative_returns.index[-1], valid_stocks
+    ].values
+    np_weights = np.array([normalized_avg_weights[s] for s in valid_stocks])
+
+    # Debugging Prints
+    print(
+        f"np_weights shape: {np_weights.shape}, contribution_cumulative_returns shape: {contribution_cumulative_returns.shape}"
+    )
+
+    # Compute risk and return contributions
+    return_contributions_pct, risk_contributions_pct = risk_return_contributions(
+        weights=np_weights,
+        daily_returns=daily_returns[valid_stocks],  # Ensure daily_returns is aligned
+        cumulative_returns=contribution_cumulative_returns,
+    )
 
     # Default return dictionary (pre-mean reversion)
     final_result_dict = {
@@ -415,9 +437,11 @@ def run_pipeline(
         "models": combined_models,
         "symbols": sorted_symbols,
         "normalized_avg": normalized_avg_weights,
-        "daily_returns": pre_daily_returns,
-        "cumulative_returns": pre_cumulative_returns,
+        "daily_returns": daily_returns,
+        "cumulative_returns": cumulative_returns,
         "boxplot_stats": pre_boxplot_stats,
+        "return_contributions": return_contributions_pct,
+        "risk_contributions": risk_contributions_pct,
     }
 
     # Step 2: Apply mean reversion if enabled

@@ -1,13 +1,15 @@
+from json import tool
 from pathlib import Path
-from config import Config
-
 import json
 import colorsys
 from typing import Dict, List, Tuple
-
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
+from plotly.subplots import make_subplots
+
+from config import Config
 
 
 def load_colors_from_json(file_name: str, directory: str = "styles") -> dict:
@@ -345,3 +347,63 @@ def plot_graphs(
         plot_cumulative_returns(
             cumulative_returns, color_map, config, paper_bgcolor, plot_bgcolor
         )
+
+
+def plot_risk_return_contributions(
+    symbols: list, return_contributions: np.ndarray, risk_contributions: np.ndarray
+) -> None:
+    """
+    Plots the return and risk contributions as pie charts in a single figure (side by side).
+
+    Parameters:
+        symbols (list): List of asset symbols.
+        return_contributions (np.ndarray): Array of return contribution percentages.
+        risk_contributions (np.ndarray): Array of risk contribution percentages.
+    """
+    df_contributions = pd.DataFrame(
+        {
+            "Asset": symbols,
+            "Return Contribution (%)": return_contributions,
+            "Risk Contribution (%)": risk_contributions,
+        }
+    )
+
+    # Create a figure with two subplots (1 row, 2 columns)
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        subplot_titles=("Portfolio Return Contribution", "Portfolio Risk Contribution"),
+        specs=[
+            [{"type": "domain"}, {"type": "domain"}]
+        ],  # 'domain' ensures pie charts fit well
+    )
+
+    # Add return contribution pie chart
+    fig.add_trace(
+        go.Pie(
+            labels=df_contributions["Asset"],
+            values=df_contributions["Return Contribution (%)"],
+            name="Return Contribution",
+        ),
+        row=1,
+        col=1,
+    )
+
+    # Add risk contribution pie chart
+    fig.add_trace(
+        go.Pie(
+            labels=df_contributions["Asset"],
+            values=df_contributions["Risk Contribution (%)"],
+            name="Risk Contribution",
+        ),
+        row=1,
+        col=2,
+    )
+
+    # Adjust layout
+    fig.update_layout(
+        title_text="Portfolio Return & Risk Contribution",
+        showlegend=True,
+    )
+
+    fig.show()

@@ -3,7 +3,7 @@ from typing import List, Optional
 from config import Config
 from core import run_pipeline
 
-from plotly_graphs import plot_graphs
+from plotly_graphs import plot_graphs, plot_risk_return_contributions
 from reversion.reversion_plots import plot_reversion_params, plot_reversion_signals
 from utils.caching_utils import load_parameters_from_pickle
 from utils.logger import logger
@@ -112,6 +112,11 @@ def iterative_pipeline_runner(
             cumulative_returns=final_result["cumulative_returns"],
             config=config,
             symbols=final_result["symbols"],
+        )
+        plot_risk_return_contributions(
+            symbols=final_result["symbols"],
+            return_contributions=final_result["return_contributions"],
+            risk_contributions=final_result["risk_contributions"],
         )
         plot_done = True
 
