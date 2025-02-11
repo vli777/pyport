@@ -526,7 +526,9 @@ def run_pipeline(
 
         if config.plot_reversion:
             baseline_cumulative_returns = (
-                (1 + normalized_avg_weights * returns_df).sum(axis=1).cumprod()
+                (1 + pd.Series(normalized_avg_weights) * returns_df)
+                .sum(axis=1)
+                .cumprod()
             )
 
             plot_multi_asset_cumulative_returns(
