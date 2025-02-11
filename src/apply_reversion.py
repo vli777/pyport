@@ -132,7 +132,7 @@ def apply_ou_reversion(
     )
     multi_asset_returns = multi_asset_returns.fillna(0)
 
-    if config.plot_reversion:
+    if config.plot_reversion and config.test_mode:
         plot_multi_asset_signals(
             spread_series=multi_asset_strategy.spread_series,
             signals=multi_asset_results["Signals"],
