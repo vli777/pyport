@@ -31,9 +31,7 @@ class PortfolioAllocator:
         """
         # Convert dictionary to DataFrame
         returns_df = pd.DataFrame(individual_returns)
-        returns_df["multi_asset"] = multi_asset_returns.sum(
-            axis=1
-        )  # Use a sum-based aggregation ✅
+        returns_df["multi_asset"] = multi_asset_returns.sum(axis=1)
 
         # Compute risk parity weights
         risk_parity_weights = self.compute_risk_parity(returns_df)
@@ -41,9 +39,9 @@ class PortfolioAllocator:
         # Compute Kelly scaling
         kelly_weights = self.compute_kelly_sizing(returns_df)
 
-        # Optimize Kelly & Risk Parity jointly using Optuna
+        # Optimize Kelly & Risk Parity jointly using Optuna (pass returns_df)
         optimal_weights = self.optimize_kelly_risk_parity(
-            kelly_weights, risk_parity_weights
+            kelly_weights, risk_parity_weights, returns_df
         )
 
         # Apply adaptive leverage
