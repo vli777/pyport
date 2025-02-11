@@ -396,7 +396,6 @@ def run_pipeline(
         return {}
 
     # Step 1: Compute pre-mean reversion results
-    logger.info("\nEnsemble results:")
     pre_daily_returns, pre_cumulative_returns = output(
         data=dfs["data"],
         allocation_weights=normalized_avg_weights,
@@ -552,7 +551,6 @@ def run_pipeline(
         sorted_stat_arb_allocation = stat_arb_adjusted_allocation.sort_values(
             ascending=False
         )
-        logger.info(f"\nStat arb adjusted allocation:\n{sorted_stat_arb_allocation}")
 
         # Compute post-mean reversion results
         adjusted_daily_returns, adjusted_cumulative_returns = output(
@@ -567,6 +565,13 @@ def run_pipeline(
         )
         adjusted_boxplot_stats = generate_boxplot_data(adjusted_daily_returns)
 
+        # Log performance comparison
+        logger.info("\nPerformance Comparison:")
+        logger.info(f"Pre-Mean Reversion Cumulative Returns: {pre_cumulative_returns}")
+        logger.info(
+            f"Post-Mean Reversion Cumulative Returns: {adjusted_cumulative_returns}"
+        )
+        
         final_result_dict = {
             "start_date": str(dfs["start"]),
             "end_date": str(dfs["end"]),

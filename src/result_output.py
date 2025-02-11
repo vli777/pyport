@@ -101,7 +101,7 @@ def output(
     if inputs is not None:
         logger.info(f"\n\nWatchlist Inputs: {inputs}")
 
-    logger.info(f"\nTime period: {start_date} to {end_date} ({time_period} yrs)")
+    logger.info(f"Time period: {start_date} to {end_date} ({time_period} yrs)")
     cumulative_pct = round((portfolio_cumulative_returns.iloc[-1] - 1) * 100, 2)
 
     logger.info(f"Optimization method: {optimization_model}")
