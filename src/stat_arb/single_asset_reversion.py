@@ -33,9 +33,9 @@ class OUHeatPotential:
         self.T = T
         self.max_leverage = max_leverage
         self.kappa, self.mu, self.sigma = self.estimate_ou_parameters()
-        print(
-            f"\Estimated parameters: kappa={self.kappa:.4f}, mu={self.mu:.4f}, sigma={self.sigma:.4f}"
-        )
+        # print(
+        #     f"\nEstimated parameters: kappa={self.kappa:.4f}, mu={self.mu:.4f}, sigma={self.sigma:.4f}"
+        # )
 
     def estimate_ou_parameters(self):
         """
