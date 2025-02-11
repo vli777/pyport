@@ -28,11 +28,8 @@ use_decorrelation: bool # Whether to filter correlated assets
 use_reversion: bool # Whether to adjust weights with mean reversion
 reversion_type: str # Either 'z' for z-score based, or 'ou' for heat potential with OU process, default 'ou'
 
-mean_reversion_strength: float # How much to weight mean reversion signals when adjusting weights
+optimization_objective: str # 'minvar','kappa','blend', 'sharpe','aggro', in increasing risk-tolerance
 
 test_mode: bool # Whether to enable test mode
 test_data_visible_pct: float # Percentage of test data to show
 
-model_config:
-  nested_clustering:
-    sharpe: bool # Whether cluster optimization goal is sharpe or minvar

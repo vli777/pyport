@@ -7,16 +7,6 @@ import os
 
 
 @dataclass
-class ModelConfig:
-    nested_clustering: Dict[str, Any] = field(default_factory=dict)
-
-    def __getitem__(self, key: str) -> Dict[str, Any]:
-        if hasattr(self, key):
-            return getattr(self, key)
-        raise KeyError(f"{key} not found in ModelConfig")
-
-
-@dataclass
 class Config:
     data_dir: str
     input_files_dir: str
@@ -41,9 +31,10 @@ class Config:
     use_reversion: bool
     reversion_type: Optional[str]  # Can be "ou", "z", or None
 
+    optimization_objective: Optional[str]  # Can be "minvar", "kappa", "blend", "sharpe", "aggro"
+
     test_mode: bool
     test_data_visible_pct: float
-    model_config: ModelConfig = field(default_factory=ModelConfig)
     models: Dict[str, List[str]] = field(
         default_factory=lambda: {"1.00": ["nested_clustering"]}
     )
@@ -60,15 +51,11 @@ class Config:
         config_dict["models"] = config_dict.get(
             "models", {"1.00": ["nested_clustering"]}
         )
-        config_dict["model_config"] = config_dict.get("model_config", {})
 
         data_dir = config_dict["data_dir"]
         input_files_dir = config_dict.get("input_files_dir", "watchlists")
         os.makedirs(data_dir, exist_ok=True)
         os.makedirs(input_files_dir, exist_ok=True)
-
-        # Parse model config
-        model_config = ModelConfig(**config_dict["model_config"])
 
         use_reversion = config_dict.get("use_reversion", False)
         reversion_type = (
@@ -96,7 +83,7 @@ class Config:
             use_decorrelation=config_dict.get("use_decorrelation", False),
             use_reversion=use_reversion,
             reversion_type=reversion_type,  # Defaults to "ou" if enabled, else None
+            optimization_objective=config_dict.get("optimization_objective", "blend"),
             test_mode=config_dict.get("test_mode", False),
             test_data_visible_pct=config_dict.get("test_data_visible_pct", 0.1),
-            model_config=model_config,
         )
