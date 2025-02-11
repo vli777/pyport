@@ -1,4 +1,3 @@
-from json import tool
 from pathlib import Path
 import json
 import colorsys
@@ -8,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
+import itertools
 
 from config import Config
 
@@ -350,32 +350,61 @@ def plot_graphs(
 
 
 def plot_risk_return_contributions(
-    symbols: list, return_contributions: np.ndarray, risk_contributions: np.ndarray
+    symbols: List[str], return_contributions: np.ndarray, risk_contributions: np.ndarray
 ) -> None:
     """
-    Plots the return and risk contributions as pie charts in a single figure (side by side).
-
-    Parameters:
-        symbols (list): List of asset symbols.
-        return_contributions (np.ndarray): Array of return contribution percentages.
-        risk_contributions (np.ndarray): Array of risk contribution percentages.
+    Plots the return and risk contributions as pie charts in the top row,
+    and a Sharpe Ratio bar chart in the bottom row (sorted in ascending order).
     """
+
+    # Compute Sharpe Ratio (Avoid division by zero)
+    sharpe_ratios = np.divide(
+        return_contributions,
+        risk_contributions,
+        out=np.zeros_like(return_contributions),
+        where=risk_contributions != 0,
+    )
+
+    # Create DataFrame
     df_contributions = pd.DataFrame(
         {
             "Asset": symbols,
-            "Return Contribution (%)": return_contributions,
-            "Risk Contribution (%)": risk_contributions,
+            "Return Contribution (%)": return_contributions.round(2),
+            "Risk Contribution (%)": risk_contributions.round(2),
+            "Sharpe Ratio": sharpe_ratios.round(2),
         }
     )
 
-    # Create a figure with two subplots (1 row, 2 columns)
+    # Sort by Sharpe Ratio in ascending order
+    df_contributions = df_contributions.sort_values(by="Sharpe Ratio", ascending=True)
+
+    # Use Jet color palette (or any preferred sequential palette)
+    custom_colors = px.colors.sequential.Jet[
+        : len(df_contributions)
+    ]  # Match sorted asset count
+
+    # Create color mapping **AFTER sorting**
+    sorted_assets = df_contributions["Asset"].tolist()
+    color_map = {asset: color for asset, color in zip(sorted_assets, custom_colors)}
+
+    # Ensure the same sorted colors are used in both the pie charts and bar chart
+    sorted_colors = [color_map[asset] for asset in sorted_assets]  # No more KeyError
+
+    # Create figure with two pie charts (top) and a sorted bar chart (bottom)
     fig = make_subplots(
-        rows=1,
+        rows=2,
         cols=2,
-        subplot_titles=("Portfolio Return Contribution", "Portfolio Risk Contribution"),
+        subplot_titles=(
+            "Portfolio Return Contribution",
+            "Portfolio Risk Contribution",
+            "Sharpe Ratio per Asset (higher is better)",
+        ),
         specs=[
-            [{"type": "domain"}, {"type": "domain"}]
-        ],  # 'domain' ensures pie charts fit well
+            [{"type": "domain"}, {"type": "domain"}],  # Two pie charts
+            [{"type": "xy", "colspan": 2}, None],  # Bar chart spanning both cols
+        ],
+        row_heights=[0.6, 0.6],
+        vertical_spacing=0.2,
     )
 
     # Add return contribution pie chart
@@ -384,9 +413,10 @@ def plot_risk_return_contributions(
             labels=df_contributions["Asset"],
             values=df_contributions["Return Contribution (%)"],
             name="Return Contribution",
-            hoverinfo="none",  # Disable default hover behavior
-            hovertemplate="<b>%{label}</b><br>%{value:.2f}%",  # Custom hover text
-            textinfo="percent",  # Display percentage on the chart itself
+            hovertemplate="<b>%{label}</b><br>Return Contribution: %{value:.2f}%",
+            textinfo="percent",
+            hole=0.3,
+            marker=dict(colors=sorted_colors),
         ),
         row=1,
         col=1,
@@ -398,18 +428,183 @@ def plot_risk_return_contributions(
             labels=df_contributions["Asset"],
             values=df_contributions["Risk Contribution (%)"],
             name="Risk Contribution",
-            hoverinfo="none",  # Disable default hover behavior
-            hovertemplate="<b>%{label}</b><br>%{value:.2f}%",  # Custom hover text
-            textinfo="percent",  # Display percentage on the chart itself
+            hovertemplate="<b>%{label}</b><br>Risk Contribution: %{value:.2f}%",
+            textinfo="percent",
+            hole=0.3,
+            marker=dict(colors=sorted_colors),
         ),
         row=1,
         col=2,
     )
 
-    # Adjust layout
-    fig.update_layout(
-        title_text="Portfolio Return & Risk Contribution",
-        showlegend=True,
+    # Add Sharpe Ratio bar chart
+    fig.add_trace(
+        go.Bar(
+            x=df_contributions["Asset"],
+            y=df_contributions["Sharpe Ratio"],
+            name="Sharpe Ratio",
+            marker=dict(color=sorted_colors),
+            text=df_contributions["Sharpe Ratio"].map(
+                lambda x: f"{x:.2f}"
+            ),  # Format labels
+            textposition="outside",
+        ),
+        row=2,
+        col=1,
     )
 
+    # Adjust layout for proper spacing & formatting
+    fig.update_layout(
+        title_text="Portfolio Return, Risk, and Sharpe Ratio Contribution",
+        showlegend=False,
+        paper_bgcolor="#ffffff",  # Set background to white
+        plot_bgcolor="rgba(0,0,0,0)",  # Fully transparent plot area
+        margin=dict(t=50, b=50, l=50, r=50),
+        height=800,
+    )
+
+    # Fix x-axis and remove unnecessary elements from the bar chart
+    fig.update_xaxes(title_text="", showgrid=False, zeroline=False, row=2, col=1)
+    fig.update_yaxes(
+        title_text="",
+        showgrid=False,
+        zeroline=False,
+        showticklabels=False,
+        row=2,
+        col=1,
+    )
+
+    # Show figure
+    fig.show()
+
+
+def plot_risk_return_contributions(
+    symbols: List[str], return_contributions: np.ndarray, risk_contributions: np.ndarray
+) -> None:
+    """
+    Plots the return and risk contributions as pie charts in the top row,
+    and a Sharpe Ratio bar chart in the bottom row (sorted in ascending order).
+    """
+
+    # Compute Sharpe Ratio (Avoid division by zero)
+    sharpe_ratios = np.divide(
+        return_contributions,
+        risk_contributions,
+        out=np.zeros_like(return_contributions),
+        where=risk_contributions != 0,
+    )
+
+    # Create DataFrame
+    df_contributions = pd.DataFrame(
+        {
+            "Asset": symbols,
+            "Return Contribution (%)": return_contributions.round(2),
+            "Risk Contribution (%)": risk_contributions.round(2),
+            "Sharpe Ratio": sharpe_ratios.round(2),
+        }
+    )
+
+    # Sort by Sharpe Ratio in ascending order
+    df_contributions = df_contributions.sort_values(by="Sharpe Ratio", ascending=True)
+
+    # Get sorted asset order
+    sorted_assets = df_contributions["Asset"].tolist()
+
+    # Get available colors from Jet palette
+    available_colors = px.colors.sequential.Plasma + px.colors.sequential.Viridis
+
+    # Cycle colors if more assets exist than colors available
+    custom_colors = list(
+        itertools.islice(itertools.cycle(available_colors), len(sorted_assets))
+    )
+
+    # Create color mapping based on sorted assets
+    color_map = {asset: color for asset, color in zip(sorted_assets, custom_colors)}
+    sorted_colors = [color_map[asset] for asset in sorted_assets]
+
+    # Create figure with two pie charts (top) and a sorted bar chart (bottom)
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        subplot_titles=(
+            "Portfolio Return Contribution",
+            "Portfolio Risk Contribution",
+            "Sharpe Ratio per Asset (higher is better)",
+        ),
+        specs=[
+            [{"type": "domain"}, {"type": "domain"}],  # Two pie charts
+            [{"type": "xy", "colspan": 2}, None],  # Bar chart spanning both cols
+        ],
+        row_heights=[0.6, 0.6],
+        vertical_spacing=0.2,
+    )
+
+    # Add return contribution pie chart
+    fig.add_trace(
+        go.Pie(
+            labels=df_contributions["Asset"],
+            values=df_contributions["Return Contribution (%)"],
+            name="Return Contribution",
+            hovertemplate="<b>%{label}</b><br>Return Contribution: %{value:.2f}%",
+            textinfo="percent",
+            hole=0.3,
+            marker=dict(colors=sorted_colors),
+        ),
+        row=1,
+        col=1,
+    )
+
+    # Add risk contribution pie chart
+    fig.add_trace(
+        go.Pie(
+            labels=df_contributions["Asset"],
+            values=df_contributions["Risk Contribution (%)"],
+            name="Risk Contribution",
+            hovertemplate="<b>%{label}</b><br>Risk Contribution: %{value:.2f}%",
+            textinfo="percent",
+            hole=0.3,
+            marker=dict(colors=sorted_colors),
+        ),
+        row=1,
+        col=2,
+    )
+
+    # Add Sharpe Ratio bar chart
+    fig.add_trace(
+        go.Bar(
+            x=df_contributions["Asset"],
+            y=df_contributions["Sharpe Ratio"],
+            name="Sharpe Ratio",
+            marker=dict(color=sorted_colors),
+            text=df_contributions["Sharpe Ratio"].map(
+                lambda x: f"{x:.2f}"
+            ),  # Format labels
+            textposition="outside",
+        ),
+        row=2,
+        col=1,
+    )
+
+    # Adjust layout for proper spacing & formatting
+    fig.update_layout(
+        title_text="Portfolio Return, Risk, and Sharpe Ratio Contribution",
+        showlegend=False,
+        paper_bgcolor="#ffffff",  # Set background to white
+        plot_bgcolor="rgba(0,0,0,0)",  # Fully transparent plot area
+        margin=dict(t=50, b=50, l=50, r=50),
+        height=800,
+    )
+
+    # Fix x-axis and remove unnecessary elements from the bar chart
+    fig.update_xaxes(title_text="", showgrid=False, zeroline=False, row=2, col=1)
+    fig.update_yaxes(
+        title_text="",
+        showgrid=False,
+        zeroline=False,
+        showticklabels=False,
+        row=2,
+        col=1,
+    )
+
+    # Show figure
     fig.show()
