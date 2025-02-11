@@ -61,8 +61,6 @@ def plot_multi_asset_signals(
         xaxis_title="Time",
         yaxis_title="Spread (Z-Score)",
         template="plotly_white",
-        height=600,
-        width=1000,
     )
 
     fig.show()
@@ -116,8 +114,6 @@ def plot_multi_asset_cumulative_returns(
         xaxis_title="Time",
         yaxis_title="Cumulative Return",
         template="plotly_white",
-        height=600,
-        width=1000,
     )
 
     fig.show()
