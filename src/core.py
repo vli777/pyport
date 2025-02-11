@@ -19,6 +19,14 @@ from correlation.filter_hdbscan import (
     filter_correlated_groups_hdbscan,
     get_cluster_labels,
 )
+from stat_arb.multi_asset_plots import (
+    plot_multi_asset_cumulative_returns,
+    plot_multi_asset_signals,
+)
+from stat_arb.apply_adaptive_weighting import apply_adaptive_weighting
+from stat_arb.portfolio_allocator import PortfolioAllocator
+from stat_arb.multi_asset_reversion import MultiAssetReversion
+from stat_arb.single_asset_reversion import OUHeatPotential
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -388,7 +396,6 @@ def run_pipeline(
         return {}
 
     # Step 1: Compute pre-mean reversion results
-    logger.info("\nEnsemble results:")
     pre_daily_returns, pre_cumulative_returns = output(
         data=dfs["data"],
         allocation_weights=normalized_avg_weights,
@@ -414,7 +421,9 @@ def run_pipeline(
     }
 
     # Step 2: Apply mean reversion if enabled
-    if config.use_mean_reversion:
+
+    # Z-score based mean reversion
+    if config.use_z_reversion:
         logger.info("\nApplying mean reversion on normalized weights...")
         mean_reverted_weights = apply_mean_reversion(
             asset_cluster_map=asset_cluster_map,
@@ -441,13 +450,6 @@ def run_pipeline(
         )
         post_boxplot_stats = generate_boxplot_data(post_daily_returns)
 
-        # Log performance comparison
-        logger.info("\nPerformance Comparison:")
-        logger.info(f"Pre-Mean Reversion Cumulative Returns: {pre_cumulative_returns}")
-        logger.info(
-            f"Post-Mean Reversion Cumulative Returns: {post_cumulative_returns}"
-        )
-
         # Update the final result dictionary to store **only post-mean reversion results**
         final_result_dict = {
             "start_date": str(dfs["start"]),
@@ -458,6 +460,112 @@ def run_pipeline(
             "daily_returns": post_daily_returns,
             "cumulative_returns": post_cumulative_returns,
             "boxplot_stats": post_boxplot_stats,
+        }
+
+    # Heat potential-based mean reversion
+    if config.use_ou_reversion:
+        ou_strategies = {
+            ticker: OUHeatPotential(dfs["data"][ticker], returns_df[ticker])
+            for ticker in dfs["data"].columns
+        }
+        # Individual asset signals
+        ou_signals = {
+            ticker: ou.generate_trading_signals()
+            for ticker, ou in ou_strategies.items()
+        }
+        # Optimize and simulate each OU strategy
+        ou_results = {
+            ticker: ou.simulate_strategy(ou_signals[ticker])
+            for ticker, ou in ou_strategies.items()
+        }
+        # Extract expected returns from individual strategies
+        individual_returns = {
+            ticker: pd.Series(result[0]).reset_index(drop=True)
+            for ticker, result in ou_results.items()
+        }
+
+        # Find the maximum length among all tickers
+        max_len = max(s.size for s in individual_returns.values())
+
+        # Reindex each Series to the same length, filling missing entries with 0
+        individual_returns = {
+            ticker: s.reindex(range(max_len), fill_value=0)
+            for ticker, s in individual_returns.items()
+        }
+
+        # Initialize MultiAssetReversion for cross-asset mean reversion
+        multi_asset_strategy = MultiAssetReversion(dfs["data"])
+        multi_asset_results = multi_asset_strategy.optimize_and_trade()
+
+        # Compute basket returns as the weighted sum of individual asset returns
+        weights = pd.Series(multi_asset_results["Hedge Ratios"])
+        # Ensure proper alignment with data columns
+        weights = weights.reindex(dfs["data"].columns, fill_value=0)
+
+        # Normalize weights to sum to 1 (or scale up if necessary)
+        if weights.sum() != 0:
+            weights /= weights.abs().sum()
+
+        # Compute basket returns (handle NaNs)
+        basket_returns = (
+            dfs["data"].pct_change().fillna(0).mul(weights, axis=1).sum(axis=1)
+        )
+
+        # Multi-asset returns: multiply the basket signal by the basket returns
+        multi_asset_returns = (
+            multi_asset_results["Signals"]["Position"].shift(1) * basket_returns
+        )
+        multi_asset_returns = multi_asset_returns.fillna(
+            0
+        )  # Replace NaN with zero returns
+
+        if config.plot_reversion:
+            plot_multi_asset_signals(
+                spread_series=multi_asset_strategy.spread_series,
+                signals=multi_asset_results["Signals"],
+                title="Multi-Asset Mean Reversion Trading Signals",
+            )
+
+        # Compute final allocations
+        portfolio_allocator = PortfolioAllocator()
+        reversion_allocations = portfolio_allocator.compute_allocations(
+            individual_returns,
+            multi_asset_returns,
+            hedge_ratios=multi_asset_results["Hedge Ratios"],
+        )
+        normalized_reversion_allocations = normalize_weights(reversion_allocations)
+
+        stat_arb_adjusted_allocation = apply_adaptive_weighting(
+            baseline_allocation=normalized_avg_weights,
+            mean_reversion_weights=normalized_reversion_allocations,
+            returns_df=returns_df,
+            base_alpha=0.2,
+        )
+        sorted_stat_arb_allocation = stat_arb_adjusted_allocation.sort_values(
+            ascending=False
+        )
+
+        # Compute post-mean reversion results
+        adjusted_daily_returns, adjusted_cumulative_returns = output(
+            data=dfs["data"],
+            allocation_weights=stat_arb_adjusted_allocation,
+            inputs=combined_input_files,
+            start_date=dfs["start"],
+            end_date=dfs["end"],
+            optimization_model=combined_models,
+            time_period=sorted_time_periods[0],
+            config=config,
+        )
+        adjusted_boxplot_stats = generate_boxplot_data(adjusted_daily_returns)
+        final_result_dict = {
+            "start_date": str(dfs["start"]),
+            "end_date": str(dfs["end"]),
+            "models": combined_models,
+            "symbols": sorted_symbols,
+            "normalized_avg": sorted_stat_arb_allocation,
+            "daily_returns": adjusted_daily_returns,
+            "cumulative_returns": adjusted_cumulative_returns,
+            "boxplot_stats": adjusted_boxplot_stats,
         }
 
     # Optional plotting (only on local runs)
