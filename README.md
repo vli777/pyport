@@ -2,9 +2,12 @@
 Modern Portfolio Optimization 
 
 # Upcoming 
-- OU mean reversion
-- DuckDB migration for faster data loading
-- Statistical arbitrage on cointegrated baskets
+- [x] OU mean reversion
+- [x] Statistical arbitrage on cointegrated baskets
+![image](https://github.com/user-attachments/assets/c9b31d53-ef5e-46c9-a39f-e04aea618fe8)
+- [ ] DuckDB migration for faster data loading
+
+
 
 # February 2025 
 - Updated features with more modern techniques: (VAE for anomaly detection would be considered more SOTA, but due to our data sample size and the marginal benefit vs computational resources required, isolation forest was selected.
