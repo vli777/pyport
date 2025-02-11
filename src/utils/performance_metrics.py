@@ -67,7 +67,7 @@ def kappa_ratio(returns: pd.Series, order: int = 3, mar: float = 0.0) -> float:
 
 
 def calculate_portfolio_alpha(
-    portfolio_returns: pd.DataFrame,
+    portfolio_returns: pd.DataFrame | pd.Series,
     market_returns: pd.Series,
     risk_free_rate: float = 0.0,
 ) -> float:
@@ -75,7 +75,7 @@ def calculate_portfolio_alpha(
     Calculate the portfolio's alpha using the CAPM model.
 
     Args:
-        portfolio_returns (pd.DataFrame): Portfolio returns.
+        portfolio_returns (pd.DataFrame or pd.Series): Portfolio returns.
         market_returns (pd.Series): Market index returns.
         risk_free_rate (float, optional): Risk-free rate. Defaults to 0.0.
 
@@ -83,24 +83,32 @@ def calculate_portfolio_alpha(
         float: Portfolio alpha.
     """
     if portfolio_returns.empty or market_returns.empty:
-        logger.warning("Filtered or market returns are empty. Returning alpha=0.0")
+        print("Warning: Filtered or market returns are empty. Returning alpha=0.0")
         return 0.0
 
-    # Compute portfolio return dynamically
-    portfolio_returns = portfolio_returns.mean(axis=1)
+    # Ensure portfolio_returns is a Series
+    if isinstance(portfolio_returns, pd.DataFrame):
+        portfolio_returns = portfolio_returns.mean(axis=1)  # Take mean across assets
+    elif not isinstance(portfolio_returns, pd.Series):
+        raise TypeError("portfolio_returns must be a DataFrame or Series.")
 
-    # Align market_returns with portfolio_returns and **forward-fill missing data**
+    # Align market_returns with portfolio_returns and forward-fill missing data
     market_returns = market_returns.reindex(portfolio_returns.index).ffill()
 
-    if portfolio_returns.empty or market_returns.empty:
-        logger.warning(
-            "After alignment, portfolio returns or market returns are empty. Returning alpha=0.0"
+    # Drop any rows where either series has NaN values
+    combined_data = pd.DataFrame(
+        {"portfolio": portfolio_returns, "market": market_returns}
+    ).dropna()
+
+    if combined_data.empty:
+        print(
+            "Warning: After alignment, portfolio and market returns have no valid data. Returning alpha=0.0"
         )
         return 0.0
 
-    # Excess returns
-    excess_portfolio_returns = portfolio_returns - risk_free_rate
-    excess_market_returns = market_returns - risk_free_rate
+    # Extract cleaned excess returns
+    excess_portfolio_returns = combined_data["portfolio"] - risk_free_rate
+    excess_market_returns = combined_data["market"] - risk_free_rate
 
     # Fit CAPM model
     model = LinearRegression()
@@ -109,7 +117,7 @@ def calculate_portfolio_alpha(
     )
     alpha = model.intercept_
 
-    logger.debug(f"Calculated alpha: {alpha}")
+    print(f"Calculated alpha: {alpha:.4f}")
     return alpha
 
 
@@ -221,5 +229,3 @@ def risk_return_contributions(
     )  # Normalize
 
     return return_contributions_pct, risk_contributions_pct
-
-

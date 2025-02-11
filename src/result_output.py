@@ -78,24 +78,38 @@ def output(
 
     # --- Load market data and compute market returns over the same period
     market_file = Path(config.data_dir) / "SPY.parquet"
+    alpha = None  # Default to None if SPY is missing
+
     try:
         market_data = pd.read_parquet(market_file)
+
+        if "Adj Close" in market_data.columns:
+            market_returns = market_data["Adj Close"].pct_change().dropna()
+        elif "Close" in market_data.columns:
+            market_returns = market_data["Close"].pct_change().dropna()
+        else:
+            raise ValueError(
+                f"{market_file} is missing 'Adj Close' or 'Close' columns."
+            )
+
+        # Filter market_returns to match the analysis period
+        market_returns = market_returns.loc[start_date:end_date]
+
+        if not market_returns.empty:
+            alpha = calculate_portfolio_alpha(
+                portfolio_returns=portfolio_returns, market_returns=market_returns
+            ) * 100
+        else:
+            print(f"Warning: Market data for {market_file} is empty after filtering.")
+
+    except FileNotFoundError:
+        print(
+            f"Warning: Market data file {market_file} not found. Skipping Alpha calculation."
+        )
     except Exception as e:
-        logger.error(f"Error loading market data from {market_file}: {e}")
-        raise
-
-    if "Adj Close" in market_data.columns:
-        market_returns = market_data["Adj Close"].pct_change().dropna()
-    elif "Close" in market_data.columns:
-        market_returns = market_data["Close"].pct_change().dropna()
-    else:
-        raise ValueError("{market_file} data missing 'Adj Close' or 'Close' columns.")
-
-    # Filter market_returns to match the analysis period
-    # market_returns = market_returns.loc[start_date:end_date]
-    # alpha = calculate_portfolio_alpha(
-    #     portfolio_returns=portfolio_returns, market_returns=market_returns
-    # )
+        print(
+            f"Error loading market data from {market_file}: {e}. Skipping Alpha calculation."
+        )
 
     cumulative_pct = round((portfolio_cumulative_returns.iloc[-1] - 1) * 100, 2)
 
@@ -113,7 +127,10 @@ def output(
     print(f"Portfolio Volatility:\t{volatility * 100:.2f}%")
     print(f"Max Drawdown:\t\t{max_dd * 100:.2f}%")
     print(f"Time Under Water:\t{time_uw} days")
-    # print(f"Portfolio Alpha vs Market:\t{alpha:.4f}")
+
+    # Only print Alpha if it was successfully calculated
+    if alpha is not None:
+        print(f"Portfolio Alpha vs Market:\t{alpha:.2f}%")
 
     print(f"Cumulative Return:\t{cumulative_pct:.2f}%")
     print("=" * 50)
