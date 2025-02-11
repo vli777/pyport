@@ -384,6 +384,9 @@ def plot_risk_return_contributions(
             labels=df_contributions["Asset"],
             values=df_contributions["Return Contribution (%)"],
             name="Return Contribution",
+            hoverinfo="none",  # Disable default hover behavior
+            hovertemplate="<b>%{label}</b><br>%{value:.2f}%",  # Custom hover text
+            textinfo="percent",  # Display percentage on the chart itself
         ),
         row=1,
         col=1,
@@ -395,6 +398,9 @@ def plot_risk_return_contributions(
             labels=df_contributions["Asset"],
             values=df_contributions["Risk Contribution (%)"],
             name="Risk Contribution",
+            hoverinfo="none",  # Disable default hover behavior
+            hovertemplate="<b>%{label}</b><br>%{value:.2f}%",  # Custom hover text
+            textinfo="percent",  # Display percentage on the chart itself
         ),
         row=1,
         col=2,
