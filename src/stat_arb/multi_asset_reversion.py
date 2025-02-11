@@ -164,10 +164,14 @@ class MultiAssetReversion:
         stop_loss, take_profit = self.calculate_optimal_bounds()
         signals = self.generate_trading_signals(stop_loss, take_profit)
         returns, metrics = self.simulate_strategy(signals)
+
+        # Convert hedge ratios to a Pandas Series before calling to_dict()
+        hedge_ratios_series = pd.Series(self.hedge_ratios, index=self.prices_df.columns)
+
         return {
             "Optimal Stop-Loss": stop_loss,
             "Optimal Take-Profit": take_profit,
             "Metrics": metrics,
             "Signals": signals,
-            "Hedge Ratios": self.hedge_ratios.to_dict(),
+            "Hedge Ratios": hedge_ratios_series.to_dict(),
         }
