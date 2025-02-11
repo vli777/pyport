@@ -15,25 +15,26 @@ class MultiAssetReversion:
         Multi-asset mean reversion strategy based on cointegration.
 
         Args:
-            prices_df (pd.DataFrame): Log-prices DataFrame.
+            prices_df (pd.DataFrame): Price data DataFrame (regular prices).
             det_order (int): Deterministic trend order for Johansen test.
             k_ar_diff (int): Number of lag differences.
         """
-        self.prices_df = prices_df
-        self.returns_df = prices_df.pct_change().dropna()
-        # Initialize cointegration analyzer internally
+        # Convert the input prices to log prices internally
+        self.prices_df = np.log(prices_df)
+        # Use differences of log prices as log returns
+        self.returns_df = self.prices_df.diff().dropna()
+
         self.cointegration_analyzer = CointegrationAnalyzer(
-            prices_df, det_order, k_ar_diff
+            self.prices_df, det_order, k_ar_diff
         )
         self.spread_series = self.cointegration_analyzer.spread_series
-        # Hedge ratios are computed and normalized within the cointegration analyzer
         self.hedge_ratios = self.cointegration_analyzer.get_hedge_ratios()
 
-        # Compute Kelly and Risk Parity weights (for later portfolio optimization)
+        # Compute Kelly and Risk Parity weights
         self.kelly_fractions = self.compute_dynamic_kelly()
         self.risk_parity_weights = self.compute_risk_parity_weights()
 
-        # Optimize allocations using Optuna (for portfolio-level sizing)
+        # Optimize allocations using Optuna
         self.optimal_params = self.optimize_kelly_risk_parity()
 
     def compute_dynamic_kelly(self, risk_free_rate=0.0):
