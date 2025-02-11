@@ -19,6 +19,9 @@ from correlation.filter_hdbscan import (
     filter_correlated_groups_hdbscan,
     get_cluster_labels,
 )
+from stat_arb.portfolio_allocator import PortfolioAllocator
+from stat_arb.multi_asset_reversion import MultiAssetReversion
+from stat_arb.single_asset_reversion import OUHeatPotential
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -414,7 +417,9 @@ def run_pipeline(
     }
 
     # Step 2: Apply mean reversion if enabled
-    if config.use_mean_reversion:
+
+    # Z-score based mean reversion
+    if config.use_z_reversion:
         logger.info("\nApplying mean reversion on normalized weights...")
         mean_reverted_weights = apply_mean_reversion(
             asset_cluster_map=asset_cluster_map,
@@ -459,6 +464,52 @@ def run_pipeline(
             "cumulative_returns": post_cumulative_returns,
             "boxplot_stats": post_boxplot_stats,
         }
+
+    # Heat potential-based mean reversion
+    if config.use_ou_reversion:
+        ou_strategies = {
+            ticker: OUHeatPotential(dfs["data"][ticker], returns_df[ticker])
+            for ticker in dfs["data"].columns
+        }
+
+    # Initialize MultiAssetReversion for cross-asset mean reversion
+    multi_asset_strategy = MultiAssetReversion(dfs["data"])
+    multi_asset_results = multi_asset_strategy.optimize_and_trade()
+    print("Multi-Asset Results:", multi_asset_results)
+
+    # Individual asset signals
+    ou_signals = {
+        ticker: ou.generate_trading_signals() for ticker, ou in ou_strategies.items()
+    }
+
+    # Optimize and simulate each OU strategy
+    ou_results = {
+        ticker: ou.simulate_strategy(ou_signals[ticker])
+        for ticker, ou in ou_strategies.items()
+    }
+
+    # Extract expected returns from individual strategies
+    individual_returns = {ticker: result[0] for ticker, result in ou_results.items()}
+
+    # Use hedge ratios from the multi-asset strategy (ensure it's a Series)
+    weights = pd.Series(multi_asset_results["Hedge Ratios"])
+
+    # Compute basket returns as the weighted sum of individual asset returns
+    basket_returns = dfs["data"].pct_change().mul(weights, axis=1).sum(axis=1)
+
+    # Multi-asset returns: multiply the basket signal by the basket returns
+    multi_asset_returns = (
+        multi_asset_results["Signals"]["Position"].shift(1) * basket_returns
+    )
+
+    # Initialize Portfolio Allocator
+    portfolio_allocator = PortfolioAllocator()
+
+    # Compute final allocations
+    final_allocations = portfolio_allocator.compute_allocations(
+        individual_returns, multi_asset_returns
+    )
+    print(f"final allocations: {final_allocations}")
 
     # Optional plotting (only on local runs)
     if run_local:
