@@ -176,6 +176,7 @@ class PortfolioAllocator:
             return 0.5 * (sr + kr)
 
         study = optuna.create_study(direction="maximize")
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
         study.optimize(objective, n_trials=50)
 
         best_scaling = study.best_params

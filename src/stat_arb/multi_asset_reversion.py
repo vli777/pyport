@@ -124,7 +124,9 @@ class MultiAssetReversion:
             return 0.5 * s + 0.5 * k
 
         study = optuna.create_study(direction="maximize")
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
         study.optimize(objective, n_trials=50)
+
         return study.best_params
 
     def calculate_optimal_bounds(self):

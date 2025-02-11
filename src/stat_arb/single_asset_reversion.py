@@ -212,7 +212,9 @@ class OUHeatPotential:
             return self.composite_score(metrics)
 
         study = optuna.create_study(direction="maximize")
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
         study.optimize(objective, n_trials=n_trials, n_jobs=-1)
+
         best_params = study.best_params
         print(f"Optimized Kelly & Risk Parity: {best_params}")
         return best_params
