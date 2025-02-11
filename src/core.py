@@ -184,6 +184,7 @@ def run_pipeline(
                 asset_cluster_map=asset_cluster_map,
                 risk_free_rate=config.risk_free_rate,
                 plot=config.plot_clustering,
+                objective=config.optimization_objective,
             )
 
             valid_symbols = [
