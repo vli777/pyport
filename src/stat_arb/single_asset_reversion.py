@@ -34,7 +34,7 @@ class OUHeatPotential:
         self.max_leverage = max_leverage
         self.kappa, self.mu, self.sigma = self.estimate_ou_parameters()
         print(
-            f"Estimated parameters: kappa={self.kappa:.4f}, mu={self.mu:.4f}, sigma={self.sigma:.4f}"
+            f"\Estimated parameters: kappa={self.kappa:.4f}, mu={self.mu:.4f}, sigma={self.sigma:.4f}"
         )
 
     def estimate_ou_parameters(self):
@@ -138,7 +138,7 @@ class OUHeatPotential:
 
         returns = np.log(trades["Exit Price"].values / trades["Entry Price"].values)
         returns_series = pd.Series(returns).reset_index(drop=True)
-        
+
         win_rate = (returns > 0).mean()
         sharpe_r = sharpe_ratio(
             returns_series, entries_per_year=252, risk_free_rate=0.0
