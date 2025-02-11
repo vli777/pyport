@@ -6,9 +6,12 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 from sklearn.manifold import TSNE
-from correlation.correlation_utils import compute_correlation_matrix
+from correlation.correlation_utils import (
+    compute_correlation_matrix,
+    compute_performance_metrics,
+    get_objective_weights,
+)
 from correlation.hdbscan_optimize import run_hdbscan_decorrelation_study
-from correlation.tsne_dbscan import compute_performance_metrics
 from utils import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
@@ -18,6 +21,7 @@ def filter_correlated_groups_hdbscan(
     asset_cluster_map: Dict[str, int],
     risk_free_rate: float = 0.0,
     plot: bool = False,
+    objective: str = "sharpe",
 ) -> list[str]:
     """
     Uses HDBSCAN to cluster assets based on the distance (1 - correlation) matrix.
@@ -29,6 +33,7 @@ def filter_correlated_groups_hdbscan(
         asset_cluster_map (dict): Full set of assets mapped to optimized HDBSCAN clusters.
         risk_free_rate (float): Risk-free rate for performance metric calculation.
         plot (bool): If True, display a visualization of clusters.
+        objective (str): Optimization objective for performance metrics
 
     Returns:
         list(str): A list of selected ticker symbols after decorrelation.
@@ -39,7 +44,10 @@ def filter_correlated_groups_hdbscan(
         clusters.setdefault(label, []).append(ticker)
 
     # Compute performance metrics for each asset
-    perf_series = compute_performance_metrics(returns_df, risk_free_rate)
+    objective_weights = get_objective_weights(objective)
+    perf_series = compute_performance_metrics(
+        returns_df, risk_free_rate, objective_weights=objective_weights
+    )
 
     # Select the best-performing tickers from each cluster
     selected_tickers: list[str] = []

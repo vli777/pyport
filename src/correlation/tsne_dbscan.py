@@ -14,7 +14,6 @@ from utils.caching_utils import (
     load_parameters_from_pickle,
     save_parameters_to_pickle,
 )
-from utils.performance_metrics import kappa_ratio, sharpe_ratio
 from utils.logger import logger
 
 
@@ -171,19 +170,3 @@ def filter_correlated_groups_dbscan(
         fig_k.show()
 
     return selected_tickers
-
-
-def compute_performance_metrics(
-    returns_df: pd.DataFrame, risk_free_rate: float
-) -> pd.Series:
-    metrics = {}
-    for ticker in returns_df.columns:
-        ticker_returns = returns_df[ticker].dropna()
-        if ticker_returns.empty:
-            continue
-        cumulative_return = (ticker_returns + 1).prod() - 1
-        sr = sharpe_ratio(ticker_returns, risk_free_rate)
-        kp = kappa_ratio(ticker_returns, order=3)
-        composite = 0.4 * cumulative_return + 0.3 * sr + 0.3 * kp
-        metrics[ticker] = composite
-    return pd.Series(metrics)
