@@ -1,3 +1,4 @@
+from typing import Optional, Union
 import numpy as np
 import optuna
 import pandas as pd
@@ -5,11 +6,6 @@ from scipy.optimize import minimize
 import plotly.graph_objects as go
 
 from utils.performance_metrics import kappa_ratio, sharpe_ratio
-
-
-import numpy as np
-import pandas as pd
-from scipy.optimize import minimize
 
 
 class OUHeatPotential:
@@ -65,7 +61,11 @@ class OUHeatPotential:
 
         return kappa, mu, sigma
 
-    def generate_trading_signals(self, stop_loss: float, take_profit: float):
+    def generate_trading_signals(
+        self,
+        stop_loss: Optional[float] = None,
+        take_profit: Optional[float] = None,
+    ):
         """
         Vectorized trading signal generation using NumPy and Pandas indexing.
 
@@ -76,6 +76,9 @@ class OUHeatPotential:
         Returns:
             pd.DataFrame: Signals with "Position", "Entry Price", and "Exit Price".
         """
+        if stop_loss is None or take_profit is None:
+            stop_loss, take_profit = self.calculate_optimal_bounds()
+
         log_prices = np.log(self.prices)
         deviations = log_prices - self.mu  # Compute deviations from mean
 
@@ -167,7 +170,7 @@ class OUHeatPotential:
             * metrics["Kappa Ratio"]
         )
 
-    def compute_optimal_bounds(self):
+    def calculate_optimal_bounds(self):
         """
         Optimize stop-loss and take-profit levels to maximize composite score.
 
@@ -197,7 +200,7 @@ class OUHeatPotential:
         Returns:
             tuple: (signals DataFrame, metrics dictionary)
         """
-        stop_loss, take_profit = self.compute_optimal_bounds()
+        stop_loss, take_profit = self.calculate_optimal_bounds()
         print(f"Optimal stop_loss: {stop_loss:.4f}, take_profit: {take_profit:.4f}")
 
         signals = self.generate_trading_signals(stop_loss, take_profit)
@@ -239,9 +242,19 @@ class OUHeatPotential:
                 dynamic_kelly_fraction * risk_parity_scaling * risk_parity_allocation
             )
 
-            # Generate trading signals and simulate strategy performance
-            stop_loss, take_profit = self.compute_optimal_bounds()
+            # Normalize adjusted allocation to sum to 1
+            adjusted_allocation /= adjusted_allocation.sum()
+
+            # Generate trading signals and scale positions by adjusted allocation
+            stop_loss, take_profit = self.calculate_optimal_bounds()
             signals = self.generate_trading_signals(stop_loss, take_profit)
+
+            # Apply adjusted allocation to signal positions
+            for ticker in signals.columns:
+                if ticker in adjusted_allocation:
+                    signals[ticker] *= adjusted_allocation[ticker]  # Scale positions
+
+            # Simulate strategy performance
             returns, metrics = self.simulate_strategy(signals)
 
             # Use Composite Score (Sharpe, Kappa, Win Rate) as Objective
