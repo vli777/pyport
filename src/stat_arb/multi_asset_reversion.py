@@ -10,39 +10,52 @@ from utils.performance_metrics import kappa_ratio, sharpe_ratio
 
 
 class MultiAssetReversion:
-    def __init__(self, prices_df: pd.DataFrame, det_order=0, k_ar_diff=1):
+    def __init__(
+        self,
+        prices_df: pd.DataFrame,
+        det_order=0,
+        k_ar_diff=1,
+    ):
         """
         Multi-asset mean reversion strategy based on cointegration.
 
         Args:
-            prices_df (pd.DataFrame): Price data DataFrame (regular prices).
-            det_order (int): Deterministic trend order for Johansen test.
+            prices_df (pd.DataFrame): Price data DataFrame (regular prices) which may have different history lengths.
+            det_order (int): Deterministic trend order for the Johansen test.
             k_ar_diff (int): Number of lag differences.
         """
-        # Ensure prices are strictly positive to avoid issues with logarithms.
+        # Ensure all prices are positive for the logarithm.
         if (prices_df <= 0).any().any():
             raise ValueError(
                 "Price data must be strictly positive to compute logarithms."
             )
 
-        # Convert the input prices to log prices internally.
+        # Align to the overlapping period where all assets have data.
+        common_index = prices_df.dropna(axis=0, how="any").index
+        if len(common_index) == 0:
+            raise ValueError("No overlapping dates among asset histories.")
+        prices_df = prices_df.loc[common_index]
+
+        # Convert to log prices.
         self.prices_df = np.log(prices_df)
-        # Use differences of log prices as log returns.
+        # Compute log returns.
         self.returns_df = self.prices_df.diff().dropna()
 
-        # Initialize the cointegration analyzer (assumed to handle its own NaN issues).
+        # Initialize cointegration analyzer.
         self.cointegration_analyzer = CointegrationAnalyzer(
             self.prices_df, det_order, k_ar_diff
         )
-        # Fill any potential NaNs in the spread series.
-        self.spread_series = self.cointegration_analyzer.spread_series.ffill().bfill()
+        # Ensure the spread series has no NaN by forward/backward filling.
+        self.spread_series = self.cointegration_analyzer.spread_series.fillna(
+            method="ffill"
+        ).fillna(method="bfill")
         self.hedge_ratios = self.cointegration_analyzer.get_hedge_ratios()
 
         # Compute Kelly and Risk Parity weights.
         self.kelly_fractions = self.compute_dynamic_kelly()
         self.risk_parity_weights = self.compute_risk_parity_weights()
 
-        # Optimize allocations using Optuna.
+        # Optimize allocations.
         self.optimal_params = self.optimize_kelly_risk_parity()
 
     def compute_dynamic_kelly(self, risk_free_rate=0.0):
@@ -76,12 +89,12 @@ class MultiAssetReversion:
         Computes Risk Parity allocations based on inverse volatility.
         """
         volatilities = self.returns_df.std()
-        # Replace zeros with a small number to prevent division by zero.
+        # Replace zeros to avoid division by zero.
         volatilities = volatilities.replace(0, 1e-6)
         inv_vol_weights = 1 / volatilities
         total_weight = inv_vol_weights.sum()
         if total_weight == 0 or np.isnan(total_weight):
-            # Fallback to equal weighting if something goes wrong.
+            # Fallback to equal weights.
             return pd.Series(
                 np.repeat(1 / len(inv_vol_weights), len(inv_vol_weights)),
                 index=inv_vol_weights.index,
@@ -90,7 +103,7 @@ class MultiAssetReversion:
 
     def optimize_kelly_risk_parity(self):
         """
-        Jointly optimizes Kelly Sizing & Risk Parity for maximum Sharpe/Kappa ratio.
+        Jointly optimizes Kelly sizing & Risk Parity for max Sharpe/Kappa ratio.
         """
 
         def objective(trial):
@@ -135,9 +148,7 @@ class MultiAssetReversion:
         signals["Position"] = np.where(
             long_positions, 1, np.where(short_positions, -1, 0)
         )
-        # Store a comma-separated list of asset names.
         signals["Ticker"] = ", ".join(self.prices_df.columns)
-        # Use the spread series as a proxy for the basket's entry/exit prices.
         signals["Entry Price"] = np.where(
             signals["Position"] == 1, self.spread_series, np.nan
         )
@@ -151,7 +162,6 @@ class MultiAssetReversion:
         Backtests the strategy and computes key performance metrics.
         """
         returns = signals["Position"].shift(1) * self.spread_series.pct_change()
-        # Drop the initial NaN resulting from shift and pct_change.
         returns = returns.dropna()
 
         sharpe = sharpe_ratio(returns)
@@ -176,13 +186,11 @@ class MultiAssetReversion:
             signals = self.generate_trading_signals(stop_loss, take_profit)
             _, metrics = self.simulate_strategy(signals)
             sharpe = metrics["Sharpe Ratio"]
-            # Penalize if the Sharpe ratio is not defined.
             if np.isnan(sharpe):
                 return np.inf
             return -sharpe
 
         std_spread = self.spread_series.std()
-        # Guard against zero or NaN standard deviation.
         if std_spread == 0 or np.isnan(std_spread):
             std_spread = 1e-6
         bounds = [(-2 * std_spread, 0), (0, 2 * std_spread)]
@@ -201,7 +209,7 @@ class MultiAssetReversion:
         signals = self.generate_trading_signals(stop_loss, take_profit)
         returns, metrics = self.simulate_strategy(signals)
 
-        # Convert hedge ratios to a Pandas Series and fill any NaN with zero.
+        # Ensure hedge ratios are a complete Series without NaN.
         hedge_ratios_series = pd.Series(
             self.hedge_ratios, index=self.prices_df.columns
         ).fillna(0)
