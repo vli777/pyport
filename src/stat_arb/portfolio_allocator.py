@@ -31,7 +31,7 @@ class PortfolioAllocator:
         """
         # Convert dictionary to DataFrame
         returns_df = pd.DataFrame(individual_returns)
-        returns_df["multi_asset"] = multi_asset_returns.sum(axis=1)
+        returns_df["multi_asset"] = multi_asset_returns
 
         # Compute risk parity weights
         risk_parity_weights = self.compute_risk_parity(returns_df)
