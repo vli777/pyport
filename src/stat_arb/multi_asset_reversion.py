@@ -19,38 +19,53 @@ class MultiAssetReversion:
             det_order (int): Deterministic trend order for Johansen test.
             k_ar_diff (int): Number of lag differences.
         """
-        # Convert the input prices to log prices internally
+        # Ensure prices are strictly positive to avoid issues with logarithms.
+        if (prices_df <= 0).any().any():
+            raise ValueError(
+                "Price data must be strictly positive to compute logarithms."
+            )
+
+        # Convert the input prices to log prices internally.
         self.prices_df = np.log(prices_df)
-        # Use differences of log prices as log returns
+        # Use differences of log prices as log returns.
         self.returns_df = self.prices_df.diff().dropna()
 
+        # Initialize the cointegration analyzer (assumed to handle its own NaN issues).
         self.cointegration_analyzer = CointegrationAnalyzer(
             self.prices_df, det_order, k_ar_diff
         )
-        self.spread_series = self.cointegration_analyzer.spread_series
+        # Fill any potential NaNs in the spread series.
+        self.spread_series = self.cointegration_analyzer.spread_series.ffill().bfill()
         self.hedge_ratios = self.cointegration_analyzer.get_hedge_ratios()
 
-        # Compute Kelly and Risk Parity weights
+        # Compute Kelly and Risk Parity weights.
         self.kelly_fractions = self.compute_dynamic_kelly()
         self.risk_parity_weights = self.compute_risk_parity_weights()
 
-        # Optimize allocations using Optuna
+        # Optimize allocations using Optuna.
         self.optimal_params = self.optimize_kelly_risk_parity()
 
     def compute_dynamic_kelly(self, risk_free_rate=0.0):
         """
-        Computes Dynamic Kelly fractions for each asset.
+        Computes dynamic Kelly fractions for each asset.
         """
         kelly_allocations = {}
         for asset in self.returns_df.columns:
             mean_return = self.returns_df[asset].mean() - risk_free_rate
             vol = self.returns_df[asset].std()
 
-            if vol == 0:
+            # Guard against zero or NaN volatility.
+            if vol == 0 or np.isnan(vol):
                 kelly_allocations[asset] = 0.0
             else:
                 raw_kelly = mean_return / (vol**2)
-                rolling_vol = self.returns_df[asset].rolling(30).std().dropna()
+                # Use a rolling window with a minimum number of periods.
+                rolling_vol = (
+                    self.returns_df[asset]
+                    .rolling(window=30, min_periods=5)
+                    .std()
+                    .dropna()
+                )
                 market_vol = rolling_vol.iloc[-1] if not rolling_vol.empty else vol
                 adaptive_kelly = raw_kelly / (1 + market_vol)
                 kelly_allocations[asset] = max(0, min(adaptive_kelly, 1))
@@ -61,12 +76,21 @@ class MultiAssetReversion:
         Computes Risk Parity allocations based on inverse volatility.
         """
         volatilities = self.returns_df.std()
+        # Replace zeros with a small number to prevent division by zero.
+        volatilities = volatilities.replace(0, 1e-6)
         inv_vol_weights = 1 / volatilities
-        return inv_vol_weights / inv_vol_weights.sum()
+        total_weight = inv_vol_weights.sum()
+        if total_weight == 0 or np.isnan(total_weight):
+            # Fallback to equal weighting if something goes wrong.
+            return pd.Series(
+                np.repeat(1 / len(inv_vol_weights), len(inv_vol_weights)),
+                index=inv_vol_weights.index,
+            )
+        return inv_vol_weights / total_weight
 
     def optimize_kelly_risk_parity(self):
         """
-        Jointly optimizes Kelly Sizing & Risk Parity for max Sharpe/Kappa ratio.
+        Jointly optimizes Kelly Sizing & Risk Parity for maximum Sharpe/Kappa ratio.
         """
 
         def objective(trial):
@@ -77,7 +101,10 @@ class MultiAssetReversion:
             risk_parity_allocations = self.risk_parity_weights * risk_parity_scaling
 
             final_allocations = kelly_allocations + risk_parity_allocations
-            final_allocations /= final_allocations.sum()
+            total_alloc = final_allocations.sum()
+            if total_alloc == 0 or np.isnan(total_alloc):
+                return -np.inf  # Avoid division by zero.
+            final_allocations /= total_alloc
 
             portfolio_returns = (self.returns_df * final_allocations).sum(axis=1)
             sharpe = sharpe_ratio(portfolio_returns)
@@ -108,9 +135,9 @@ class MultiAssetReversion:
         signals["Position"] = np.where(
             long_positions, 1, np.where(short_positions, -1, 0)
         )
-        # Set Ticker as a comma-separated list of all asset names in the basket
+        # Store a comma-separated list of asset names.
         signals["Ticker"] = ", ".join(self.prices_df.columns)
-        # Use the spread series for entry/exit prices as a proxy for the basket value
+        # Use the spread series as a proxy for the basket's entry/exit prices.
         signals["Entry Price"] = np.where(
             signals["Position"] == 1, self.spread_series, np.nan
         )
@@ -124,6 +151,7 @@ class MultiAssetReversion:
         Backtests the strategy and computes key performance metrics.
         """
         returns = signals["Position"].shift(1) * self.spread_series.pct_change()
+        # Drop the initial NaN resulting from shift and pct_change.
         returns = returns.dropna()
 
         sharpe = sharpe_ratio(returns)
@@ -147,9 +175,17 @@ class MultiAssetReversion:
             stop_loss, take_profit = bounds
             signals = self.generate_trading_signals(stop_loss, take_profit)
             _, metrics = self.simulate_strategy(signals)
-            return -metrics["Sharpe Ratio"]
+            sharpe = metrics["Sharpe Ratio"]
+            # Penalize if the Sharpe ratio is not defined.
+            if np.isnan(sharpe):
+                return np.inf
+            return -sharpe
 
-        bounds = [(-2 * self.spread_series.std(), 0), (0, 2 * self.spread_series.std())]
+        std_spread = self.spread_series.std()
+        # Guard against zero or NaN standard deviation.
+        if std_spread == 0 or np.isnan(std_spread):
+            std_spread = 1e-6
+        bounds = [(-2 * std_spread, 0), (0, 2 * std_spread)]
         result = minimize(objective, x0=[-1, 1], bounds=bounds)
         return result.x
 
@@ -165,8 +201,10 @@ class MultiAssetReversion:
         signals = self.generate_trading_signals(stop_loss, take_profit)
         returns, metrics = self.simulate_strategy(signals)
 
-        # Convert hedge ratios to a Pandas Series before calling to_dict()
-        hedge_ratios_series = pd.Series(self.hedge_ratios, index=self.prices_df.columns)
+        # Convert hedge ratios to a Pandas Series and fill any NaN with zero.
+        hedge_ratios_series = pd.Series(
+            self.hedge_ratios, index=self.prices_df.columns
+        ).fillna(0)
 
         return {
             "Optimal Stop-Loss": stop_loss,

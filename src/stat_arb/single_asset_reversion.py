@@ -47,6 +47,7 @@ class OUHeatPotential:
         log_prices = np.log(self.prices)
         delta_x = log_prices.diff().dropna()
         X_t = log_prices.shift(1).dropna()
+        # Align response variable Y_t with X_t
         Y_t = delta_x.loc[X_t.index]
         beta, alpha = np.polyfit(X_t, Y_t, 1)
         kappa = -beta / self.dt
@@ -108,6 +109,7 @@ class OUHeatPotential:
         sell_mask = (deviations > take_profit) & (signals["Position"].shift(1) == "BUY")
         signals.loc[sell_mask, "Position"] = "SELL"
         signals.loc[sell_mask, "Exit Price"] = self.prices[sell_mask]
+
         return signals
 
     def simulate_strategy(self, signals):
@@ -122,16 +124,21 @@ class OUHeatPotential:
         """
         trades = signals.dropna(subset=["Entry Price", "Exit Price"])
         if trades.empty:
-            return np.array([]), {
+            # Return a zero-filled series over the same index as prices
+            zero_returns = pd.Series(0, index=self.prices.index)
+            metrics = {
                 "Total Trades": 0,
-                "Sharpe Ratio": np.nan,
-                "Win Rate": np.nan,
-                "Kappa Ratio": np.nan,
+                "Sharpe Ratio": 0,
+                "Win Rate": 0,
+                "Kappa Ratio": 0,
                 "Optimized Kelly Fraction": 0,
                 "Risk Parity Allocation": {},
             }
+            return zero_returns, metrics
+
         returns = np.log(trades["Exit Price"].values / trades["Entry Price"].values)
-        returns_series = pd.Series(returns)
+        returns_series = pd.Series(returns).reset_index(drop=True)
+        
         win_rate = (returns > 0).mean()
         sharpe_r = sharpe_ratio(
             returns_series, entries_per_year=252, risk_free_rate=0.0
@@ -201,7 +208,6 @@ class OUHeatPotential:
             adjusted_allocation /= adjusted_allocation.sum()
             stop_loss, take_profit = self.calculate_optimal_bounds()
             signals = self.generate_trading_signals(stop_loss, take_profit)
-            # (Optionally, here one could scale signals by allocation, if multiple tickers exist)
             _, metrics = self.simulate_strategy(signals)
             return self.composite_score(metrics)
 
