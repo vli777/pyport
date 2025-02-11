@@ -19,6 +19,11 @@ from correlation.filter_hdbscan import (
     filter_correlated_groups_hdbscan,
     get_cluster_labels,
 )
+from stat_arb.multi_asset_plots import (
+    plot_multi_asset_cumulative_returns,
+    plot_multi_asset_signals,
+)
+from stat_arb.apply_adaptive_weighting import apply_adaptive_weighting
 from stat_arb.portfolio_allocator import PortfolioAllocator
 from stat_arb.multi_asset_reversion import MultiAssetReversion
 from stat_arb.single_asset_reversion import OUHeatPotential
@@ -500,6 +505,13 @@ def run_pipeline(
         multi_asset_strategy = MultiAssetReversion(dfs["data"])
         multi_asset_results = multi_asset_strategy.optimize_and_trade()
 
+        if config.plot_reversion:
+            plot_multi_asset_signals(
+                spread_series=multi_asset_strategy.spread_series,
+                signals=multi_asset_results["Signals"],
+                title="Multi-Asset Mean Reversion Trading Signals",
+            )
+
         # Compute basket returns as the weighted sum of individual asset returns
         weights = pd.Series(multi_asset_results["Hedge Ratios"])
         basket_returns = dfs["data"].pct_change().mul(weights, axis=1).sum(axis=1)
@@ -512,6 +524,23 @@ def run_pipeline(
             0
         )  # Replace NaN with zero returns
 
+        if config.plot_reversion:
+            baseline_cumulative_returns = (
+                (1 + normalized_avg_weights * returns_df).sum(axis=1).cumprod()
+            )
+
+            plot_multi_asset_cumulative_returns(
+                strategy_returns=multi_asset_returns.cumsum(),
+                benchmark_returns=baseline_cumulative_returns,
+                title="Cumulative Returns: Mean Reversion Strategy vs. Baseline Allocation",
+            )
+
+            plot_multi_asset_cumulative_returns(
+                strategy_returns=multi_asset_returns,
+                benchmark_returns=basket_returns,
+                title="Cumulative Returns: Multi-Asset Strategy vs. Passive Holding",
+            )
+
         # Compute final allocations
         portfolio_allocator = PortfolioAllocator()
         reversion_allocations = portfolio_allocator.compute_allocations(
@@ -521,6 +550,15 @@ def run_pipeline(
         )
         normalized_reversion_allocations = normalize_weights(reversion_allocations)
         print(f"\nMR allocations:\n{normalized_reversion_allocations}")
+
+        stat_arb_adjusted_allocation = apply_adaptive_weighting(
+            baseline_allocation=normalized_avg_weights,
+            mean_reversion_weights=normalized_reversion_allocations,
+            returns_df=returns_df,
+            base_alpha=0.2,
+        )
+        sorted_allocation = stat_arb_adjusted_allocation.sort_values(ascending=False)
+        print(f"\nStat arb adjusted allocation:\n{sorted_allocation}")
 
     # Optional plotting (only on local runs)
     if run_local:
