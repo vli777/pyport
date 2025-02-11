@@ -450,13 +450,6 @@ def run_pipeline(
         )
         post_boxplot_stats = generate_boxplot_data(post_daily_returns)
 
-        # Log performance comparison
-        logger.info("\nPerformance Comparison:")
-        logger.info(f"Pre-Mean Reversion Cumulative Returns: {pre_cumulative_returns}")
-        logger.info(
-            f"Post-Mean Reversion Cumulative Returns: {post_cumulative_returns}"
-        )
-
         # Update the final result dictionary to store **only post-mean reversion results**
         final_result_dict = {
             "start_date": str(dfs["start"]),
@@ -564,18 +557,10 @@ def run_pipeline(
             config=config,
         )
         adjusted_boxplot_stats = generate_boxplot_data(adjusted_daily_returns)
-
-        # Log performance comparison
-        logger.info("\nPerformance Comparison:")
-        logger.info(f"Pre-Mean Reversion Cumulative Returns: {pre_cumulative_returns}")
-        logger.info(
-            f"Post-Mean Reversion Cumulative Returns: {adjusted_cumulative_returns}"
-        )
-        
         final_result_dict = {
             "start_date": str(dfs["start"]),
             "end_date": str(dfs["end"]),
-            "models": f"{combined_models} + stat arb",
+            "models": combined_models,
             "symbols": sorted_symbols,
             "normalized_avg": sorted_stat_arb_allocation,
             "daily_returns": adjusted_daily_returns,
