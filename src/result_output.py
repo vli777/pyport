@@ -97,26 +97,32 @@ def output(
     #     portfolio_returns=portfolio_returns, market_returns=market_returns
     # )
 
-    # Logging results
-    if inputs is not None:
-        logger.info(f"\n\nWatchlist Inputs: {inputs}")
-
-    logger.info(f"Time period: {start_date} to {end_date} ({time_period} yrs)")
     cumulative_pct = round((portfolio_cumulative_returns.iloc[-1] - 1) * 100, 2)
 
-    logger.info(f"Optimization method: {optimization_model}")
-    logger.info(f"Sharpe ratio: {round(sharpe, 2)}")
-    logger.info(f"Kappa ratio: {round(kappa, 2)}")
-    logger.info(f"Portfolio volatility: {round(volatility * 100, 2)}%")
-    logger.info(f"Max drawdown: {round(max_dd * 100, 2)}%")
-    logger.info(f"Time under water: {time_uw} days")
-    # logger.info(f"Portfolio Alpha vs Market: {alpha:.4f}")
-    logger.info(f"Cumulative return: {cumulative_pct}%")
-    logger.info(f"Portfolio allocation weights (min {config.min_weight:.2f}):")
+    # Logging results (using print for cleaner output)
+    if inputs is not None:
+        print("\n\nWatchlist Inputs:\n", inputs)
 
+    print("=" * 50)
+    print(f"Time Period:\t{start_date} to {end_date} ({time_period} yrs)")
+    print(f"Optimization Method:\t{optimization_model}")
+    print("=" * 50)
+
+    print(f"Sharpe Ratio:\t\t{sharpe:.2f}")
+    print(f"Kappa Ratio:\t\t{kappa:.2f}")
+    print(f"Portfolio Volatility:\t{volatility * 100:.2f}%")
+    print(f"Max Drawdown:\t\t{max_dd * 100:.2f}%")
+    print(f"Time Under Water:\t{time_uw} days")
+    # print(f"Portfolio Alpha vs Market:\t{alpha:.4f}")
+
+    print(f"Cumulative Return:\t{cumulative_pct:.2f}%")
+    print("=" * 50)
+
+    # Print portfolio allocation in tab-separated format
+    print("Asset\tWeight")  # Column headers
     sorted_weights = sorted(clean_weights.items(), key=lambda kv: kv[1], reverse=True)
-    for symbol, weight in sorted_weights:
-        logger.info(f"{symbol} \t{weight:.3f}")
+    for asset, weight in sorted_weights:
+        print(f"{asset}\t{weight:.4f}")
 
     return all_daily_returns, all_cumulative_returns
 
