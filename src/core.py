@@ -471,45 +471,56 @@ def run_pipeline(
             ticker: OUHeatPotential(dfs["data"][ticker], returns_df[ticker])
             for ticker in dfs["data"].columns
         }
+        # Individual asset signals
+        ou_signals = {
+            ticker: ou.generate_trading_signals()
+            for ticker, ou in ou_strategies.items()
+        }
+        # Optimize and simulate each OU strategy
+        ou_results = {
+            ticker: ou.simulate_strategy(ou_signals[ticker])
+            for ticker, ou in ou_strategies.items()
+        }
+        # Extract expected returns from individual strategies
+        individual_returns = {
+            ticker: pd.Series(result[0]).reset_index(drop=True)
+            for ticker, result in ou_results.items()
+        }
 
-    # Initialize MultiAssetReversion for cross-asset mean reversion
-    multi_asset_strategy = MultiAssetReversion(dfs["data"])
-    multi_asset_results = multi_asset_strategy.optimize_and_trade()
-    print("Multi-Asset Results:", multi_asset_results)
+        # Find the maximum length among all tickers
+        max_len = max(s.size for s in individual_returns.values())
 
-    # Individual asset signals
-    ou_signals = {
-        ticker: ou.generate_trading_signals() for ticker, ou in ou_strategies.items()
-    }
+        # Reindex each Series to the same length, filling missing entries with 0
+        individual_returns = {
+            ticker: s.reindex(range(max_len), fill_value=0)
+            for ticker, s in individual_returns.items()
+        }
 
-    # Optimize and simulate each OU strategy
-    ou_results = {
-        ticker: ou.simulate_strategy(ou_signals[ticker])
-        for ticker, ou in ou_strategies.items()
-    }
+        # Initialize MultiAssetReversion for cross-asset mean reversion
+        multi_asset_strategy = MultiAssetReversion(dfs["data"])
+        multi_asset_results = multi_asset_strategy.optimize_and_trade()
 
-    # Extract expected returns from individual strategies
-    individual_returns = {ticker: result[0] for ticker, result in ou_results.items()}
+        # Compute basket returns as the weighted sum of individual asset returns
+        weights = pd.Series(multi_asset_results["Hedge Ratios"])
+        basket_returns = dfs["data"].pct_change().mul(weights, axis=1).sum(axis=1)
 
-    # Use hedge ratios from the multi-asset strategy (ensure it's a Series)
-    weights = pd.Series(multi_asset_results["Hedge Ratios"])
+        # Multi-asset returns: multiply the basket signal by the basket returns
+        multi_asset_returns = (
+            multi_asset_results["Signals"]["Position"].shift(1) * basket_returns
+        )
+        multi_asset_returns = multi_asset_returns.fillna(
+            0
+        )  # Replace NaN with zero returns
 
-    # Compute basket returns as the weighted sum of individual asset returns
-    basket_returns = dfs["data"].pct_change().mul(weights, axis=1).sum(axis=1)
-
-    # Multi-asset returns: multiply the basket signal by the basket returns
-    multi_asset_returns = (
-        multi_asset_results["Signals"]["Position"].shift(1) * basket_returns
-    )
-
-    # Initialize Portfolio Allocator
-    portfolio_allocator = PortfolioAllocator()
-
-    # Compute final allocations
-    final_allocations = portfolio_allocator.compute_allocations(
-        individual_returns, multi_asset_returns
-    )
-    print(f"final allocations: {final_allocations}")
+        # Compute final allocations
+        portfolio_allocator = PortfolioAllocator()
+        reversion_allocations = portfolio_allocator.compute_allocations(
+            individual_returns,
+            multi_asset_returns,
+            hedge_ratios=multi_asset_results["Hedge Ratios"],
+        )
+        normalized_reversion_allocations = normalize_weights(reversion_allocations)
+        print(f"\nMR allocations:\n{normalized_reversion_allocations}")
 
     # Optional plotting (only on local runs)
     if run_local:
