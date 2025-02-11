@@ -505,16 +505,19 @@ def run_pipeline(
         multi_asset_strategy = MultiAssetReversion(dfs["data"])
         multi_asset_results = multi_asset_strategy.optimize_and_trade()
 
-        if config.plot_reversion:
-            plot_multi_asset_signals(
-                spread_series=multi_asset_strategy.spread_series,
-                signals=multi_asset_results["Signals"],
-                title="Multi-Asset Mean Reversion Trading Signals",
-            )
-
         # Compute basket returns as the weighted sum of individual asset returns
         weights = pd.Series(multi_asset_results["Hedge Ratios"])
-        basket_returns = dfs["data"].pct_change().mul(weights, axis=1).sum(axis=1)
+        # Ensure proper alignment with data columns
+        weights = weights.reindex(dfs["data"].columns, fill_value=0)
+
+        # Normalize weights to sum to 1 (or scale up if necessary)
+        if weights.sum() != 0:
+            weights /= weights.abs().sum()
+
+        # Compute basket returns (handle NaNs)
+        basket_returns = (
+            dfs["data"].pct_change().fillna(0).mul(weights, axis=1).sum(axis=1)
+        )
 
         # Multi-asset returns: multiply the basket signal by the basket returns
         multi_asset_returns = (
@@ -525,22 +528,10 @@ def run_pipeline(
         )  # Replace NaN with zero returns
 
         if config.plot_reversion:
-            baseline_cumulative_returns = (
-                (1 + pd.Series(normalized_avg_weights) * returns_df)
-                .sum(axis=1)
-                .cumprod()
-            )
-
-            plot_multi_asset_cumulative_returns(
-                strategy_returns=multi_asset_returns.cumsum(),
-                benchmark_returns=baseline_cumulative_returns,
-                title="Cumulative Returns: Mean Reversion Strategy vs. Baseline Allocation",
-            )
-
-            plot_multi_asset_cumulative_returns(
-                strategy_returns=multi_asset_returns,
-                benchmark_returns=basket_returns,
-                title="Cumulative Returns: Multi-Asset Strategy vs. Passive Holding",
+            plot_multi_asset_signals(
+                spread_series=multi_asset_strategy.spread_series,
+                signals=multi_asset_results["Signals"],
+                title="Multi-Asset Mean Reversion Trading Signals",
             )
 
         # Compute final allocations
@@ -551,7 +542,6 @@ def run_pipeline(
             hedge_ratios=multi_asset_results["Hedge Ratios"],
         )
         normalized_reversion_allocations = normalize_weights(reversion_allocations)
-        print(f"\nMR allocations:\n{normalized_reversion_allocations}")
 
         stat_arb_adjusted_allocation = apply_adaptive_weighting(
             baseline_allocation=normalized_avg_weights,
@@ -559,8 +549,34 @@ def run_pipeline(
             returns_df=returns_df,
             base_alpha=0.2,
         )
-        sorted_allocation = stat_arb_adjusted_allocation.sort_values(ascending=False)
-        print(f"\nStat arb adjusted allocation:\n{sorted_allocation}")
+        sorted_stat_arb_allocation = stat_arb_adjusted_allocation.sort_values(
+            ascending=False
+        )
+        logger.info(f"\nStat arb adjusted allocation:\n{sorted_stat_arb_allocation}")
+
+        # Compute post-mean reversion results
+        adjusted_daily_returns, adjusted_cumulative_returns = output(
+            data=dfs["data"],
+            allocation_weights=stat_arb_adjusted_allocation,
+            inputs=combined_input_files,
+            start_date=dfs["start"],
+            end_date=dfs["end"],
+            optimization_model=combined_models,
+            time_period=sorted_time_periods[0],
+            config=config,
+        )
+        adjusted_boxplot_stats = generate_boxplot_data(adjusted_daily_returns)
+
+        final_result_dict = {
+            "start_date": str(dfs["start"]),
+            "end_date": str(dfs["end"]),
+            "models": f"{combined_models} + stat arb",
+            "symbols": sorted_symbols,
+            "normalized_avg": sorted_stat_arb_allocation,
+            "daily_returns": adjusted_daily_returns,
+            "cumulative_returns": adjusted_cumulative_returns,
+            "boxplot_stats": adjusted_boxplot_stats,
+        }
 
     # Optional plotting (only on local runs)
     if run_local:

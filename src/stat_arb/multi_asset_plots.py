@@ -67,53 +67,52 @@ def plot_multi_asset_signals(
 
 
 def plot_multi_asset_cumulative_returns(
-    strategy_returns, benchmark_returns=None, title="Strategy vs. Benchmark Returns"
+    strategy_returns,
+    benchmark_returns,
+    title="Cumulative Returns: Mean Reversion Strategy vs. Baseline Allocation",
 ):
     """
-    Plots cumulative returns for the multi-asset strategy vs. a benchmark.
+    Plots cumulative returns for the multi-asset strategy vs. benchmark with improved readability.
 
     Args:
-        strategy_returns (pd.Series): The multi-asset strategy returns.
-        benchmark_returns (pd.Series, optional): Benchmark returns for comparison.
-        title (str): Plot title.
-
-    Returns:
-        None (displays an interactive Plotly plot).
+        strategy_returns (pd.Series): Cumulative returns of the strategy.
+        benchmark_returns (pd.Series): Cumulative returns of the benchmark.
+        title (str): Chart title.
     """
-    strategy_cumulative_returns = (1 + strategy_returns).cumprod() - 1
-
     fig = go.Figure()
 
-    # Plot strategy cumulative returns
+    # Strategy plot (solid line)
     fig.add_trace(
         go.Scatter(
-            x=strategy_cumulative_returns.index,
-            y=strategy_cumulative_returns.values,
+            x=strategy_returns.index,
+            y=strategy_returns.values,
             mode="lines",
             name="Multi-Asset Strategy",
             line=dict(color="blue", width=2),
         )
     )
 
-    # Optional: Plot benchmark returns
-    if benchmark_returns is not None:
-        benchmark_cumulative_returns = (1 + benchmark_returns).cumprod() - 1
-        fig.add_trace(
-            go.Scatter(
-                x=benchmark_cumulative_returns.index,
-                y=benchmark_cumulative_returns.values,
-                mode="lines",
-                name="Benchmark",
-                line=dict(color="gray", dash="dash"),
-            )
+    # Benchmark plot (dashed line)
+    fig.add_trace(
+        go.Scatter(
+            x=benchmark_returns.index,
+            y=benchmark_returns.values,
+            mode="lines",
+            name="Benchmark",
+            line=dict(color="gray", width=2, dash="dash"),
         )
+    )
 
-    # Layout
+    # Update layout
     fig.update_layout(
         title=title,
         xaxis_title="Time",
         yaxis_title="Cumulative Return",
         template="plotly_white",
+        hovermode="x unified",
+        legend=dict(x=0, y=1.1, orientation="h"),
+        xaxis=dict(showgrid=True, tickangle=-45),
+        yaxis=dict(showgrid=True, tickformat=".4f"),  # Limit decimals to 4 places
     )
 
     fig.show()
