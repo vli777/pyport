@@ -76,6 +76,25 @@ def convert_to_dict(weights: Any, asset_names: list) -> Dict[str, float]:
         raise TypeError("Unsupported weight type: must be ndarray, DataFrame, or dict.")
 
 
+def convert_weights_to_series(weights, index=None):
+    """Convert weights to a pd.Series using the provided index if available."""
+    if isinstance(weights, pd.Series):
+        return weights
+    elif isinstance(weights, dict):
+        return pd.Series(weights)
+    elif isinstance(weights, np.ndarray):
+        if index is not None and len(weights) == len(index):
+            return pd.Series(weights, index=index)
+        else:
+            logger.error(
+                f"Mismatch in weights length ({len(weights)}) and expected length ({len(index)})"
+            )
+            return pd.Series(dtype=float)
+    else:
+        logger.error(f"Unsupported weights type: {type(weights)}")
+        return pd.Series(dtype=float)
+
+
 def normalize_weights(weights, min_weight: float = 0.0) -> pd.Series:
     """
     Normalize the weights by filtering out values below min_weight and scaling the remaining weights to sum to 1.
