@@ -214,7 +214,7 @@ def compute_performance_results(
         end_date=end_date,
         allocation_weights=allocation_weights,
         inputs=combined_input_files,
-        optimization_model=combined_models,
+        optimization_model=f"{combined_models} ENSEMBLE: {config.optimization_objective}",
         time_period=sorted_time_periods[0],
         config=config,
     )
