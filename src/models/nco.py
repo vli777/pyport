@@ -112,6 +112,33 @@ def optimize_weights_objective(
             port_vol = np.sqrt(w.T @ cov @ w)
             return -port_return / port_vol if port_vol > 0 else 1e6
 
+    elif objective == "aggro":
+        if returns is None or mu is None:
+            raise ValueError(
+                "Both historical returns and expected returns (mu) must be provided for aggro optimization."
+            )
+
+        def obj(w):
+            # Compute daily portfolio returns
+            port_returns = returns.values @ w
+            # Compute cumulative return as the compounded product of (1 + daily_return)
+            cumulative_return = np.prod(1 + port_returns) - 1
+            # Compute risk-adjusted return using Sharpe (annualized or daily, depending on your data)
+            port_mean = np.mean(port_returns)
+            port_vol = np.sqrt(w.T @ cov @ w)
+            lpm = empirical_lpm(port_returns, target=target, order=order)
+            if lpm < 1e-8:
+                kappa_val = -1e6
+            else:
+                kappa_val = (port_mean - target) / (lpm ** (1.0 / order))
+            sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
+
+            # Blend the two metrics. You may need to adjust the weighting factors.
+            combined = (
+                (1 / 3) * cumulative_return + (1 / 3) * sharpe_val + (1 / 3) * kappa_val
+            )
+            return -combined  # negative because we minimize
+
     else:
         print(
             "Unknown objective specified: {}. Defaulting to Sharpe optimal".format(
