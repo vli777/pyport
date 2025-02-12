@@ -1,9 +1,5 @@
 import pandas as pd
 import numpy as np
-import plotly.figure_factory as ff
-import plotly.graph_objects as go
-from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import linkage, fcluster
 from typing import List
 from sklearn.covariance import LedoitWolf
 
