@@ -118,7 +118,6 @@ def run_optimization_and_save(
 
                 weights = convert_weights_to_series(weights, index=mu_annual.index)
                 normalized_weights = normalize_weights(weights, config.min_weight)
-                
                 final_weights = limit_portfolio_size(
                     normalized_weights, config.portfolio_max_size, target_sum=1.0
                 )

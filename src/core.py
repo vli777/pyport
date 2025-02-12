@@ -14,7 +14,6 @@ from process_symbols import process_symbols
 from anomaly.anomaly_detection import remove_anomalous_stocks
 from correlation.filter_hdbscan import (
     filter_correlated_groups_hdbscan,
-    get_cluster_labels,
 )
 from apply_reversion import (
     apply_ou_reversion,
@@ -22,6 +21,7 @@ from apply_reversion import (
     build_final_result_dict,
     compute_performance_results,
 )
+from correlation.cluster_assets import get_cluster_labels
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
