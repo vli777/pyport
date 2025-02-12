@@ -4,8 +4,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples
 from scipy.optimize import minimize
 
-
-from utils import logger
+from utils.logger import logger
 
 
 def cov_to_corr(cov):

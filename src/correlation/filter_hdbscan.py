@@ -30,7 +30,7 @@ def filter_correlated_groups_hdbscan(
         asset_cluster_map (dict): Full set of assets mapped to optimized HDBSCAN clusters.
         risk_free_rate (float): Risk-free rate for performance metric calculation.
         plot (bool): If True, display a visualization of clusters.
-        objective (str): Optimization objective for performance metrics
+        objective (str): Optimization objective used as top cluster candidate selection
 
     Returns:
         list(str): A list of selected ticker symbols after decorrelation.
