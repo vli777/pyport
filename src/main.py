@@ -97,7 +97,9 @@ def iterative_pipeline_runner(
         and config.plot_reversion
         and not reversion_plotted
     ):
-        reversion_cache_file = "optuna_cache/reversion_cache_global.pkl"
+        reversion_cache_file = (
+            f"optuna_cache/reversion_cache_{config.optimization_objective}.pkl"
+        )
         reversion_cache = load_parameters_from_pickle(reversion_cache_file)
 
         reversion_params = reversion_cache["params"]
