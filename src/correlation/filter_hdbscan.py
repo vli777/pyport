@@ -107,7 +107,7 @@ def visualize_clusters_tsne(
 
     # Optionally, you can standardize the data here if needed.
     tsne = TSNE(
-        perplexity=perplexity,
+        perplexity=min(perplexity, len(asset_data) - 1),
         max_iter=max_iter,
         random_state=42,
     )
