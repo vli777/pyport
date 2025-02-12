@@ -32,15 +32,15 @@ def get_cluster_labels(
         "epsilon",
         "alpha",
         "cluster_selection_epsilon_max",
-        "min_cluster_size",
-        "min_samples",
+        # "min_cluster_size",
+        # "min_samples",
     ]
     if not reoptimize and all(param in cached_params for param in required_params):
         epsilon = cached_params["epsilon"]
         alpha = cached_params["alpha"]
         cluster_selection_epsilon_max = cached_params["cluster_selection_epsilon_max"]
-        min_cluster_size = cached_params["min_cluster_size"]
-        min_samples = cached_params["min_samples"]
+        # min_cluster_size = cached_params["min_cluster_size"]
+        # min_samples = cached_params["min_samples"]
         logger.info("Using cached HDBSCAN parameters.")
     else:
         logger.info("Optimizing HDBSCAN parameters...")
@@ -50,14 +50,14 @@ def get_cluster_labels(
         epsilon = best_params["epsilon"]
         alpha = best_params["alpha"]
         cluster_selection_epsilon_max = best_params["cluster_selection_epsilon_max"]
-        min_cluster_size = best_params["min_cluster_size"]
-        min_samples = best_params["min_samples"]
+        # min_cluster_size = best_params["min_cluster_size"]
+        # min_samples = best_params["min_samples"]
         cached_params = {
             "epsilon": epsilon,
             "alpha": alpha,
             "cluster_selection_epsilon_max": cluster_selection_epsilon_max,
-            "min_cluster_size": min_cluster_size,
-            "min_samples": min_samples,
+            "min_cluster_size": 2 # min_cluster_size,
+            # "min_samples": min_samples,
         }
         save_parameters_to_pickle(cached_params, cache_filename)
         logger.info("Optimized parameters saved to cache.")
@@ -72,8 +72,8 @@ def get_cluster_labels(
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
         alpha=alpha,
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
+        min_cluster_size= 2, # min_cluster_size,
+        # min_samples=min_samples,
         cluster_selection_epsilon=epsilon,
         cluster_selection_method="leaf",
         cluster_selection_epsilon_max=cluster_selection_epsilon_max,

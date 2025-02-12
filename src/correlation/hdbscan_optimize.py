@@ -27,10 +27,10 @@ def objective_hdbscan_decorrelation(
 
     # Define a range for min_cluster_size based on number of assets.
     n_assets = returns_df.shape[1]
-    max_cluster_size = max(2, min(n_assets // 3, 20))
-    min_cluster_size = trial.suggest_int("min_cluster_size", 2, max_cluster_size)
+    # max_cluster_size = max(2, min(n_assets // 3, 20))
+    # min_cluster_size = trial.suggest_int("min_cluster_size", 2, max_cluster_size)
     # Allow min_samples to vary from 1 up to min_cluster_size.
-    min_samples = trial.suggest_int("min_samples", 1, min_cluster_size)
+    # min_samples = trial.suggest_int("min_samples", 1, min_cluster_size)
 
     # Compute (and optionally scale) the distance matrix.
     distance_matrix = compute_distance_matrix(
@@ -42,8 +42,8 @@ def objective_hdbscan_decorrelation(
     clusterer = hdbscan.HDBSCAN(
         metric="precomputed",
         alpha=alpha,
-        min_cluster_size=min_cluster_size,
-        min_samples=min_samples,
+        min_cluster_size=2,
+        # min_samples=min_samples,
         cluster_selection_epsilon=epsilon,
         cluster_selection_method="leaf",
         cluster_selection_epsilon_max=cluster_selection_epsilon_max,
@@ -93,7 +93,7 @@ def objective_hdbscan_decorrelation(
 
     logger.debug(
         f"Trial params: epsilon={epsilon}, alpha={alpha}, eps_max={cluster_selection_epsilon_max}, "
-        f"min_cluster_size={min_cluster_size}, min_samples={min_samples} | "
+        # f"min_cluster_size={min_cluster_size}, min_samples={min_samples} | "
         f"Silhouette: {sil_score:.4f}, Penalty: {penalty:.4f}, Overall: {overall_quality:.4f}"
     )
     return overall_quality
