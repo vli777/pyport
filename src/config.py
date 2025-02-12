@@ -33,7 +33,7 @@ class Config:
 
     optimization_objective: Optional[
         str
-    ]  # Can be "minvar", "kappa", "blend", "sharpe", "aggro"
+    ]  # Can be "min_variance", "kappa", "blend", "sharpe", "aggro"
 
     test_mode: bool
     test_data_visible_pct: float
