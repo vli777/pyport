@@ -152,6 +152,12 @@ def optimize_weights_objective(
             return -port_return / port_vol if port_vol > 0 else 1e6
 
     init_weights = np.ones(n) / n
+    feasible_min = n * lower_bound
+    feasible_max = n * max_weight
+    if not (feasible_min <= target_sum <= feasible_max):
+        raise ValueError(
+            f"Infeasible target_sum: {target_sum}. It must be between {feasible_min} and {feasible_max} for n={n} assets."
+        )
     result = minimize(
         obj, init_weights, method="SLSQP", bounds=bounds, constraints=constraints
     )
