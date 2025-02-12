@@ -3,7 +3,7 @@ import numpy as np
 import optuna
 import pandas as pd
 
-from reversion.strategy_metrics import composite_score, simulate_strategy
+from utils.optimizer_utils import strategy_composite_score, strategy_performance_metrics
 from utils.logger import logger
 
 
@@ -11,6 +11,7 @@ def find_optimal_weights(
     daily_signals_df: pd.DataFrame,
     weekly_signals_df: pd.DataFrame,
     returns_df: pd.DataFrame,
+    objective_weights: dict,
     n_trials: int = 50,
     n_jobs: int = -1,
     group_id: str = None,
@@ -26,7 +27,7 @@ def find_optimal_weights(
     )
     study.optimize(
         lambda trial: reversion_weights_objective(
-            trial, daily_signals_df, weekly_signals_df, returns_df
+            trial, daily_signals_df, weekly_signals_df, returns_df, objective_weights
         ),
         n_trials=n_trials,
         n_jobs=n_jobs,
@@ -45,6 +46,7 @@ def reversion_weights_objective(
     daily_signals_df: pd.DataFrame,
     weekly_signals_df: pd.DataFrame,
     returns_df: pd.DataFrame,
+    objective_weights: dict,
 ) -> float:
     """
     Optimize the weight adjustment for mean reversion signals.
@@ -110,8 +112,10 @@ def reversion_weights_objective(
     positions_df = positions_df.shift(1).bfill()
 
     # Simulate the strategy.
-    _, metrics = simulate_strategy(
-        returns_df[valid_stocks].reindex(positions_df.index), positions_df
+    metrics = strategy_performance_metrics(
+        returns_df=returns_df[valid_stocks].reindex(positions_df.index),
+        positions_df=positions_df,
+        objective_weights=objective_weights,
     )
 
-    return composite_score(metrics)
+    return strategy_composite_score(metrics, objective_weights=objective_weights)

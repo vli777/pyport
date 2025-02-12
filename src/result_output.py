@@ -96,9 +96,12 @@ def output(
         market_returns = market_returns.loc[start_date:end_date]
 
         if not market_returns.empty:
-            alpha = calculate_portfolio_alpha(
-                portfolio_returns=portfolio_returns, market_returns=market_returns
-            ) * 100
+            alpha = (
+                calculate_portfolio_alpha(
+                    portfolio_returns=portfolio_returns, market_returns=market_returns
+                )
+                * 100
+            )
         else:
             print(f"Warning: Market data for {market_file} is empty after filtering.")
 

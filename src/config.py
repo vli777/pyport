@@ -31,7 +31,9 @@ class Config:
     use_reversion: bool
     reversion_type: Optional[str]  # Can be "ou", "z", or None
 
-    optimization_objective: Optional[str]  # Can be "minvar", "kappa", "blend", "sharpe", "aggro"
+    optimization_objective: Optional[
+        str
+    ]  # Can be "minvar", "kappa", "blend", "sharpe", "aggro"
 
     test_mode: bool
     test_data_visible_pct: float

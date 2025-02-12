@@ -1,0 +1,150 @@
+from typing import Tuple, Dict
+
+import numpy as np
+import pandas as pd
+
+from utils.performance_metrics import kappa_ratio, sharpe_ratio
+
+
+def strategy_performance_metrics(
+    returns_df: pd.DataFrame,
+    positions_df: pd.DataFrame = None,  # Optional for portfolio simulation
+    risk_free_rate: float = 0.0,
+    objective_weights: Dict[str, float] = None,
+) -> pd.Series:
+    """
+    Computes performance metrics for individual assets or a full strategy.
+
+    If `positions_df` is provided, it simulates the portfolio returns.
+    Otherwise, it computes per-asset metrics.
+
+    Args:
+        returns_df (pd.DataFrame): Asset or portfolio daily log returns.
+        positions_df (pd.DataFrame, optional): Portfolio weights or positions (for strategy simulation).
+        risk_free_rate (float, optional): Risk-free rate for Sharpe/Kappa calculations.
+        objective_weights (dict, optional): Weights for performance metrics.
+
+    Returns:
+        pd.Series: Performance scores for each asset/strategy.
+    """
+    if objective_weights is None:
+        objective_weights = {"sharpe": 1.0}  # Default: Optimize purely for Sharpe ratio
+
+    # If positions_df is provided, compute strategy-level returns
+    if positions_df is not None:
+        pd.set_option("future.no_silent_downcasting", True)
+        strategy_returns = (
+            (positions_df * returns_df).sum(axis=1).fillna(0).infer_objects(copy=False)
+        )
+        assets = {"Portfolio": strategy_returns}  # Treat as a single asset
+    else:
+        assets = returns_df  # Individual assets
+
+    metrics = {}
+    for asset, ticker_returns in assets.items():
+        ticker_returns = ticker_returns.dropna()
+        if ticker_returns.empty:
+            metrics[asset] = np.nan  # Return NaN instead of skipping
+            continue
+
+        # Compute individual metrics
+        cumulative_return = (ticker_returns + 1).prod() - 1  # Simple return formula
+        sr = sharpe_ratio(ticker_returns, risk_free_rate)
+        kp = kappa_ratio(ticker_returns, order=3) if "kappa" in objective_weights else 0
+        volatility = ticker_returns.std() if "min_variance" in objective_weights else 0
+
+        # Apply penalty for negative cumulative return
+        penalty = 0
+        if cumulative_return < 0:
+            penalty = 2 * abs(
+                cumulative_return
+            )  # Extra penalty for negative performance
+
+        # Weighted composite score
+        composite = (
+            objective_weights.get("cumulative_return", 0.0) * cumulative_return
+            + objective_weights.get("sharpe", 1.0) * sr
+            + objective_weights.get("kappa", 0.0) * kp
+            - objective_weights.get("min_variance", 0.0) * volatility
+            - penalty  # Apply additional penalty for negative returns
+        )
+
+        metrics[asset] = composite
+
+    return pd.Series(metrics)
+
+
+def strategy_composite_score(
+    metrics: Dict[str, float], objective_weights: Dict[str, float] = None
+) -> float:
+    """
+    Combines performance metrics into a composite score using a configurable weight setup.
+
+    Args:
+        metrics (dict): Dictionary with keys like "cumulative_return", "sharpe", "kappa".
+        objective_weights (dict, optional): Weights for each metric.
+
+    Returns:
+        float: Composite performance score.
+    """
+    if objective_weights is None:
+        objective_weights = {"sharpe": 1.0}  # Default: Sharpe-only optimization
+
+    score = sum(
+        objective_weights.get(metric, 0) * value
+        for metric, value in metrics.items()
+        if metric in objective_weights
+    )
+
+    return score
+
+
+def get_objective_weights(objective: str) -> dict:
+    """
+    Returns the objective weight dictionary based on the given objective.
+
+    Args:
+        objective (str): The optimization objective. Choices: ["minvar", "sharpe", "blend", "aggro"]
+
+    Returns:
+        dict: Objective weight dictionary for computing performance metrics.
+    """
+    objective_mappings = {
+        "minvar": {
+            "cumulative_return": 0.0,  # Ignore total return
+            "sharpe": 0.0,  # Ignore Sharpe ratio
+            "kappa": 0.0,  # Ignore Kappa ratio
+            "min_variance": 1.0,  # Fully minimize variance
+        },
+        "kappa": {
+            "cumulative_return": 0.0,  # Ignore total return
+            "sharpe": 0.0,  # Ignore Sharpe ratio
+            "kappa": 1.0,  # Full maximize Kappa ratio
+            "min_variance": 0.0,  # Ignore variance
+        },
+        "blend": {
+            "cumulative_return": 0.0,  # Ignore total return
+            "sharpe": 0.5,  # Some risk-adjusted return
+            "kappa": 0.5,  # Some tail-risk adjustment
+            "min_variance": 0.0,  # Ignore variance minimization
+        },
+        "sharpe": {
+            "cumulative_return": 0.0,  # Ignore total return
+            "sharpe": 1.0,  # Fully maximize Sharpe ratio
+            "kappa": 0.0,  # Ignore Kappa
+            "min_variance": 0.0,  # Ignore variance
+        },
+        "aggro": {
+            "cumulative_return": 1 / 3,  # Prioritize returns
+            "sharpe": 1 / 3,  # Some risk-adjusted return
+            "kappa": 1 / 3,  # Some tail-risk adjustment
+            "min_variance": 0.0,  # Ignore variance minimization
+        },
+    }
+
+    if objective not in objective_mappings:
+        raise ValueError(
+            f"Unknown objective: {objective}. Choose from {list(objective_mappings.keys())}"
+        )
+
+    return objective_mappings[objective]

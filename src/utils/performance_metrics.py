@@ -117,7 +117,6 @@ def calculate_portfolio_alpha(
     )
     alpha = model.intercept_
 
-    print(f"Calculated alpha: {alpha:.4f}")
     return alpha
 
 

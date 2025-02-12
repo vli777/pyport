@@ -6,12 +6,9 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 from sklearn.manifold import TSNE
-from correlation.correlation_utils import (
-    compute_correlation_matrix,
-    compute_performance_metrics,
-    get_objective_weights,
-)
+from correlation.correlation_utils import compute_correlation_matrix
 from correlation.hdbscan_optimize import run_hdbscan_decorrelation_study
+from utils.optimizer_utils import strategy_performance_metrics, get_objective_weights
 from utils import logger
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
@@ -45,8 +42,10 @@ def filter_correlated_groups_hdbscan(
 
     # Compute performance metrics for each asset
     objective_weights = get_objective_weights(objective)
-    perf_series = compute_performance_metrics(
-        returns_df, risk_free_rate, objective_weights=objective_weights
+    perf_series = strategy_performance_metrics(
+        returns_df=returns_df,
+        risk_free_rate=risk_free_rate,
+        objective_weights=objective_weights,
     )
 
     # Select the best-performing tickers from each cluster

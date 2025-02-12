@@ -12,6 +12,7 @@ from reversion.reversion_utils import (
     propagate_signals_by_similarity,
 )
 from reversion.optimize_reversion_strength import tune_reversion_alpha
+from utils.optimizer_utils import get_objective_weights
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 
@@ -50,15 +51,17 @@ def apply_mean_reversion(
         ticker for ticker in returns_df.columns if ticker not in existing_signal_tickers
     ]
 
+    objective_weights = get_objective_weights(objective=config.optimization_objective)
+
     # Only re-optimize if the cache is stale or some tickers are missing.
     if cache_is_stale or missing_tickers:
         print(f"missing_tickers: {missing_tickers}")
         # If there are missing tickers, only pass that subset. Otherwise, use all tickers.
         returns_subset = returns_df[missing_tickers] if missing_tickers else returns_df
-
         updated_signals = cluster_mean_reversion(
             asset_cluster_map=asset_cluster_map,
             returns_df=returns_subset,
+            objective_weights=objective_weights,
             n_trials=50,
             n_jobs=-1,
             global_cache=reversion_cache["params"],
@@ -97,6 +100,7 @@ def apply_mean_reversion(
         baseline_allocation=baseline_allocation,
         composite_signals=updated_composite_signals,
         group_mapping=group_mapping,
+        objective_weights=objective_weights,
     )
     realized_volatility = returns_df.rolling(window=30).std().mean(axis=1)
     adaptive_alpha = base_alpha / (1 + realized_volatility.iloc[-1])
