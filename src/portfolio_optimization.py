@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, List
 import numpy as np
 import pandas as pd
 from sklearn.covariance import LedoitWolf
@@ -43,12 +43,23 @@ def run_optimization(
 
 
 def run_optimization_and_save(
-    df, config: Config, start_date, end_date, symbols, stack, years
+    df: pd.DataFrame,
+    config: Config,
+    start_date: str,
+    end_date: str,
+    symbols: List[str],
+    stack: Dict,
+    years: str,
 ):
     final_weights = None
 
     for model in config.models[years]:
-        cache_key = make_cache_key(model, years, symbols)
+        cache_key = make_cache_key(
+            model=model,
+            years=years,
+            objective=config.optimization_objective,
+            symbols=symbols,
+        )
 
         # Check cache
         cached = load_model_results_from_cache(cache_key)
