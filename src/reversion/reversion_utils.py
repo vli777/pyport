@@ -53,10 +53,6 @@ def is_cache_stale(last_updated: str, max_age_days: int = 180) -> bool:
     return (datetime.now() - last_update).days >= max_age_days
 
 
-def compute_ticker_hash(tickers: list) -> str:
-    return hashlib.md5("".join(sorted(tickers)).encode("utf-8")).hexdigest()
-
-
 def calculate_continuous_composite_signal(signals: dict, ticker_params: dict) -> dict:
     """
     Compute a composite mean reversion signal for each ticker.

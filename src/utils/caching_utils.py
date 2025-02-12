@@ -128,7 +128,5 @@ def load_parameters_from_pickle(
     return parameters
 
 
-def compute_ticker_hash(tickers):
-    """Compute a hash of the sorted list of tickers."""
-    ticker_str = ",".join(sorted(tickers))
-    return hashlib.sha256(ticker_str.encode()).hexdigest()[:16]  # Use a short hash
+def compute_ticker_hash(tickers: list[str]) -> str:
+    return hashlib.md5("_".join(sorted(tickers)).encode()).hexdigest()[:16]
