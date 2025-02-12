@@ -8,8 +8,6 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from typing import List
 from sklearn.covariance import LedoitWolf
 
-from utils.performance_metrics import kappa_ratio, sharpe_ratio
-
 
 def validate_matrix(matrix, matrix_name: str):
     """
