@@ -88,8 +88,9 @@ def run_optimization_and_save(
             mu_annual = mu_annual.loc[valid_assets]
 
             max_weight = config.max_weight
-            model_args = config.model_config[model]
-            model_args.update({"max_weight": max_weight})
+            model_args = {"max_weight": max_weight}
+            if config.optimization_objective not in ["minvar", "kappa"]:
+                model_args["sharpe"] = True
 
             try:
                 weights = run_optimization(

@@ -4,6 +4,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples
 from scipy.optimize import minimize
 
+
 from utils import logger
 
 
@@ -13,6 +14,74 @@ def cov_to_corr(cov):
     corr = cov / np.outer(std, std)
     corr[corr < -1], corr[corr > 1] = -1, 1  # Numerical stability
     return corr
+
+
+def empirical_lpm(portfolio_returns, target=0, order=3):
+    """
+    Compute the empirical lower partial moment (LPM) of a return series.
+
+    Parameters:
+        portfolio_returns : array-like, historical portfolio returns.
+        target          : target return level.
+        order           : order of the LPM (default is 3).
+
+    Returns:
+        The LPM of the specified order.
+    """
+    diff = np.maximum(target - portfolio_returns, 0)
+    return np.mean(diff**order)
+
+
+def optimize_weights_kappa(
+    returns, order=3, target=0, max_weight=1.0, allow_short=False
+):
+    """
+    Optimize portfolio weights to maximize the kappa ratio using an empirical
+    estimate of the lower partial moment, which is more appropriate when
+    returns are fat tailed.
+
+    Parameters:
+        returns     : DataFrame of historical asset returns (rows are dates, columns are assets).
+        order       : Order of the LPM (default is 3).
+        target      : Target return level (default is 0).
+        max_weight  : Maximum allocation per asset.
+        allow_short : If True, allow negative weights.
+
+    Returns:
+        Optimized portfolio weights as a NumPy array.
+    """
+    n = returns.shape[1]
+
+    def objective(w):
+        # Compute the portfolio returns time series
+        port_returns = returns.values @ w
+        # Mean return over the sample period
+        port_mean = np.mean(port_returns)
+        # Empirical LPM
+        lpm = empirical_lpm(port_returns, target=target, order=order)
+        # Avoid division by zero or very small LPM
+        if lpm < 1e-8:
+            return 1e6
+        kappa = (port_mean - target) / (lpm ** (1.0 / order))
+        return -kappa  # Minimizing the negative kappa ratio
+
+    init_weights = np.ones(n) / n
+    lower_bound = -max_weight if allow_short else 0.0
+    bounds = [(lower_bound, max_weight) for _ in range(n)]
+    constraints = {"type": "eq", "fun": lambda w: np.sum(w) - 1}
+
+    result = minimize(
+        objective,
+        init_weights,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+    )
+
+    if not result.success:
+        raise ValueError("Optimization failed:", result.message)
+
+    return result.x
 
 
 def optimize_weights(cov, mu=None, max_weight=1.0, allow_short=False):
@@ -138,12 +207,13 @@ def nested_clustered_optimization(
     cov: pd.DataFrame,
     mu: pd.Series = None,
     max_clusters: int = 10,
-    sharpe: bool = False,
+    sharpe: bool = False,  # Will be overridden based on objective
     max_weight: float = 1.0,
     allow_short: bool = False,
 ) -> pd.Series:
     """
     Implement Nested Clustered Optimization with support for short positions.
+    Supports min-variance ('minvar') and Sharpe ratio ('sharpe').
     """
     # **Filter assets with insufficient historical data**
     min_data_threshold = cov.shape[0] * 0.5  # At least 50% valid history
@@ -174,7 +244,7 @@ def nested_clustered_optimization(
         cluster_cov = cov.loc[cluster_assets, cluster_assets]
         cluster_mu = None if mu is None else mu.loc[cluster_assets]
 
-        # Pass `allow_short` to the optimization functions
+        # Select optimization method based on objective
         if sharpe:
             intra_weights.loc[cluster_assets, cluster] = optimize_weights_sharpe(
                 cluster_cov, cluster_mu, max_weight=max_weight, allow_short=allow_short
@@ -188,21 +258,20 @@ def nested_clustered_optimization(
     reduced_cov = intra_weights.T @ cov @ intra_weights
     reduced_mu = None if mu is None else intra_weights.T @ mu
 
-    inter_weights = (
-        pd.Series(
+    if sharpe:
+        inter_weights = pd.Series(
             optimize_weights_sharpe(
                 reduced_cov, reduced_mu, max_weight=max_weight, allow_short=allow_short
             ),
             index=unique_clusters,
         )
-        if sharpe
-        else pd.Series(
+    else:
+        inter_weights = pd.Series(
             optimize_weights(
                 reduced_cov, reduced_mu, max_weight=max_weight, allow_short=allow_short
             ),
             index=unique_clusters,
         )
-    )
 
     # Combine intra- and inter-cluster weights
     final_weights = intra_weights.mul(inter_weights, axis=1).sum(axis=1)
