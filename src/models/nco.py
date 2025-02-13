@@ -71,7 +71,9 @@ def optimize_weights_objective(
 
     if objective == "min_vol_tail":
         if returns is None:
-            raise ValueError("Historical returns must be provided for min_vol_tail optimization.")
+            raise ValueError(
+                "Historical returns must be provided for min_vol_tail optimization."
+            )
 
         def obj(w: np.ndarray) -> float:
             r_vals = returns.values
@@ -79,15 +81,17 @@ def optimize_weights_objective(
             if r_vals.ndim == 1:
                 r_vals = r_vals.reshape(-1, 1)
             if r_vals.shape[1] != n:
-                raise ValueError(f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}")
-            
+                raise ValueError(
+                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}"
+                )
+
             # Calculate portfolio returns as a time series
             port_returns = r_vals @ w  # Shape: (T,)
             port_returns = np.atleast_1d(port_returns)
-            
+
             # Volatility component (standard deviation)
             vol = np.std(port_returns)
-            
+
             # CVaR component (tail risk)
             port_losses = -port_returns  # Convert returns to losses
             sorted_losses = np.sort(port_losses)
@@ -95,81 +99,21 @@ def optimize_weights_objective(
             num_tail = max(1, int(np.ceil(alpha * len(sorted_losses))))
             tail_losses = sorted_losses[:num_tail]
             cvar = np.mean(tail_losses)
-            
-            # Penalty if tail risk is below break-even (i.e. cvar < 0)
-            penalty = 0.0
-            if cvar < 0:
-                # You can adjust lambda_penalty to control the trade-off
-                lambda_penalty = 1.0  
-                penalty = lambda_penalty * (-cvar)
-            
-            # The overall objective is to minimize volatility plus the penalty.
-            return vol + penalty
 
-    
-    if objective == "min_cvar":
-        if returns is None:
-            raise ValueError(
-                "Historical returns must be provided for min CVaR optimization."
+            # -----------------------------
+            # Configurable Weights:
+            lambda_vol = (
+                1.0  # Adjust this to emphasize overall volatility minimization.
             )
+            # Set high to mimic pure min_var; set to 0 to ignore volatility.
+            lambda_penalty = 1.0  # Adjust this to emphasize tail risk minimization.
+            # Set high to mimic pure min_cvar; set to 0 to ignore tail risk.
+            # -----------------------------
+            # Apply penalty only if the CVaR is negative (i.e. tail losses cause a loss).
+            penalty = lambda_penalty * (-cvar) if cvar < 0 else 0.0
 
-        def obj(w: np.ndarray) -> float:
-            r_vals = returns.values
-            if r_vals.ndim == 1:
-                r_vals = r_vals.reshape(-1, 1)
-            if r_vals.shape[1] != n:
-                raise ValueError(
-                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}"
-                )
-            port_returns = r_vals @ w
-            port_returns = np.atleast_1d(port_returns)
-
-            # CVaR component (tail risk minimization)
-            port_losses = -port_returns
-            sorted_losses = np.sort(port_losses)
-            alpha = 0.05  # tail risk %
-            num_tail = max(1, int(np.ceil(alpha * len(sorted_losses))))
-            tail_losses = sorted_losses[:num_tail]
-            cvar = np.mean(tail_losses)
-
-            # Volatility component (standard deviation)
-            vol = np.std(port_returns)
-
-            # Weight the two components as needed (tweak lambda for your preference)
-            lambda_vol = 1.0  # example weight for volatility penalty
-            return cvar + lambda_vol * vol
-
-        # pure min cvar
-        # def obj(w: np.ndarray) -> float:
-        #     r_vals = returns.values
-        #     # Ensure r_vals is 2D (T x n)
-        #     if r_vals.ndim == 1:
-        #         r_vals = r_vals.reshape(-1, 1)
-        #     if r_vals.shape[1] != n:
-        #         raise ValueError(
-        #             f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}"
-        #         )
-        #     port_returns = r_vals @ w  # Shape: (T,)
-        #     port_returns = np.atleast_1d(port_returns)
-        #     port_losses = -port_returns  # Convert returns to losses
-        #     sorted_losses = np.sort(port_losses)
-        #     alpha = 0.05  # Tail probability (5% worst losses)
-        #     num_tail = max(1, int(np.ceil(alpha * len(sorted_losses))))
-        #     tail_losses = sorted_losses[:num_tail]
-        #     cvar = np.mean(tail_losses)
-        #     return cvar
-    elif objective == "min_var":
-        if mu is None:
-
-            def obj(w):
-                return w.T @ cov @ w
-
-        else:
-            # Use a return-to-risk ratio (negative because we minimize)
-            def obj(w):
-                port_return = w @ mu
-                port_var = w.T @ cov @ w
-                return -port_return / np.sqrt(port_var) if port_var > 0 else 1e6
+            # The overall objective: minimize lambda_vol * volatility plus the tail risk penalty.
+            return lambda_vol * vol + penalty
 
     elif objective == "kappa":
         if returns is None:
