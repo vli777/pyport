@@ -1,6 +1,6 @@
 # src/utils/portfolio_utils.py
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 from collections import defaultdict
 import numpy as np
 import pandas as pd
@@ -145,25 +145,32 @@ def normalize_weights(weights, min_weight: float = 0.0) -> pd.Series:
     return rounded_weights
 
 
-def stacked_output(stack_dict: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+def stacked_output(
+    stack_dict: Dict[str, Dict[str, float]],
+    period_weights: Optional[Union[Dict[str, float], np.ndarray]] = None,
+) -> Dict[str, float]:
     """
-    Flatten a dictionary of dictionaries and compute the arithmetic average of the values.
+    Flatten a dictionary of dictionaries and compute the weighted or arithmetic average of the values.
     Missing keys in any sub-dictionary are treated as having a value of 0.
 
     Args:
-        stack_dict (Dict[str, Dict[str, float]]): A dictionary where each key maps to another dictionary of asset weights.
+        stack_dict (Dict[str, Dict[str, float]]): A dictionary where each key maps to another
+            dictionary of asset weights.
+        period_weights (Optional[Union[Dict[str, float], np.ndarray]]): If provided, assigns weights to each
+            time period. Can be a dict (with keys matching stack_dict) or a numpy array (with the same order
+            as stack_dict keys).
 
     Returns:
         Dict[str, float]: A single dictionary with averaged weights.
-
-    Raises:
-        ValueError: If stack_dict is empty or contains no valid portfolios.
     """
     logger.debug(f"Input stack_dict: {stack_dict}")
 
     if not stack_dict:
         logger.error("Input stack_dict is empty.")
         raise ValueError("Input stack_dict is empty.")
+
+    # Get a consistent ordering of periods
+    period_keys = list(stack_dict.keys())
 
     # Collect all unique asset names across all portfolios
     all_assets = set()
@@ -175,30 +182,56 @@ def stacked_output(stack_dict: Dict[str, Dict[str, float]]) -> Dict[str, float]:
 
     if not all_assets:
         logger.warning("No valid assets found in stack_dict.")
-        # Instead of raising an exception, return an empty dict
         return {}
 
-    logger.debug(f"All unique assets: {all_assets}")
+    all_assets = sorted(all_assets)  # Ensure consistent ordering
 
-    # Initialize a dictionary to accumulate weights
-    total_weights = defaultdict(float)
-    num_portfolios = len(stack_dict)
-    logger.debug(f"Number of portfolios: {num_portfolios}")
+    if period_weights is None:
+        # Arithmetic average: sum the weights and divide by the number of portfolios.
+        total_weights = defaultdict(float)
+        num_portfolios = len(stack_dict)
+        for portfolio in stack_dict.values():
+            if isinstance(portfolio, dict):
+                for asset in all_assets:
+                    total_weights[asset] += portfolio.get(asset, 0.0)
+        average_weights = {
+            asset: round(total_weight / num_portfolios, 3)
+            for asset, total_weight in total_weights.items()
+        }
+        logger.debug(f"Arithmetic average weights: {average_weights}")
+        return average_weights
+    else:
+        # Build the period weight vector.
+        if isinstance(period_weights, dict):
+            weight_vector = np.array([period_weights.get(k, 0.0) for k in period_keys])
+        elif isinstance(period_weights, np.ndarray):
+            if period_weights.shape[0] != len(period_keys):
+                raise ValueError(
+                    "Length of period_weights array does not match number of periods in stack_weights"
+                )
+            weight_vector = period_weights
+        else:
+            raise ValueError("period_weights must be a dict or numpy array")
 
-    # Sum the weights for each asset, treating missing assets as 0
-    for portfolio in stack_dict.values():
-        if isinstance(portfolio, dict):
-            for asset in all_assets:
-                total_weights[asset] += portfolio.get(asset, 0.0)
+        total_weight = weight_vector.sum()
+        if total_weight == 0:
+            raise ValueError("Sum of period weights is zero.")
+        # Normalize period weights to sum to 1.
+        weight_vector = weight_vector / total_weight
 
-    # Calculate the average weights
-    average_weights = {
-        asset: round(total_weight / num_portfolios, 3)
-        for asset, total_weight in total_weights.items()
-    }
-    logger.debug(f"Average weights: {average_weights}")
+        # Build a matrix with rows corresponding to periods and columns to assets.
+        A = np.zeros((len(period_keys), len(all_assets)))
+        asset_index = {asset: i for i, asset in enumerate(all_assets)}
 
-    return average_weights
+        for i, period_key in enumerate(period_keys):
+            portfolio = stack_dict[period_key]
+            for asset, wt in portfolio.items():
+                A[i, asset_index[asset]] = wt
+
+        avg_array = np.round(weight_vector.dot(A), 3)
+        average_weights = {asset: avg_array[j] for asset, j in asset_index.items()}
+        logger.debug(f"Weighted average weights: {average_weights}")
+        return average_weights
 
 
 def holdings_match(
