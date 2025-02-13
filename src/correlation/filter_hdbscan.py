@@ -1,16 +1,11 @@
-import math
-from pathlib import Path
-from datetime import date
 from typing import Dict, List, Union
 import numpy as np
 import pandas as pd
 import plotly.express as px
 from sklearn.manifold import TSNE
-from correlation.correlation_utils import compute_correlation_matrix
-from correlation.hdbscan_optimize import run_hdbscan_decorrelation_study
-from correlation.tsne_dbscan import compute_performance_metrics
-from utils import logger
-from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
+
+from utils.optimizer_utils import strategy_performance_metrics, get_objective_weights
+from utils.logger import logger
 
 
 def filter_correlated_groups_hdbscan(
@@ -18,6 +13,7 @@ def filter_correlated_groups_hdbscan(
     asset_cluster_map: Dict[str, int],
     risk_free_rate: float = 0.0,
     plot: bool = False,
+    objective: str = "sharpe",
 ) -> list[str]:
     """
     Uses HDBSCAN to cluster assets based on the distance (1 - correlation) matrix.
@@ -29,17 +25,29 @@ def filter_correlated_groups_hdbscan(
         asset_cluster_map (dict): Full set of assets mapped to optimized HDBSCAN clusters.
         risk_free_rate (float): Risk-free rate for performance metric calculation.
         plot (bool): If True, display a visualization of clusters.
+        objective (str): Optimization objective used as top cluster candidate selection
 
     Returns:
         list(str): A list of selected ticker symbols after decorrelation.
     """
+    # Ensure asset_cluster_map only contains tickers present in returns_df
+    asset_cluster_map = {
+        ticker: label
+        for ticker, label in asset_cluster_map.items()
+        if ticker in returns_df.columns
+    }
     # Group tickers by their cluster label
     clusters = {}
     for ticker, label in asset_cluster_map.items():
         clusters.setdefault(label, []).append(ticker)
 
     # Compute performance metrics for each asset
-    perf_series = compute_performance_metrics(returns_df, risk_free_rate)
+    objective_weights = get_objective_weights(objective)
+    perf_series = strategy_performance_metrics(
+        returns_df=returns_df,
+        risk_free_rate=risk_free_rate,
+        objective_weights=objective_weights,
+    )
 
     # Select the best-performing tickers from each cluster
     selected_tickers: list[str] = []
@@ -100,7 +108,7 @@ def visualize_clusters_tsne(
 
     # Optionally, you can standardize the data here if needed.
     tsne = TSNE(
-        perplexity=perplexity,
+        perplexity=min(perplexity, len(asset_data) - 1),
         max_iter=max_iter,
         random_state=42,
     )
@@ -123,79 +131,3 @@ def visualize_clusters_tsne(
     fig.show()
 
 
-def get_cluster_labels(
-    returns_df: pd.DataFrame,
-    cache_dir: str = "optuna_cache",
-    reoptimize: bool = False,
-) -> dict[str, int]:
-    from pathlib import Path
-    import numpy as np
-    import hdbscan
-
-    # Load cached parameters
-    cache_path = Path(cache_dir)
-    cache_path.mkdir(parents=True, exist_ok=True)
-    cache_filename = cache_path / "hdbscan_params.pkl"
-    cached_params = load_parameters_from_pickle(cache_filename) or {}
-
-    if all(
-        param in cached_params
-        for param in ["epsilon", "alpha", "cluster_selection_epsilon_max"]
-    ):
-        epsilon = cached_params["epsilon"]
-        alpha = cached_params["alpha"]
-        cluster_selection_epsilon_max = cached_params["cluster_selection_epsilon_max"]
-    else:
-        reoptimize = True
-
-    if reoptimize:
-        best_params = run_hdbscan_decorrelation_study(
-            returns_df=returns_df, n_trials=100
-        )
-        epsilon = best_params["epsilon"]
-        alpha = best_params["alpha"]
-        cluster_selection_epsilon_max = best_params["cluster_selection_epsilon_max"]
-        cached_params = {
-            "epsilon": epsilon,
-            "alpha": alpha,
-            "cluster_selection_epsilon_max": cluster_selection_epsilon_max,
-        }
-        save_parameters_to_pickle(cached_params, cache_filename)
-
-    # Compute the correlation matrix and convert it to a normalized distance matrix
-    corr_matrix = compute_correlation_matrix(returns_df)
-    distance_matrix = (1 - corr_matrix) / 2  # Normalize to 0–1
-
-    # Perform clustering using HDBSCAN with the precomputed distance matrix
-    np.random.seed(42)
-    clusterer = hdbscan.HDBSCAN(
-        metric="precomputed",
-        alpha=alpha,
-        min_cluster_size=2,
-        cluster_selection_epsilon=epsilon,
-        cluster_selection_method="leaf",
-        cluster_selection_epsilon_max=cluster_selection_epsilon_max,
-    )
-    cluster_labels = clusterer.fit_predict(distance_matrix)
-
-    # Map each ticker to its corresponding cluster label
-    asset_cluster_map = dict(zip(returns_df.columns, cluster_labels))
-    cache_cluster_filename = cache_path / "hdbscan_clusters.pkl"
-
-    # Check if the cluster labels changed before saving
-    cached_clusters = load_parameters_from_pickle(cache_cluster_filename) or {}
-    # Save only if the cluster assignments have changed
-    if (
-        cached_clusters.keys() == asset_cluster_map.keys()
-        and cached_clusters == asset_cluster_map
-    ):
-        save_parameters_to_pickle(asset_cluster_map, cache_cluster_filename)
-
-    # Log the total number of clusters found (ignoring noise labeled as -1)
-    labels_in_order = np.array(
-        [asset_cluster_map[ticker] for ticker in returns_df.columns]
-    )
-    num_clusters = len(np.unique(labels_in_order[labels_in_order != -1]))
-    logger.info(f"Total clusters found: {num_clusters}")
-
-    return asset_cluster_map

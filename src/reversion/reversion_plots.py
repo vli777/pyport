@@ -26,15 +26,14 @@ def plot_reversion_params(data_dict):
         print("No data available for plotting reversion parameters.")
         return
 
-    # Convert dictionary to DataFrame
+    # Convert dictionary to DataFrame and use assets as clusters
     df = (
         pd.DataFrame.from_dict(data_dict, orient="index")
         .reset_index()
-        .rename(columns={"index": "ticker"})
+        .rename(columns={"index": "cluster"})  # Treat asset as cluster
     )
 
     required_columns = {
-        "cluster",
         "window_daily",
         "z_threshold_daily_positive",
         "z_threshold_daily_negative",
@@ -47,8 +46,8 @@ def plot_reversion_params(data_dict):
         print(f"Missing columns in data: {missing_columns}")
         return
 
-    # Convert all cluster values to strings and then map to numeric codes.
-    df["cluster_str"] = df["cluster"].apply(str)
+    # Convert all cluster values (assets) to strings and then map to numeric codes.
+    df["cluster_str"] = df["cluster"].astype(str)
     unique_clusters = {
         label: idx for idx, label in enumerate(sorted(df["cluster_str"].unique()))
     }
@@ -79,7 +78,6 @@ def plot_reversion_params(data_dict):
     fig = go.Figure()
 
     # Left subplot: Daily parameters
-    # Trace for Daily Positive Z-Thresholds
     fig.add_trace(
         go.Scatter(
             x=df["window_daily_jitter"],
@@ -93,10 +91,7 @@ def plot_reversion_params(data_dict):
                 symbol="circle",
             ),
             text=df.apply(
-                lambda row: f"Ticker: {row['ticker']}<br>"
-                f"Window (Daily): {row['window_daily']}<br>"
-                f"Positive Z-Threshold: {row['z_threshold_daily_positive']}<br>"
-                f"Cluster: {row['cluster']}",
+                lambda row: f"Asset: {row['cluster']}<br>Window (Daily): {row['window_daily']}<br>Positive Z-Threshold: {row['z_threshold_daily_positive']}",
                 axis=1,
             ),
             hoverinfo="text",
@@ -106,7 +101,6 @@ def plot_reversion_params(data_dict):
         )
     )
 
-    # Trace for Daily Negative Z-Thresholds
     fig.add_trace(
         go.Scatter(
             x=df["window_daily_jitter"],
@@ -120,10 +114,7 @@ def plot_reversion_params(data_dict):
                 symbol="square",
             ),
             text=df.apply(
-                lambda row: f"Ticker: {row['ticker']}<br>"
-                f"Window (Daily): {row['window_daily']}<br>"
-                f"Negative Z-Threshold: {row['z_threshold_daily_negative']}<br>"
-                f"Cluster: {row['cluster']}",
+                lambda row: f"Asset: {row['cluster']}<br>Window (Daily): {row['window_daily']}<br>Negative Z-Threshold: {row['z_threshold_daily_negative']}",
                 axis=1,
             ),
             hoverinfo="text",
@@ -134,7 +125,6 @@ def plot_reversion_params(data_dict):
     )
 
     # Right subplot: Weekly parameters
-    # Trace for Weekly Positive Z-Thresholds
     fig.add_trace(
         go.Scatter(
             x=df["window_weekly_jitter"],
@@ -148,10 +138,7 @@ def plot_reversion_params(data_dict):
                 symbol="circle",
             ),
             text=df.apply(
-                lambda row: f"Ticker: {row['ticker']}<br>"
-                f"Window (Weekly): {row['window_weekly']}<br>"
-                f"Positive Z-Threshold: {row['z_threshold_weekly_positive']}<br>"
-                f"Cluster: {row['cluster']}",
+                lambda row: f"Ticker: {row['cluster']}<br>Window (Weekly): {row['window_weekly']}<br>Positive Z-Threshold: {row['z_threshold_weekly_positive']}",
                 axis=1,
             ),
             hoverinfo="text",
@@ -161,7 +148,6 @@ def plot_reversion_params(data_dict):
         )
     )
 
-    # Trace for Weekly Negative Z-Thresholds
     fig.add_trace(
         go.Scatter(
             x=df["window_weekly_jitter"],
@@ -175,10 +161,7 @@ def plot_reversion_params(data_dict):
                 symbol="square",
             ),
             text=df.apply(
-                lambda row: f"Ticker: {row['ticker']}<br>"
-                f"Window (Weekly): {row['window_weekly']}<br>"
-                f"Negative Z-Threshold: {row['z_threshold_weekly_negative']}<br>"
-                f"Cluster: {row['cluster']}",
+                lambda row: f"Ticker: {row['cluster']}<br>Window (Weekly): {row['window_weekly']}<br>Negative Z-Threshold: {row['z_threshold_weekly_negative']}",
                 axis=1,
             ),
             hoverinfo="text",
@@ -188,7 +171,7 @@ def plot_reversion_params(data_dict):
         )
     )
 
-    # Update layout with two subplots
+    # Update layout
     fig.update_layout(
         title="Mean Reversion Clusters: Daily vs. Weekly Parameters",
         grid=dict(rows=1, columns=2, pattern="independent"),
@@ -210,7 +193,7 @@ def plot_reversion_signals(data):
       - Negative => Bearish (orange to red gradient; more negative => deeper red).
 
     Args:
-        data (dict): Keys are asset tickers, values are Z-score-based signals.
+        data (dict): Keys are asset symbols, values are Z-score-based signals.
                      Negative => Overbought region, Positive => Oversold region.
     """
     if not data:

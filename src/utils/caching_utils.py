@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 import pickle
-from typing import Dict, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union
 import pandas as pd
 import pytz
 
@@ -46,13 +46,13 @@ def cleanup_cache(cache_dir: Optional[str] = None, max_age_hours: int = 24) -> N
                 logger.error(f"Failed to remove cache file {filepath}: {e}")
 
 
-def make_cache_key(method, years, symbols):
+def make_cache_key(model: str, years: str, symbols: List[str], objective: str) -> str:
     symbols_hash = hashlib.md5("_".join(sorted(symbols)).encode()).hexdigest()
-    cache_file = f"{method}_{years}_{symbols_hash}.json"
+    cache_file = f"{model}_{years}_{objective}_{symbols_hash}.json"
     return cache_file
 
 
-def load_model_results_from_cache(cache_key):
+def load_model_results_from_cache(cache_key: str):
     """
     Load cached results if they are valid for the current trading day.
 
@@ -128,7 +128,5 @@ def load_parameters_from_pickle(
     return parameters
 
 
-def compute_ticker_hash(tickers):
-    """Compute a hash of the sorted list of tickers."""
-    ticker_str = ",".join(sorted(tickers))
-    return hashlib.sha256(ticker_str.encode()).hexdigest()[:16]  # Use a short hash
+def compute_ticker_hash(tickers: list[str]) -> str:
+    return hashlib.md5("_".join(sorted(tickers)).encode()).hexdigest()[:16]

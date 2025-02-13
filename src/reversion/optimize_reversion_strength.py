@@ -5,7 +5,7 @@ from reversion.reversion_utils import (
     adjust_allocation_with_mean_reversion,
     propagate_signals_by_similarity,
 )
-from reversion.strategy_metrics import composite_score, simulate_strategy
+from utils.optimizer_utils import strategy_composite_score, strategy_performance_metrics
 
 # optuna.logging.set_verbosity(optuna.logging.ERROR)
 
@@ -17,6 +17,7 @@ def alpha_objective(
     baseline_allocation: pd.Series,
     composite_signals: dict,
     group_mapping: dict,
+    objective_weights: dict,
     rebalance_period: int = 30,
 ) -> float:
     """
@@ -24,7 +25,7 @@ def alpha_objective(
     Uses volatility-conditioned priors and rebalances dynamically.
     """
     # Set prior mean based on historical volatility
-    mean_alpha = min(0.1, max(0.01, 0.5 * historical_vol))
+    mean_alpha = min(0.1, max(0.2, 0.5 * historical_vol))
     low_alpha = max(0.01, 0.5 * mean_alpha)
     high_alpha = min(0.5, 2 * mean_alpha)
 
@@ -52,10 +53,14 @@ def alpha_objective(
         positions_df.loc[date] = final_allocation
 
     # Simulate strategy performance
-    strategy_returns, metrics = simulate_strategy(returns_df, positions_df)
+    metrics = strategy_performance_metrics(
+        returns_df=returns_df,
+        positions_df=positions_df,
+        objective_weights=objective_weights,
+    )
 
     # Return composite performance score
-    return composite_score(metrics)
+    return strategy_composite_score(metrics, objective_weights=objective_weights)
 
 
 def tune_reversion_alpha(
@@ -63,6 +68,7 @@ def tune_reversion_alpha(
     baseline_allocation: pd.Series,
     composite_signals: dict,
     group_mapping: dict,
+    objective_weights: dict,
     n_trials: int = 50,
     patience: int = 10,  # Stop early if no improvement
 ) -> float:
@@ -75,7 +81,7 @@ def tune_reversion_alpha(
         sampler=optuna.samplers.TPESampler(),
         pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=patience),
     )
-
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
     study.optimize(
         lambda trial: alpha_objective(
             trial,
@@ -84,6 +90,7 @@ def tune_reversion_alpha(
             baseline_allocation,
             composite_signals,
             group_mapping,
+            objective_weights,
         ),
         n_trials=n_trials,
         n_jobs=-1,  # Parallelize across all cores

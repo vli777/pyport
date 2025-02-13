@@ -106,11 +106,11 @@ def compute_stateful_signal_with_decay(
         raw_signal[i] = state[i] * signal_magnitude * decay_multiplier
 
         # Debug output for nonzero states.
-        if state[i] != 0:
-            print(
-                f"{series.name} @ {series.index[i]}: z_score={z_scores.iloc[i]:.2f}, "
-                f"state={state[i]}, age={state_age[i]}, raw_signal={raw_signal[i]:.2f}"
-            )
+        # if state[i] != 0:
+        #     print(
+        #         f"{series.name} @ {series.index[i]}: z_score={z_scores.iloc[i]:.2f}, "
+        #         f"state={state[i]}, age={state_age[i]}, raw_signal={raw_signal[i]:.2f}"
+        #     )
 
     # Compute the final adjustment factor.
     # A value of baseline means no change; values above baseline increase allocation,

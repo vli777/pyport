@@ -3,13 +3,14 @@ import numpy as np
 import optuna
 import pandas as pd
 
-from reversion.strategy_metrics import composite_score, simulate_strategy
+from utils.optimizer_utils import strategy_composite_score, strategy_performance_metrics
 from utils.z_scores import calculate_robust_zscores
 from utils.logger import logger
 
 
 def optimize_robust_mean_reversion(
     returns_df: pd.DataFrame,
+    objective_weights: dict,
     test_window_range: range = range(10, 31, 5),
     n_trials: int = 50,
     n_jobs: int = -1,
@@ -34,7 +35,10 @@ def optimize_robust_mean_reversion(
     )
     study.optimize(
         lambda trial: robust_mean_reversion_objective(
-            trial, returns_df, test_window_range
+            trial,
+            returns_df=returns_df,
+            objective_weights=objective_weights,
+            test_window_range=test_window_range,
         ),
         n_trials=n_trials,
         n_jobs=n_jobs,
@@ -48,7 +52,10 @@ def optimize_robust_mean_reversion(
 
 
 def robust_mean_reversion_objective(
-    trial, returns_df: pd.DataFrame, test_window_range: range = range(10, 31, 5)
+    trial,
+    returns_df: pd.DataFrame,
+    objective_weights: dict,
+    test_window_range: range = range(10, 31, 5),
 ) -> float:
     """
     Objective function for optimizing the robust mean reversion parameters.
@@ -93,6 +100,10 @@ def robust_mean_reversion_objective(
     positions_df = positions_df[valid_stocks]
     aligned_returns = returns_df[valid_stocks].reindex(positions_df.index)
 
-    _, metrics = simulate_strategy(aligned_returns, positions_df)
+    metrics = strategy_performance_metrics(
+        returns_df=aligned_returns,
+        positions_df=positions_df,
+        objective_weights=objective_weights,
+    )
 
-    return composite_score(metrics)
+    return strategy_composite_score(metrics, objective_weights=objective_weights)

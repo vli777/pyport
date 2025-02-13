@@ -96,9 +96,12 @@ def output(
         market_returns = market_returns.loc[start_date:end_date]
 
         if not market_returns.empty:
-            alpha = calculate_portfolio_alpha(
-                portfolio_returns=portfolio_returns, market_returns=market_returns
-            ) * 100
+            alpha = (
+                calculate_portfolio_alpha(
+                    portfolio_returns=portfolio_returns, market_returns=market_returns
+                )
+                * 100
+            )
         else:
             print(f"Warning: Market data for {market_file} is empty after filtering.")
 
@@ -115,13 +118,10 @@ def output(
 
     # Logging results (using print for cleaner output)
     if inputs is not None:
-        print("\n\nWatchlist Inputs:\n", inputs)
+        print("\nWatchlist Inputs:", inputs)
 
-    print("=" * 50)
     print(f"Time Period:\t{start_date} to {end_date} ({time_period} yrs)")
     print(f"Optimization Method:\t{optimization_model}")
-    print("=" * 50)
-
     print(f"Sharpe Ratio:\t\t{sharpe:.2f}")
     print(f"Kappa Ratio:\t\t{kappa:.2f}")
     print(f"Portfolio Volatility:\t{volatility * 100:.2f}%")
@@ -133,7 +133,6 @@ def output(
         print(f"Portfolio Alpha vs Market:\t{alpha:.2f}%")
 
     print(f"Cumulative Return:\t{cumulative_pct:.2f}%")
-    print("=" * 50)
 
     # Print portfolio allocation in tab-separated format
     print("Asset\tWeight")  # Column headers

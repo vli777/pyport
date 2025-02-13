@@ -1,10 +1,12 @@
+import sys
 import numpy as np
 import pandas as pd
+from typing import Optional, Union, Dict
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples
 from scipy.optimize import minimize
 
-from utils import logger
+from utils.logger import logger
 
 
 def cov_to_corr(cov):
@@ -15,119 +17,288 @@ def cov_to_corr(cov):
     return corr
 
 
-def optimize_weights(cov, mu=None, max_weight=1.0, allow_short=False):
+def empirical_lpm(portfolio_returns, target=0, order=3):
     """
-    Compute portfolio weights using inverse covariance or minimize variance
-    with per-asset constraints.
+    Compute the empirical lower partial moment (LPM) of a return series.
+
+    Parameters:
+        portfolio_returns : array-like, historical portfolio returns.
+        target          : target return level.
+        order           : order of the LPM (default is 3).
+
+    Returns:
+        The LPM of the specified order.
+    """
+    diff = np.maximum(target - portfolio_returns, 0)
+    return np.mean(diff**order)
+
+
+def optimize_weights_objective(
+    cov: pd.DataFrame,
+    mu: Optional[Union[pd.Series, np.ndarray]] = None,
+    returns: Optional[pd.DataFrame] = None,
+    objective: str = "sharpe",
+    order: int = 3,
+    target: float = 0,
+    max_weight: float = 1.0,
+    allow_short: bool = False,
+    target_sum: float = 1.0,
+) -> np.ndarray:
+    """
+    Optimize portfolio weights using a unified interface that supports several objectives.
+    For sharpe, expected returns (mu) and covariance (cov) are used.
+    For min_cvar, kappa, sk_blend, sko_blend, omega, and aggro, historical returns (returns) are also required.
+
+    Args:
+        cov (pd.DataFrame): Covariance matrix of asset returns.
+        mu (Optional[Union[pd.Series, np.ndarray]]): Expected returns.
+        returns (Optional[pd.DataFrame]): Historical returns. Must be a DataFrame with shape (T, n).
+        objective (str): Objective to optimize. Options include "min_cvar", "kappa", "sk_blend", "sharpe",
+                         "sko_blend", "omega", "aggro".
+        order (int): Order for downside risk metrics (default 3).
+        target (float): Target return (default 0).
+        max_weight (float): Maximum weight per asset (default 1.0).
+        allow_short (bool): Allow short positions (default False).
+        target_sum (float): Sum of weights (default 1.0).
+
+    Returns:
+        np.ndarray: Optimized weights.
     """
     n = cov.shape[0]
-
-    if mu is None:
-
-        def objective(w):
-            return w.T @ cov @ w
-
-    else:
-
-        def objective(w):
-            portfolio_return = w @ mu
-            portfolio_variance = w.T @ cov @ w
-            return -portfolio_return / np.sqrt(portfolio_variance)
-
-    init_weights = np.ones(n) / n
     lower_bound = -max_weight if allow_short else 0.0
-    bounds = [(lower_bound, max_weight) for _ in range(n)]
-    constraints = {"type": "eq", "fun": lambda w: np.sum(w) - 1}
-
-    result = minimize(
-        objective,
-        init_weights,
-        method="SLSQP",
-        bounds=bounds,
-        constraints=constraints,
-    )
-
-    if not result.success:
-        raise ValueError("Optimization failed:", result.message)
-
-    return result.x
-
-
-def optimize_weights_sharpe(cov, mu, max_weight=1.0, allow_short=False, target_sum=1.0):
-    """Compute portfolio weights that maximize the Sharpe ratio."""
-    if cov.shape[0] == 1:
-        return pd.Series([1.0], index=cov.index)  # Single asset gets full allocation
-
-    valid_assets = cov.index.intersection(mu.index)  # Align mu and covariance
-    mu = mu.loc[valid_assets]
-
-    def negative_sharpe(weights):
-        portfolio_return = weights @ mu
-        portfolio_volatility = np.sqrt(weights.T @ cov @ weights)
-        return -portfolio_return / portfolio_volatility
-
-    init_weights = np.clip(
-        np.ones(len(valid_assets)) / len(valid_assets), -max_weight, max_weight
-    )
-
-    bounds = [
-        (-max_weight, max_weight) if allow_short else (0, max_weight)
-        for _ in valid_assets
-    ]
+    bounds = [(lower_bound, max_weight)] * n
     constraints = {"type": "eq", "fun": lambda w: np.sum(w) - target_sum}
 
+    if objective == "min_vol_tail":
+        if returns is None:
+            raise ValueError(
+                "Historical returns must be provided for min_vol_tail optimization."
+            )
+
+        def obj(w: np.ndarray) -> float:
+            r_vals = returns.values
+            # Ensure r_vals is 2D (T x n)
+            if r_vals.ndim == 1:
+                r_vals = r_vals.reshape(-1, 1)
+            if r_vals.shape[1] != n:
+                raise ValueError(
+                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}"
+                )
+
+            # Calculate portfolio returns as a time series
+            port_returns = r_vals @ w  # Shape: (T,)
+            port_returns = np.atleast_1d(port_returns)
+
+            # Volatility component (standard deviation)
+            vol = np.std(port_returns)
+
+            # CVaR component (tail risk)
+            port_losses = -port_returns  # Convert returns to losses
+            sorted_losses = np.sort(port_losses)
+            alpha = 0.05  # Tail probability (worst 5% losses)
+            num_tail = max(1, int(np.ceil(alpha * len(sorted_losses))))
+            tail_losses = sorted_losses[:num_tail]
+            cvar = np.mean(tail_losses)
+
+            # -----------------------------
+            # Configurable Weights:
+            lambda_vol = (
+                1.0  # Adjust this to emphasize overall volatility minimization.
+            )
+            # Set high to mimic pure min_var; set to 0 to ignore volatility.
+            lambda_penalty = 1.0  # Adjust this to emphasize tail risk minimization.
+            # Set high to mimic pure min_cvar; set to 0 to ignore tail risk.
+            # -----------------------------
+            # Apply penalty only if the CVaR is negative (i.e. tail losses cause a loss).
+            penalty = lambda_penalty * (-cvar) if cvar < 0 else 0.0
+
+            # The overall objective: minimize lambda_vol * volatility plus the tail risk penalty.
+            return lambda_vol * vol + penalty
+
+    elif objective == "kappa":
+        if returns is None:
+            raise ValueError(
+                "Historical returns must be provided for kappa optimization."
+            )
+
+        def obj(w: np.ndarray) -> float:
+            port_returns = returns.values @ w
+            port_mean = np.mean(port_returns)
+            lpm = empirical_lpm(port_returns, target=target, order=order)
+            if lpm < 1e-8:
+                return 1e6
+            kappa = (port_mean - target) / (lpm ** (1.0 / order))
+            return -kappa
+
+    elif objective == "sk_blend":
+        # A simple combined objective: 50% kappa + 50% sharpe.
+        if returns is None or mu is None:
+            raise ValueError(
+                "Both historical returns and expected returns (mu) must be provided for Kappa and Sharpe optimization."
+            )
+
+        def obj(w: np.ndarray) -> float:
+            port_returns = returns.values @ w
+            port_mean = np.mean(port_returns)
+            port_vol = np.sqrt(w.T @ cov @ w)
+            lpm = empirical_lpm(port_returns, target=target, order=order)
+            kappa_val = (
+                (port_mean - target) / (lpm ** (1.0 / order)) if lpm > 1e-8 else -1e6
+            )
+            sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
+            combined = 0.5 * kappa_val + 0.5 * sharpe_val
+            return -combined
+
+    elif objective == "sharpe":
+        if mu is None:
+            raise ValueError(
+                "Expected returns (mu) must be provided for Sharpe optimization."
+            )
+
+        def obj(w: np.ndarray) -> float:
+            port_return = w @ mu
+            port_vol = np.sqrt(w.T @ cov @ w)
+            return -port_return / port_vol if port_vol > 0 else 1e6
+
+    elif objective == "sko_blend":
+        if returns is None or mu is None:
+            raise ValueError(
+                "Historical returns and expected returns (mu) must be provided for the blend."
+            )
+
+        def obj(w: np.ndarray) -> float:
+            r_vals = returns.values
+            if r_vals.ndim == 1:
+                r_vals = r_vals.reshape(-1, 1)
+            if r_vals.shape[1] != n:
+                raise ValueError(
+                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}"
+                )
+            port_returns = r_vals @ w
+            port_returns = np.atleast_1d(port_returns)
+            port_mean = np.mean(port_returns)
+            port_vol = np.sqrt(w.T @ cov @ w)
+            sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
+            lpm = empirical_lpm(port_returns, target=target, order=order)
+            kappa_val = (
+                (port_mean - target) / (lpm ** (1.0 / order)) if lpm > 1e-8 else -1e6
+            )
+            threshold = target
+            gain = (
+                np.mean(port_returns[port_returns > threshold])
+                if np.any(port_returns > threshold)
+                else 1e-8
+            )
+            loss = (
+                -np.mean(port_returns[port_returns < threshold])
+                if np.any(port_returns < threshold)
+                else 1e6
+            )
+            omega_val = gain / loss if loss > 1e-8 else -1e6
+            combined = (1 / 3) * sharpe_val + (1 / 3) * kappa_val + (1 / 3) * omega_val
+            return -combined
+
+    elif objective == "omega":
+        if returns is None:
+            raise ValueError(
+                "Historical returns must be provided for Omega optimization."
+            )
+
+        def obj(w: np.ndarray) -> float:
+            r_vals = returns.values
+            if r_vals.ndim == 1:
+                r_vals = r_vals.reshape(-1, 1)
+            if r_vals.shape[1] != n:
+                raise ValueError(
+                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}"
+                )
+            port_returns = r_vals @ w
+            port_returns = np.atleast_1d(port_returns)
+            threshold = target
+            gain = (
+                np.mean(port_returns[port_returns > threshold])
+                if np.any(port_returns > threshold)
+                else 1e-8
+            )
+            loss = (
+                -np.mean(port_returns[port_returns < threshold])
+                if np.any(port_returns < threshold)
+                else 1e6
+            )
+            omega_ratio_val = gain / loss if loss > 1e-8 else -1e6
+            return -omega_ratio_val
+
+    elif objective == "aggro":
+        if returns is None or mu is None:
+            raise ValueError(
+                "Both historical returns and expected returns (mu) must be provided for aggro optimization."
+            )
+
+        def obj(w: np.ndarray) -> float:
+            port_returns = returns.values @ w
+            cumulative_return = np.prod(1 + port_returns) - 1
+            port_mean = np.mean(port_returns)
+            port_vol = np.sqrt(w.T @ cov @ w)
+            lpm = empirical_lpm(port_returns, target=target, order=order)
+            kappa_val = (
+                (port_mean - target) / (lpm ** (1.0 / order)) if lpm > 1e-8 else -1e6
+            )
+            sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
+            combined = (
+                (1 / 3) * cumulative_return + (1 / 3) * sharpe_val + (1 / 3) * kappa_val
+            )
+            return -combined
+
+    else:
+        print(
+            f"Unknown objective specified: {objective}. Defaulting to Sharpe optimal."
+        )
+
+        def obj(w: np.ndarray) -> float:
+            port_return = w @ mu
+            port_vol = np.sqrt(w.T @ cov @ w)
+            return -port_return / port_vol if port_vol > 0 else 1e6
+
+    init_weights = np.ones(n) / n
+    feasible_min = n * lower_bound
+    feasible_max = n * max_weight
+    if not (feasible_min <= target_sum <= feasible_max):
+        raise ValueError(
+            f"Infeasible target_sum: {target_sum}. It must be between {feasible_min} and {feasible_max} for n={n} assets."
+        )
+
     result = minimize(
-        negative_sharpe,
-        init_weights,
-        method="SLSQP",
-        bounds=bounds,
-        constraints=constraints,
+        obj, init_weights, method="SLSQP", bounds=bounds, constraints=constraints
     )
 
     if not result.success:
-        raise ValueError("Optimization failed:", result.message)
+        raise ValueError("Optimization failed: " + result.message)
 
-    # Convert the result to a Series using valid_assets as the index
-    return pd.Series(result.x, index=valid_assets)
+    return result.x
 
 
 def cluster_kmeans(corr: np.ndarray, max_clusters: int = 10) -> np.ndarray:
     """
     Cluster assets using KMeans on the correlation matrix.
-
-    Args:
-        corr (np.ndarray): Correlation matrix.
-        max_clusters (int): Maximum number of clusters to test.
-
-    Returns:
-        np.ndarray: Array of cluster labels for each asset.
     """
-    # Compute the distance matrix from correlation
+    # Transform correlation to a distance metric
     dist = np.sqrt(0.5 * (1 - corr))
     n_samples = dist.shape[0]
 
-    # Determine the maximum allowable clusters to prevent silhouette errors
     max_valid_clusters = min(max_clusters, n_samples - 1) if n_samples > 1 else 1
-
     best_silhouette = -1.0
     best_labels = None
 
-    # Loop over the valid range of cluster counts
     for k in range(2, max_valid_clusters + 1):
         kmeans = KMeans(n_clusters=k, n_init=10, random_state=42)
         labels = kmeans.fit_predict(dist)
-
-        # Ensure that at least two unique labels exist before computing silhouette
         if len(np.unique(labels)) < 2:
             continue
-
-        # Compute the mean silhouette score for this clustering
         silhouette = silhouette_samples(dist, labels).mean()
         if silhouette > best_silhouette:
             best_silhouette = silhouette
             best_labels = labels
 
-    # If no valid clustering was found, default to a single cluster for all assets
     if best_labels is None:
         best_labels = np.zeros(n_samples, dtype=int)
 
@@ -136,16 +307,37 @@ def cluster_kmeans(corr: np.ndarray, max_clusters: int = 10) -> np.ndarray:
 
 def nested_clustered_optimization(
     cov: pd.DataFrame,
-    mu: pd.Series = None,
+    mu: Optional[pd.Series] = None,
+    returns: Optional[pd.DataFrame] = None,
+    objective: str = "sharpe",
     max_clusters: int = 10,
-    sharpe: bool = False,
     max_weight: float = 1.0,
     allow_short: bool = False,
+    target: float = 0,
+    order: int = 3,
+    target_sum: float = 1.0,
 ) -> pd.Series:
     """
-    Implement Nested Clustered Optimization with support for short positions.
+    Perform Nested Clustered Optimization with a flexible objective.
+    For objectives requiring historical returns (kappa or blend),
+    a 'returns' DataFrame must be provided.
+
+    Args:
+        cov (pd.DataFrame): Covariance matrix of asset returns.
+        mu (Optional[pd.Series]): Expected returns.
+        returns (Optional[pd.DataFrame]): Historical returns (time series) with assets as columns.
+        objective (str): Optimization objective.
+        max_clusters (int): Maximum number of clusters.
+        max_weight (float): Maximum weight per asset.
+        allow_short (bool): Allow short positions.
+        target (float): Target return (default 0).
+        order (int): Order for downside risk metrics.
+        target_sum (float): Sum of weights (default 1.0).
+
+    Returns:
+        pd.Series: Final portfolio weights.
     """
-    # **Filter assets with insufficient historical data**
+    # Filter assets with enough historical data
     min_data_threshold = cov.shape[0] * 0.5  # At least 50% valid history
     valid_assets = cov.index[cov.notna().sum(axis=1) >= min_data_threshold]
 
@@ -153,19 +345,20 @@ def nested_clustered_optimization(
         logger.warning(
             "Not enough valid assets after filtering. Skipping optimization."
         )
-        return pd.Series(dtype=float)  # Return empty portfolio
+        return pd.Series(dtype=float)  # Return an empty portfolio
 
-    # Reduce covariance & expected returns to valid assets
     cov = cov.loc[valid_assets, valid_assets]
     if mu is not None:
         mu = mu.loc[valid_assets]
+    if returns is not None:
+        returns = returns[valid_assets]
 
-    # Correlation matrix and clustering
+    # Create the correlation matrix and cluster the assets
     corr = cov_to_corr(cov)
     labels = cluster_kmeans(corr, max_clusters)
     unique_clusters = np.unique(labels)
 
-    # Intra-cluster optimization
+    # Intra-cluster optimization: optimize weights for assets within each cluster
     intra_weights = pd.DataFrame(
         0, index=cov.index, columns=unique_clusters, dtype=float
     )
@@ -173,44 +366,60 @@ def nested_clustered_optimization(
         cluster_assets = cov.index[labels == cluster]
         cluster_cov = cov.loc[cluster_assets, cluster_assets]
         cluster_mu = None if mu is None else mu.loc[cluster_assets]
+        cluster_returns = None if returns is None else returns[cluster_assets]
 
-        # Pass `allow_short` to the optimization functions
-        if sharpe:
-            intra_weights.loc[cluster_assets, cluster] = optimize_weights_sharpe(
-                cluster_cov, cluster_mu, max_weight=max_weight, allow_short=allow_short
-            )
-        else:
-            intra_weights.loc[cluster_assets, cluster] = optimize_weights(
-                cluster_cov, cluster_mu, max_weight=max_weight, allow_short=allow_short
-            )
+        weights = optimize_weights_objective(
+            cluster_cov,
+            mu=cluster_mu,
+            returns=cluster_returns,
+            objective=objective,
+            order=order,
+            target=target,
+            max_weight=max_weight,
+            allow_short=allow_short,
+            target_sum=target_sum,
+        )
+        intra_weights.loc[cluster_assets, cluster] = weights
 
-    # Inter-cluster optimization
+    # Inter-cluster optimization: optimize how to weight each cluster
     reduced_cov = intra_weights.T @ cov @ intra_weights
     reduced_mu = None if mu is None else intra_weights.T @ mu
 
-    inter_weights = (
-        pd.Series(
-            optimize_weights_sharpe(
-                reduced_cov, reduced_mu, max_weight=max_weight, allow_short=allow_short
-            ),
-            index=unique_clusters,
+    # For historical returns aggregation, build a DataFrame where each column is the cluster's time series.
+    reduced_returns = None
+    if returns is not None:
+        reduced_returns = pd.DataFrame(
+            {
+                cluster: (
+                    returns.loc[:, intra_weights.index]
+                    .mul(intra_weights[cluster], axis=1)
+                    .sum(axis=1)
+                )
+                for cluster in unique_clusters
+            }
         )
-        if sharpe
-        else pd.Series(
-            optimize_weights(
-                reduced_cov, reduced_mu, max_weight=max_weight, allow_short=allow_short
-            ),
-            index=unique_clusters,
-        )
+
+    inter_weights = pd.Series(
+        optimize_weights_objective(
+            reduced_cov,
+            mu=reduced_mu,
+            returns=reduced_returns,
+            objective=objective,
+            order=order,
+            target=target,
+            max_weight=max_weight,
+            allow_short=allow_short,
+            target_sum=target_sum,
+        ),
+        index=unique_clusters,
     )
 
-    # Combine intra- and inter-cluster weights
+    # Combine intra- and inter-cluster weights to get the final portfolio allocation
     final_weights = intra_weights.mul(inter_weights, axis=1).sum(axis=1)
+    final_weights = final_weights[
+        final_weights.abs() >= 0.01
+    ]  # Apply a minimum weight threshold
 
-    # Apply a minimum weight threshold (preserves sign for shorts)
-    final_weights = final_weights[final_weights.abs() >= 0.01]
-
-    # Ensure final_weights is a pandas Series
     if not isinstance(final_weights, pd.Series):
         final_weights = pd.Series(final_weights, index=intra_weights.index)
 

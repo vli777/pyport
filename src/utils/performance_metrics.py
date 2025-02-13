@@ -66,6 +66,61 @@ def kappa_ratio(returns: pd.Series, order: int = 3, mar: float = 0.0) -> float:
     return mean_excess / (lpm ** (1 / order))
 
 
+def omega_ratio(returns: pd.Series, threshold: float = 0.0) -> float:
+    """
+    Calculates the Omega ratio of a return series.
+
+    Omega = (Mean of gains above threshold) / (Mean of losses below threshold)
+
+    Args:
+        returns (pd.Series): Daily strategy returns.
+        threshold (float): Minimum acceptable return (default 0 for break-even).
+
+    Returns:
+        float: Omega ratio. Returns np.nan if there are no losses.
+    """
+    if returns.empty:
+        return np.nan  # No returns available
+
+    gains = returns[returns > threshold]
+    losses = returns[returns < threshold]
+
+    if losses.empty:
+        return np.nan  # No downside risk, return NaN to avoid bias
+
+    mean_gain = gains.mean() if not gains.empty else 1e-8
+    mean_loss = -losses.mean() if not losses.empty else 1e6  # Convert to positive
+
+    return mean_gain / mean_loss if mean_loss > 1e-8 else np.nan
+
+
+def conditional_var(returns: pd.Series, alpha: float = 0.05) -> float:
+    """
+    Calculates Conditional Value at Risk (CVaR) for the given return series.
+
+    CVaR (Expected Shortfall) is the average loss beyond the Value at Risk (VaR) threshold.
+
+    Args:
+        returns (pd.Series): Daily strategy returns.
+        alpha (float): Tail probability (default 5% worst losses).
+
+    Returns:
+        float: Conditional Value at Risk (CVaR). Returns np.nan if there are not enough data points.
+    """
+    if returns.empty:
+        return np.nan  # No returns available
+
+    sorted_returns = returns.sort_values()
+    threshold_index = int(np.ceil(alpha * len(sorted_returns)))
+
+    # Ensure we have enough values to compute CVaR
+    if threshold_index == 0 or threshold_index >= len(sorted_returns):
+        return np.nan
+
+    tail_losses = sorted_returns[:threshold_index]
+    return tail_losses.mean()
+
+
 def calculate_portfolio_alpha(
     portfolio_returns: pd.DataFrame | pd.Series,
     market_returns: pd.Series,
@@ -117,7 +172,6 @@ def calculate_portfolio_alpha(
     )
     alpha = model.intercept_
 
-    print(f"Calculated alpha: {alpha:.4f}")
     return alpha
 
 

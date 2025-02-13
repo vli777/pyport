@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, List
 import numpy as np
 import pandas as pd
 from sklearn.covariance import LedoitWolf
@@ -15,6 +15,7 @@ from utils.caching_utils import (
     save_model_results_to_cache,
 )
 from utils.portfolio_utils import (
+    convert_weights_to_series,
     limit_portfolio_size,
     normalize_weights,
 )
@@ -43,12 +44,23 @@ def run_optimization(
 
 
 def run_optimization_and_save(
-    df, config: Config, start_date, end_date, symbols, stack, years
+    df: pd.DataFrame,
+    config: Config,
+    start_date: str,
+    end_date: str,
+    symbols: List[str],
+    stack: Dict,
+    years: str,
 ):
     final_weights = None
 
     for model in config.models[years]:
-        cache_key = make_cache_key(model, years, symbols)
+        cache_key = make_cache_key(
+            model=model,
+            years=years,
+            objective=config.optimization_objective,
+            symbols=symbols,
+        )
 
         # Check cache
         cached = load_model_results_from_cache(cache_key)
@@ -59,7 +71,7 @@ def run_optimization_and_save(
             stack[model + str(years)] = normalized_weights.to_dict()
             save_model_results_to_cache(cache_key, final_weights.to_dict())
         else:
-            # Fix: Ensure shorter-history stocks are retained
+            # Ensure shorter-history stocks are retained
             asset_returns = np.log(df[symbols]).diff().dropna(how="all")
 
             # Ensure covariance matrix is computed only on valid assets
@@ -86,10 +98,15 @@ def run_optimization_and_save(
 
             # Ensure `mu` is aligned with covariance matrix
             mu_annual = mu_annual.loc[valid_assets]
+            mu_annual = mu_annual.reindex(valid_assets)
 
             max_weight = config.max_weight
-            model_args = config.model_config[model]
-            model_args.update({"max_weight": max_weight})
+            optimization_objective = config.optimization_objective
+            model_args = {
+                "returns": asset_returns,
+                "max_weight": max_weight,
+                "objective": optimization_objective,
+            }
 
             try:
                 weights = run_optimization(
@@ -99,23 +116,8 @@ def run_optimization_and_save(
                     args=model_args,
                 )
 
-                # Ensure weights are correctly aligned with asset names
-                if isinstance(weights, dict):
-                    weights = pd.Series(weights)
-
-                elif isinstance(weights, np.ndarray):
-                    if len(weights) == len(mu_annual):  # Ensure alignment
-                        weights = pd.Series(weights, index=mu_annual.index)
-                    else:
-                        logger.error(
-                            f"Mismatch in weights length ({len(weights)}) and assets ({len(mu_annual)})"
-                        )
-                        weights = pd.Series(
-                            dtype=float
-                        )  # Return empty Series if mismatch
-
+                weights = convert_weights_to_series(weights, index=mu_annual.index)
                 normalized_weights = normalize_weights(weights, config.min_weight)
-
                 final_weights = limit_portfolio_size(
                     normalized_weights, config.portfolio_max_size, target_sum=1.0
                 )
@@ -139,7 +141,7 @@ def run_optimization_and_save(
         output_results(
             df=df,
             weights=final_weights,
-            model_name=model,
+            model_name=f"{model} {config.optimization_objective}",
             start_date=start_date,
             end_date=end_date,
             years=years,

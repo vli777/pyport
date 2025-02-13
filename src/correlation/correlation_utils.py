@@ -1,97 +1,9 @@
-import hashlib
 import pandas as pd
 import numpy as np
-import plotly.figure_factory as ff
-import plotly.graph_objects as go
-from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import linkage, fcluster
 from typing import List
 from sklearn.covariance import LedoitWolf
 
-
-def validate_matrix(matrix, matrix_name: str):
-    """
-    Validate that a matrix does not contain NaN or infinite values.
-
-    Args:
-        matrix: The matrix to validate.
-        matrix_name (str): Name of the matrix (used for error messages).
-    """
-    if matrix.isnull().values.any():
-        raise ValueError(f"{matrix_name} contains NaN values.")
-    if np.isinf(matrix.values).any():
-        raise ValueError(f"{matrix_name} contains infinite values.")
-
-
-def calculate_condensed_distance_matrix(corr_matrix):
-    """
-    Calculate the condensed distance matrix from a correlation matrix.
-
-    Args:
-        corr_matrix: Correlation matrix.
-
-    Returns:
-        np.ndarray: Condensed distance matrix.
-    """
-    distance_matrix = 1 - corr_matrix
-    np.fill_diagonal(distance_matrix.values, 0)
-    validate_matrix(distance_matrix, "Distance matrix")
-    return squareform(distance_matrix)
-
-
-def hierarchical_clustering(
-    corr_matrix: pd.DataFrame,
-    distance_threshold: float,
-    linkage_method: str,
-    plot: bool,
-) -> List[int]:
-    """
-    Perform hierarchical clustering and return cluster assignments.
-
-    Args:
-        corr_matrix (pd.DataFrame): Correlation matrix.
-        distance_threshold (float): Threshold for forming clusters.
-        linkage_method (str): Method for hierarchical clustering.
-        plot (bool): Whether to plot the clustering dendrogram.
-
-    Returns:
-        List[int]: Cluster assignments for each item.
-    """
-    # Convert correlation to distance
-    distance_matrix = 1 - corr_matrix
-    np.fill_diagonal(distance_matrix.values, 0)
-
-    # Ensure no NaNs/Infs exist
-    validate_matrix(distance_matrix, "Distance matrix")
-
-    # Convert to condensed format for clustering
-    condensed_distance_matrix = squareform(distance_matrix)
-
-    # Perform hierarchical clustering
-    linked = linkage(condensed_distance_matrix, method=linkage_method)
-
-    if plot:
-        fig = ff.create_dendrogram(
-            linked, labels=corr_matrix.index.tolist(), linkagefun=lambda x: linked
-        )
-        fig.add_shape(
-            go.layout.Shape(
-                type="line",
-                x0=0,
-                x1=len(corr_matrix),
-                y0=distance_threshold,
-                y1=distance_threshold,
-                line=dict(color="red", dash="dash"),
-            )
-        )
-        fig.update_layout(
-            title="Hierarchical Clustering Dendrogram",
-            xaxis_title="Ticker",
-            yaxis_title="Distance (1 - Correlation)",
-        )
-        fig.show()
-
-    return fcluster(linked, t=distance_threshold, criterion="distance")
+from utils.logger import logger
 
 
 def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
@@ -133,3 +45,29 @@ def compute_correlation_matrix(
         # Fill diagonal with zeros.
         np.fill_diagonal(corr_matrix.values, 0)
     return corr_matrix
+
+
+def compute_distance_matrix(
+    returns_df: pd.DataFrame, scale_distances: bool = False
+) -> np.ndarray:
+    """
+    Compute a normalized distance matrix from the correlation matrix of returns.
+    The conversion uses the transformation: distance = (1 - correlation) / 2.
+    Optionally, if scale_distances is True, the distance matrix is re-scaled via
+    min–max normalization to fully span the [0, 1] interval.
+    This function ensures the returned distance matrix is a NumPy array to prevent
+    indexing issues later on.
+    """
+    # Compute the correlation matrix (user-defined function).
+    corr_matrix = compute_correlation_matrix(returns_df)
+    # Ensure the correlation matrix is a NumPy array.
+    corr_matrix = np.asarray(corr_matrix)
+    # Convert correlations to distances in [0, 1].
+    distance_matrix = (1 - corr_matrix) / 2
+
+    if scale_distances:
+        dmin, dmax = np.min(distance_matrix), np.max(distance_matrix)
+        if not np.isclose(dmax, dmin):
+            distance_matrix = (distance_matrix - dmin) / (dmax - dmin)
+            logger.debug("Distance matrix re-scaled to full [0, 1] range.")
+    return distance_matrix
