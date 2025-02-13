@@ -1,6 +1,6 @@
 # src/utils/portfolio_utils.py
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 from collections import defaultdict
 import numpy as np
 import pandas as pd
@@ -145,16 +145,19 @@ def normalize_weights(weights, min_weight: float = 0.0) -> pd.Series:
     return rounded_weights
 
 
-def stacked_output(stack_dict: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+def stacked_output(
+    stack_dict: Dict[str, Dict[str, float]], weights: Optional[Dict[str, float]] = None
+) -> Dict[str, float]:
     """
-    Flatten a dictionary of dictionaries and compute the arithmetic average of the values.
+    Flatten a dictionary of dictionaries and compute the weighted average of the values.
     Missing keys in any sub-dictionary are treated as having a value of 0.
 
     Args:
         stack_dict (Dict[str, Dict[str, float]]): A dictionary where each key maps to another dictionary of asset weights.
+        weights (Optional[Dict[str, float]]): Weights for each period to apply during averaging. If None, equal weights are used.
 
     Returns:
-        Dict[str, float]: A single dictionary with averaged weights.
+        Dict[str, float]: A single dictionary with weighted average weights.
 
     Raises:
         ValueError: If stack_dict is empty or contains no valid portfolios.
@@ -175,30 +178,35 @@ def stacked_output(stack_dict: Dict[str, Dict[str, float]]) -> Dict[str, float]:
 
     if not all_assets:
         logger.warning("No valid assets found in stack_dict.")
-        # Instead of raising an exception, return an empty dict
         return {}
 
     logger.debug(f"All unique assets: {all_assets}")
 
-    # Initialize a dictionary to accumulate weights
-    total_weights = defaultdict(float)
+    # Default: Equal weights if none are provided
     num_portfolios = len(stack_dict)
-    logger.debug(f"Number of portfolios: {num_portfolios}")
+    if weights is None:
+        weights = {key: 1 / num_portfolios for key in stack_dict}  # Equal weighting
 
-    # Sum the weights for each asset, treating missing assets as 0
-    for portfolio in stack_dict.values():
+    # Normalize weight sum to 1
+    total_weight = sum(weights.values())
+    weights = {k: v / total_weight for k, v in weights.items()}
+
+    logger.debug(f"Using weights: {weights}")
+
+    # Initialize dictionary to accumulate weighted sums
+    total_weights = defaultdict(float)
+
+    # Apply weighting to each period
+    for period, portfolio in stack_dict.items():
         if isinstance(portfolio, dict):
+            weight = weights.get(period, 0)  # Default to 0 if period missing
             for asset in all_assets:
-                total_weights[asset] += portfolio.get(asset, 0.0)
+                total_weights[asset] += portfolio.get(asset, 0.0) * weight
 
-    # Calculate the average weights
-    average_weights = {
-        asset: round(total_weight / num_portfolios, 3)
-        for asset, total_weight in total_weights.items()
-    }
-    logger.debug(f"Average weights: {average_weights}")
+    logger.debug(f"Total weighted sums: {total_weights}")
 
-    return average_weights
+    # Return final weighted average
+    return dict(total_weights)
 
 
 def holdings_match(

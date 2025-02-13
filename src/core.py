@@ -206,14 +206,15 @@ def run_pipeline(
         return valid_symbols
 
     def perform_post_processing(
-        stack_weights: Dict[str, Any], returns_df: pd.DataFrame
-    ) -> Dict[str, any]:
+        stack_weights: Dict[str, Any],
+        weights: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, Any]:
         """
         Perform post-processing on the stack data to calculate normalized weights.
 
         Args:
-            stack_weights (Dict[str, Any]): The stack weights data containing optimization results.
-            returns_df (pd.DataFrame): Returns of the assets in the portfolio
+            stack_weights (Dict[str, Any]): Dictionary containing optimization results for different periods.
+            weights (Optional[Dict[str, float]]): Optional dictionary specifying weights for each period.
 
         Returns:
             Dict[str, Any]: Normalized weights as a dictionary.
@@ -224,8 +225,8 @@ def run_pipeline(
             for key, value in stack_weights.items()
         }
 
-        # Compute averaged weights
-        average_weights = stacked_output(processed_stack)
+        # Compute averaged weights with optional regime-based weighting
+        average_weights = stacked_output(processed_stack, weights)
         if not average_weights:
             logger.warning(
                 "No valid averaged weights found. Skipping further processing."
