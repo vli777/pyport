@@ -5,6 +5,7 @@ from typing import Optional, Union, Dict
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples
 from scipy.optimize import minimize
+from scipy.stats import trim_mean
 
 from utils.logger import logger
 
@@ -39,35 +40,50 @@ def optimize_weights_objective(
     returns: Optional[pd.DataFrame] = None,
     objective: str = "sharpe",
     order: int = 3,
-    target: float = 0,
+    target: float = 0.0,
     max_weight: float = 1.0,
     allow_short: bool = False,
     target_sum: float = 1.0,
+    min_obs: int = 5,
+    trim_fraction: float = 0.1,
 ) -> np.ndarray:
     """
-    Optimize portfolio weights using a unified interface that supports several objectives.
-    For sharpe, expected returns (mu) and covariance (cov) are used.
-    For min_cvar, kappa, sk_blend, sko_blend, omega, and aggro, historical returns (returns) are also required.
+    Optimize portfolio weights using a unified, robust interface.
+
+    For 'sharpe', expected returns (mu) and covariance (cov) are used.
+    For objectives such as 'kappa', 'sk_blend', 'sko_blend', 'omega', 'aggro',
+    and the unified 'min_vol_tail', historical returns (returns) are required.
+
+    The 'min_vol_tail' objective minimizes overall portfolio volatility with a penalty
+    if the tail performance (CVaR) is below break-even. You can mimic:
+      - Pure min_var by setting lambda_vol high and lambda_penalty = 0.
+      - Pure min_cvar by setting lambda_vol = 0 and lambda_penalty high.
 
     Args:
         cov (pd.DataFrame): Covariance matrix of asset returns.
         mu (Optional[Union[pd.Series, np.ndarray]]): Expected returns.
-        returns (Optional[pd.DataFrame]): Historical returns. Must be a DataFrame with shape (T, n).
-        objective (str): Objective to optimize. Options include "min_cvar", "kappa", "sk_blend", "sharpe",
-                         "sko_blend", "omega", "aggro".
+        returns (Optional[pd.DataFrame]): Historical returns (T x n), where T is time.
+        objective (str): Optimization objective. Options:
+                         ["min_vol_tail", "kappa", "sk_blend", "sharpe",
+                          "sko_blend", "omega", "aggro"].
         order (int): Order for downside risk metrics (default 3).
-        target (float): Target return (default 0).
+        target (float): Target return (default 0.0).
         max_weight (float): Maximum weight per asset (default 1.0).
         allow_short (bool): Allow short positions (default False).
         target_sum (float): Sum of weights (default 1.0).
+        min_obs (int): Minimum number of observations for robust calculations (default 5).
+        trim_fraction (float): Proportion to trim when computing trimmed means (default 0.1).
 
     Returns:
-        np.ndarray: Optimized weights.
+        np.ndarray: Optimized portfolio weights.
     """
     n = cov.shape[0]
     lower_bound = -max_weight if allow_short else 0.0
     bounds = [(lower_bound, max_weight)] * n
     constraints = {"type": "eq", "fun": lambda w: np.sum(w) - target_sum}
+
+    # We'll assign the selected objective function to chosen_obj.
+    chosen_obj = None
 
     if objective == "min_vol_tail":
         if returns is None:
@@ -77,43 +93,35 @@ def optimize_weights_objective(
 
         def obj(w: np.ndarray) -> float:
             r_vals = returns.values
-            # Ensure r_vals is 2D (T x n)
+            # Ensure returns are 2D: shape (T, n)
             if r_vals.ndim == 1:
                 r_vals = r_vals.reshape(-1, 1)
             if r_vals.shape[1] != n:
                 raise ValueError(
-                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}"
+                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}."
                 )
-
-            # Calculate portfolio returns as a time series
-            port_returns = r_vals @ w  # Shape: (T,)
-            port_returns = np.atleast_1d(port_returns)
-
+            port_returns = np.atleast_1d(r_vals @ w)
             # Volatility component (standard deviation)
             vol = np.std(port_returns)
-
             # CVaR component (tail risk)
             port_losses = -port_returns  # Convert returns to losses
             sorted_losses = np.sort(port_losses)
-            alpha = 0.05  # Tail probability (worst 5% losses)
+            alpha = 0.05  # Tail probability (worst 5% losses
             num_tail = max(1, int(np.ceil(alpha * len(sorted_losses))))
             tail_losses = sorted_losses[:num_tail]
             cvar = np.mean(tail_losses)
-
             # -----------------------------
             # Configurable Weights:
-            lambda_vol = (
-                1.0  # Adjust this to emphasize overall volatility minimization.
-            )
-            # Set high to mimic pure min_var; set to 0 to ignore volatility.
-            lambda_penalty = 1.0  # Adjust this to emphasize tail risk minimization.
-            # Set high to mimic pure min_cvar; set to 0 to ignore tail risk.
+            lambda_vol = 1.0  # Set high to mimic min_var; 0 to ignore volatility.
+            lambda_penalty = 1.0  # Set high to mimic min_cvar; 0 to ignore tail risk.
             # -----------------------------
-            # Apply penalty only if the CVaR is negative (i.e. tail losses cause a loss).
+            # Apply penalty only if CVaR is negative (i.e. tail losses yield a loss).
             penalty = lambda_penalty * (-cvar) if cvar < 0 else 0.0
 
             # The overall objective: minimize lambda_vol * volatility plus the tail risk penalty.
             return lambda_vol * vol + penalty
+
+        chosen_obj = obj
 
     elif objective == "kappa":
         if returns is None:
@@ -129,6 +137,8 @@ def optimize_weights_objective(
                 return 1e6
             kappa = (port_mean - target) / (lpm ** (1.0 / order))
             return -kappa
+
+        chosen_obj = obj
 
     elif objective == "sk_blend":
         # A simple combined objective: 50% kappa + 50% sharpe.
@@ -149,6 +159,8 @@ def optimize_weights_objective(
             combined = 0.5 * kappa_val + 0.5 * sharpe_val
             return -combined
 
+        chosen_obj = obj
+
     elif objective == "sharpe":
         if mu is None:
             raise ValueError(
@@ -159,6 +171,8 @@ def optimize_weights_objective(
             port_return = w @ mu
             port_vol = np.sqrt(w.T @ cov @ w)
             return -port_return / port_vol if port_vol > 0 else 1e6
+
+        chosen_obj = obj
 
     elif objective == "sko_blend":
         if returns is None or mu is None:
@@ -176,25 +190,53 @@ def optimize_weights_objective(
                 )
             port_returns = r_vals @ w
             port_returns = np.atleast_1d(port_returns)
+
+            # Compute Sharpe Ratio
             port_mean = np.mean(port_returns)
             port_vol = np.sqrt(w.T @ cov @ w)
             sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
+
+            # Compute Kappa Ratio
             lpm = empirical_lpm(port_returns, target=target, order=order)
             kappa_val = (
                 (port_mean - target) / (lpm ** (1.0 / order)) if lpm > 1e-8 else -1e6
             )
-            threshold = target
-            gain = (
-                np.mean(port_returns[port_returns > threshold])
-                if np.any(port_returns > threshold)
-                else 1e-8
+
+            # **Improved Omega Ratio Calculation**
+            threshold = target  # Typically 0
+            gains_mask = port_returns > threshold
+            losses_mask = port_returns < threshold
+
+            num_gains = np.sum(gains_mask)
+            num_losses = np.sum(losses_mask)
+
+            # If not enough data points, return large penalty
+            if num_gains < min_obs or num_losses < min_obs:
+                return 1e6
+
+            # Compute robust gain (trimmed mean or median fallback)
+            gains = port_returns[gains_mask]
+            robust_gain = (
+                trim_mean(gains, proportiontocut=trim_fraction)
+                if len(gains) > 2
+                else np.median(gains)
             )
-            loss = (
-                -np.mean(port_returns[port_returns < threshold])
-                if np.any(port_returns < threshold)
-                else 1e6
+
+            # Compute robust loss (trimmed mean of absolute losses)
+            losses = port_returns[losses_mask]
+            robust_loss = (
+                -trim_mean(losses, proportiontocut=trim_fraction)
+                if len(losses) > 2
+                else -np.median(losses)
             )
-            omega_val = gain / loss if loss > 1e-8 else -1e6
+
+            # Avoid division by near-zero losses
+            if robust_loss < 1e-8:
+                robust_loss = 1e-8
+
+            omega_val = robust_gain / robust_loss
+
+            # Final blend: (1/3 Sharpe) + (1/3 Kappa) + (1/3 Omega)
             combined = (1 / 3) * sharpe_val + (1 / 3) * kappa_val + (1 / 3) * omega_val
             return -combined
 
@@ -208,25 +250,36 @@ def optimize_weights_objective(
             r_vals = returns.values
             if r_vals.ndim == 1:
                 r_vals = r_vals.reshape(-1, 1)
-            if r_vals.shape[1] != n:
+            T, m = r_vals.shape
+            if len(w) != m:
                 raise ValueError(
-                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}"
+                    f"Weight vector length {len(w)} does not match number of assets {m}."
                 )
-            port_returns = r_vals @ w
-            port_returns = np.atleast_1d(port_returns)
-            threshold = target
-            gain = (
-                np.mean(port_returns[port_returns > threshold])
-                if np.any(port_returns > threshold)
-                else 1e-8
+            port_returns = np.atleast_1d(r_vals @ w)
+            gains_mask = port_returns > target
+            losses_mask = port_returns < target
+            num_gains = np.sum(gains_mask)
+            num_losses = np.sum(losses_mask)
+            if num_gains < min_obs or num_losses < min_obs:
+                return 1e6
+            gains = port_returns[gains_mask]
+            robust_gain = (
+                trim_mean(gains, proportiontocut=trim_fraction)
+                if len(gains) > 2
+                else np.median(gains)
             )
-            loss = (
-                -np.mean(port_returns[port_returns < threshold])
-                if np.any(port_returns < threshold)
-                else 1e6
+            losses = port_returns[losses_mask]
+            robust_loss = (
+                -trim_mean(losses, proportiontocut=trim_fraction)
+                if len(losses) > 2
+                else -np.median(losses)
             )
-            omega_ratio_val = gain / loss if loss > 1e-8 else -1e6
+            if robust_loss < 1e-8:
+                robust_loss = 1e-8
+            omega_ratio_val = robust_gain / robust_loss
             return -omega_ratio_val
+
+        chosen_obj = obj
 
     elif objective == "aggro":
         if returns is None or mu is None:
@@ -249,6 +302,8 @@ def optimize_weights_objective(
             )
             return -combined
 
+        chosen_obj = obj
+
     else:
         print(
             f"Unknown objective specified: {objective}. Defaulting to Sharpe optimal."
@@ -259,6 +314,9 @@ def optimize_weights_objective(
             port_vol = np.sqrt(w.T @ cov @ w)
             return -port_return / port_vol if port_vol > 0 else 1e6
 
+        chosen_obj = obj
+
+    # Set initial weights (equal allocation)
     init_weights = np.ones(n) / n
     feasible_min = n * lower_bound
     feasible_max = n * max_weight
@@ -268,9 +326,8 @@ def optimize_weights_objective(
         )
 
     result = minimize(
-        obj, init_weights, method="SLSQP", bounds=bounds, constraints=constraints
+        chosen_obj, init_weights, method="SLSQP", bounds=bounds, constraints=constraints
     )
-
     if not result.success:
         raise ValueError("Optimization failed: " + result.message)
 
