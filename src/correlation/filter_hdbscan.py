@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 from sklearn.manifold import TSNE
 
-from utils.optimizer_utils import strategy_performance_metrics, get_objective_weights
+from models.optimizer_utils import strategy_performance_metrics, get_objective_weights
 from utils.logger import logger
 
 
@@ -129,5 +129,3 @@ def visualize_clusters_tsne(
         title="t-SNE Visualization of Asset Clusters",
     )
     fig.show()
-
-
