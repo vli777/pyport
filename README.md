@@ -2,12 +2,11 @@
 Modern Portfolio Optimization 
 
 # Upcoming 
-- [x] OU mean reversion
-- [x] Statistical arbitrage on cointegrated baskets
+- [x] OU mean reversion and multi-asset statistical arbitrage
 ![image](https://github.com/user-attachments/assets/c9b31d53-ef5e-46c9-a39f-e04aea618fe8)
+- [x] Return-risk-sharpe profile of portfolio assets to see how much they contribute
+- [x] New unified optimizers for a scale of 7 options, from defensive to aggressive
 - [ ] DuckDB migration for faster data loading
-
-
 
 # February 2025 
 - Updated features with more modern techniques: (VAE for anomaly detection would be considered more SOTA, but due to our data sample size and the marginal benefit vs computational resources required, isolation forest was selected.
