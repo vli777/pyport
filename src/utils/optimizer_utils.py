@@ -3,7 +3,12 @@ from typing import Tuple, Dict
 import numpy as np
 import pandas as pd
 
-from utils.performance_metrics import kappa_ratio, sharpe_ratio
+from utils.performance_metrics import (
+    conditional_var,
+    kappa_ratio,
+    omega_ratio,
+    sharpe_ratio,
+)
 
 
 def strategy_performance_metrics(
@@ -41,17 +46,27 @@ def strategy_performance_metrics(
         assets = returns_df  # Individual assets
 
     metrics = {}
-    for asset, ticker_returns in assets.items():
-        ticker_returns = ticker_returns.dropna()
-        if ticker_returns.empty:
+    for asset, asset_returns in assets.items():
+        asset_returns = asset_returns.dropna()
+        if asset_returns.empty:
             metrics[asset] = np.nan  # Return NaN instead of skipping
             continue
 
         # Compute individual metrics
-        cumulative_return = (ticker_returns + 1).prod() - 1  # Simple return formula
-        sr = sharpe_ratio(ticker_returns, risk_free_rate)
-        kp = kappa_ratio(ticker_returns, order=3) if "kappa" in objective_weights else 0
-        volatility = ticker_returns.std() if "min_variance" in objective_weights else 0
+        cumulative_return = (asset_returns + 1).prod() - 1  # Simple return formula
+        sr = sharpe_ratio(asset_returns, risk_free_rate)
+        kp = kappa_ratio(asset_returns, order=3) if "kappa" in objective_weights else 0
+        omega = (
+            omega_ratio(asset_returns, threshold=0)
+            if "omega" in objective_weights
+            else 0
+        )
+        cvar = (
+            conditional_var(asset_returns, alpha=0.05)
+            if "min_vol_tail" in objective_weights
+            else 0
+        )
+        vol = asset_returns.std() if "min_vol_tail" in objective_weights else 0
 
         # Apply penalty for negative cumulative return
         penalty = 0
@@ -65,13 +80,85 @@ def strategy_performance_metrics(
             objective_weights.get("cumulative_return", 0.0) * cumulative_return
             + objective_weights.get("sharpe", 1.0) * sr
             + objective_weights.get("kappa", 0.0) * kp
-            - objective_weights.get("min_variance", 0.0) * volatility
+            + objective_weights.get("omega", 0.0) * omega
+            - objective_weights.get("min_vol_tail", 0.0) * (cvar + vol)
             - penalty  # Apply additional penalty for negative returns
         )
 
         metrics[asset] = composite
 
     return pd.Series(metrics)
+
+
+def get_objective_weights(objective: str) -> dict:
+    """
+    Returns the objective weight dictionary based on the given objective.
+
+    Args:
+        objective (str): The optimization objective. Choices:
+                         ["min_vol_tail", "kappa", "sk_blend", "sharpe", "sko_blend", "omega", "aggro"]
+
+    Returns:
+        dict: Objective weight dictionary for computing performance metrics.
+    """
+    objective_mappings = {
+        "min_vol_tail": {
+            "cumulative_return": 0.0,  # Ignore total return
+            "min_vol_tail": 1.0,  # Fully minimize vol-tail-risk
+            "sharpe": 0.0,  # Ignore Sharpe ratio
+            "kappa": 0.0,  # Ignore Kappa ratio
+            "omega": 0.0,  # Ignore Omega ratio
+        },
+        "kappa": {
+            "cumulative_return": 0.0,
+            "sharpe": 0.0,
+            "kappa": 1.0,  # Fully maximize Kappa ratio
+            "omega": 0.0,
+            "min_vol_tail": 0.0,
+        },
+        "sk_blend": {
+            "cumulative_return": 0.0,
+            "sharpe": 0.5,  # Balanced risk-adjusted return
+            "kappa": 0.5,  # Some tail-risk adjustment
+            "omega": 0.0,
+            "min_vol_tail": 0.0,
+        },
+        "sharpe": {
+            "cumulative_return": 0.0,
+            "sharpe": 1.0,  # Fully maximize Sharpe ratio
+            "kappa": 0.0,
+            "omega": 0.0,
+            "min_vol_tail": 0.0,
+        },
+        "sko_blend": {
+            "cumulative_return": 0.0,
+            "sharpe": 1 / 3,
+            "kappa": 1 / 3,
+            "omega": 1 / 3,  # Adding Omega ratio to capture asymmetry
+            "min_vol_tail": 0.0,
+        },
+        "omega": {
+            "cumulative_return": 0.0,
+            "sharpe": 0.0,
+            "kappa": 0.0,
+            "omega": 1.0,  # Fully maximize Omega
+            "min_vol_tail": 0.0,
+        },
+        "aggro": {
+            "cumulative_return": 1 / 3,  # Prioritize raw return
+            "sharpe": 1 / 3,
+            "kappa": 1 / 3,
+            "omega": 0.0,  # Omega is risk-adjusted, aggro purely seeks raw return
+            "min_vol_tail": 0.0,
+        },
+    }
+
+    if objective not in objective_mappings:
+        raise ValueError(
+            f"Unknown objective: {objective}. Choose from {list(objective_mappings.keys())}"
+        )
+
+    return objective_mappings[objective]
 
 
 def strategy_composite_score(
@@ -97,54 +184,3 @@ def strategy_composite_score(
     )
 
     return score
-
-
-def get_objective_weights(objective: str) -> dict:
-    """
-    Returns the objective weight dictionary based on the given objective.
-
-    Args:
-        objective (str): The optimization objective. Choices: ["minvar", "sharpe", "blend", "aggro"]
-
-    Returns:
-        dict: Objective weight dictionary for computing performance metrics.
-    """
-    objective_mappings = {
-        "minvar": {
-            "cumulative_return": 0.0,  # Ignore total return
-            "sharpe": 0.0,  # Ignore Sharpe ratio
-            "kappa": 0.0,  # Ignore Kappa ratio
-            "min_variance": 1.0,  # Fully minimize variance
-        },
-        "kappa": {
-            "cumulative_return": 0.0,  # Ignore total return
-            "sharpe": 0.0,  # Ignore Sharpe ratio
-            "kappa": 1.0,  # Full maximize Kappa ratio
-            "min_variance": 0.0,  # Ignore variance
-        },
-        "blend": {
-            "cumulative_return": 0.0,  # Ignore total return
-            "sharpe": 0.5,  # Some risk-adjusted return
-            "kappa": 0.5,  # Some tail-risk adjustment
-            "min_variance": 0.0,  # Ignore variance minimization
-        },
-        "sharpe": {
-            "cumulative_return": 0.0,  # Ignore total return
-            "sharpe": 1.0,  # Fully maximize Sharpe ratio
-            "kappa": 0.0,  # Ignore Kappa
-            "min_variance": 0.0,  # Ignore variance
-        },
-        "aggro": {
-            "cumulative_return": 1 / 3,  # Prioritize returns
-            "sharpe": 1 / 3,  # Some risk-adjusted return
-            "kappa": 1 / 3,  # Some tail-risk adjustment
-            "min_variance": 0.0,  # Ignore variance minimization
-        },
-    }
-
-    if objective not in objective_mappings:
-        raise ValueError(
-            f"Unknown objective: {objective}. Choose from {list(objective_mappings.keys())}"
-        )
-
-    return objective_mappings[objective]
