@@ -71,7 +71,7 @@ def run_optimization_and_save(
         #     stack[model + str(years)] = normalized_weights.to_dict()
         #     save_model_results_to_cache(cache_key, final_weights.to_dict())
         # else:
-        
+
         # Ensure shorter-history stocks are retained
         asset_returns = np.log(df[symbols]).diff().dropna(how="all")
 
@@ -132,12 +132,16 @@ def run_optimization_and_save(
             stack[model + str(years)] = final_weights.to_dict()
 
         except Exception as e:
-            logger.error(f"Error processing weights for {model} {years} years: {e}")
+            logger.error(
+                f"Error processing weights for {model} {optimization_objective} {years} years: {e}"
+            )
             final_weights = pd.Series(dtype=float)
 
         # Ensure final_weights is valid
         if final_weights is None or final_weights.empty:
-            logger.warning(f"No valid weights generated for {model} ({years} years).")
+            logger.warning(
+                f"No valid weights generated for {model} {optimization_objective} ({years} years)."
+            )
             final_weights = pd.Series(dtype=float)  # Default empty Series
 
         # Output / Print / Plot results
