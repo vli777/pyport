@@ -14,6 +14,8 @@ include_etf_top_holdings: bool # Whether to include the top holdings of etf inpu
 min_weight: float # Minimum weight for inclusion in final weights
 max_weight: float # Maximum weight allowed for any individual hodling
 portfolio_max_size: int # Maximum number of assets in the portfolio
+portfolio_max_vol: float # Maximum allowable portfolio volatility, default 30%
+portfolio_max_cvar: float # Maximum allowable tail risk, default -2%
 risk_free_rate: float
 allow_short: bool # Whether to allow shorting (WIP)
 
