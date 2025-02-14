@@ -96,7 +96,7 @@ def get_objective_weights(objective: str) -> dict:
 
     Args:
         objective (str): The optimization objective. Choices:
-                         ["min_vol_tail", "kappa", "sk_blend", "sharpe", "sko_blend", "omega", "aggro"]
+                         ["min_vol_tail", "kappa", "sk_mix", "sharpe", "so_mix", "omega", "aggro"]
 
     Returns:
         dict: Objective weight dictionary for computing performance metrics.
@@ -116,7 +116,7 @@ def get_objective_weights(objective: str) -> dict:
             "omega": 0.0,
             "min_vol_tail": 0.0,
         },
-        "sk_blend": {
+        "sk_mix": {
             "cumulative_return": 0.0,
             "sharpe": 0.5,  # Balanced risk-adjusted return
             "kappa": 0.5,  # Some tail-risk adjustment
@@ -130,11 +130,11 @@ def get_objective_weights(objective: str) -> dict:
             "omega": 0.0,
             "min_vol_tail": 0.0,
         },
-        "sko_blend": {
+        "so_mix": {
             "cumulative_return": 0.0,
-            "sharpe": 1 / 3,
-            "kappa": 1 / 3,
-            "omega": 1 / 3,  # Adding Omega ratio to capture asymmetry
+            "sharpe": 0.5,  # Balanced risk-adjusted return
+            "kappa": 0.0,
+            "omega": 0.5,  # Adding Omega ratio to capture asymmetry
             "min_vol_tail": 0.0,
         },
         "omega": {

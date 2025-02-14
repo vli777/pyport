@@ -4,7 +4,7 @@ from typing import Optional, Union, Dict
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_samples
 
-from models.optimization_objective import optimize_weights_objective
+from models.optimize_portfolio import optimize_weights_objective
 from utils.logger import logger
 
 

@@ -102,10 +102,12 @@ def run_optimization_and_save(
 
             max_weight = config.max_weight
             optimization_objective = config.optimization_objective
+            allow_short = config.allow_short
             model_args = {
                 "returns": asset_returns,
                 "max_weight": max_weight,
                 "objective": optimization_objective,
+                "allow_short": allow_short,
             }
 
             try:
