@@ -4,33 +4,60 @@ import numpy as np
 import pandas as pd
 
 
-def build_sharpe_model(cov: pd.DataFrame, mu: np.ndarray, target_sum: float, bounds):
+import pyomo.environ as pyo
+import numpy as np
+import pandas as pd
+
+def build_sharpe_model(
+    cov: pd.DataFrame,
+    mu: np.ndarray,
+    target_sum: float,
+    max_weight: float = 0.2,
+    allow_short: bool = False,
+    vol_limit: float = None,   # Optional volatility constraint
+    cvar_limit: float = None,  # Optional CVaR constraint
+    alpha: float = 0.05,       # Default CVaR threshold
+    returns: pd.DataFrame = None,  # Required if using CVaR constraint
+):
     """
-    Build a Pyomo model to maximize the Sharpe ratio
-    (implemented by minimizing the negative Sharpe).
+    Build a Pyomo model to maximize the Sharpe ratio with optional volatility & CVaR constraints.
+
+    Args:
+        cov (pd.DataFrame): Covariance matrix.
+        mu (np.ndarray): Expected returns (1D array).
+        target_sum (float): Sum of portfolio weights (usually 1).
+        max_weight (float): Maximum weight per asset.
+        allow_short (bool): Allow short selling.
+        vol_limit (float): Optional volatility constraint.
+        cvar_limit (float): Optional CVaR constraint.
+        alpha (float): Tail probability for CVaR (default 5%).
+        returns (pd.DataFrame): Historical returns, required if `cvar_limit` is set.
+
+    Returns:
+        Pyomo optimization model.
     """
     model = pyo.ConcreteModel()
     n = len(mu)
     assets = list(range(n))
     model.assets = pyo.Set(initialize=assets)
 
-    # Decision variables: portfolio weights
+    # **Decision Variables: Portfolio Weights**
     def weight_bounds(model, i):
-        return bounds[i]
+        return (-max_weight, max_weight) if allow_short else (0, max_weight)
 
     model.w = pyo.Var(model.assets, domain=pyo.Reals, bounds=weight_bounds)
 
-    # Constraint: weights sum to target_sum.
+    # **Constraint: Weights Sum to Target**
     model.weight_sum = pyo.Constraint(
         expr=sum(model.w[i] for i in model.assets) == target_sum
     )
 
-    # Define expressions for portfolio return and variance.
+    # **Portfolio Return**
     model.port_return = pyo.Expression(
-        expr=sum(
-            model.w[i] * mu.iloc[i] for i in model.assets
-        )  # Use iloc[i] instead of mu[i]
+        expr=sum(model.w[i] * mu.iloc[i] for i in model.assets) 
     )
+
+    # **Portfolio Variance**
     model.port_variance = pyo.Expression(
         expr=sum(
             model.w[i] * cov.iloc[i, j] * model.w[j]
@@ -39,12 +66,48 @@ def build_sharpe_model(cov: pd.DataFrame, mu: np.ndarray, target_sum: float, bou
         )
     )
 
-    model.port_vol = pyo.Expression(expr=pyo.sqrt(model.port_variance))
+    # **Portfolio Volatility**
+    model.port_vol = pyo.Expression(expr=pyo.sqrt(model.port_variance + 1e-8))  
 
-    # Sharpe ratio: maximize (port_return/port_vol). Here we minimize its negative.
+    # **Objective: Maximize Sharpe Ratio (Minimize Negative Sharpe)**
     model.obj = pyo.Objective(
         expr=-model.port_return / model.port_vol, sense=pyo.minimize
     )
+
+    # **Optional Volatility Constraint**
+    if vol_limit:
+        model.vol_constraint = pyo.Constraint(
+            expr=model.port_vol <= vol_limit
+        )
+
+    # **Optional CVaR Constraint**
+    if cvar_limit and returns is not None:
+        T = returns.shape[0]
+        model.obs = pyo.Set(initialize=list(range(T)))
+
+        # Auxiliary Variables for CVaR Computation
+        model.q = pyo.Var(model.obs, domain=pyo.NonNegativeReals)  # Tail losses
+        model.z = pyo.Var(domain=pyo.NonNegativeReals)  # Scaling variable
+
+        # Portfolio Returns
+        model.port_returns = {
+            j: sum(model.w[i] * returns.iloc[j, i] for i in model.assets)
+            for j in range(T)
+        }
+
+        # CVaR Constraint: q[j] >= alpha * z - portfolio return
+        model.q_constraints = pyo.ConstraintList()
+        for j in model.obs:
+            model.q_constraints.add(model.q[j] >= alpha * model.z - model.port_returns[j])
+
+        # Sum of q[j] = 1 (Normalization)
+        model.q_sum = pyo.Constraint(expr=sum(model.q[j] for j in model.obs) == 1)
+
+        # Enforce CVaR Limit
+        model.cvar_constraint = pyo.Constraint(
+            expr=model.z - sum(model.q[j] * model.port_returns[j] for j in model.obs) >= cvar_limit
+        )
+
     return model
 
 
