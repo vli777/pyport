@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, Union
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
@@ -124,30 +124,37 @@ def omega_ratio(
     return robust_gain / robust_loss
 
 
-def conditional_var(returns: pd.Series, alpha: float = 0.05) -> float:
+def conditional_var(
+    returns: Union[np.ndarray, pd.Series], alpha: float = 0.05
+) -> float:
     """
-    Calculates Conditional Value at Risk (CVaR) for the given return series.
-
-    CVaR (Expected Shortfall) is the average loss beyond the Value at Risk (VaR) threshold.
+    Calculates Conditional Value at Risk (CVaR), also known as Expected Shortfall,
+    for a given return series. If there is insufficient data, it returns 0.0
+    (i.e. no additional penalty).
 
     Args:
-        returns (pd.Series): Daily strategy returns.
+        returns (Union[np.ndarray, pd.Series]): Daily strategy returns.
         alpha (float): Tail probability (default 5% worst losses).
 
     Returns:
-        float: Conditional Value at Risk (CVaR). Returns np.nan if there are not enough data points.
+        float: The CVaR value (a negative number for losses). If insufficient data,
+               returns 0.0.
     """
-    if returns.empty:
-        return np.nan  # No returns available
+    # Convert to pandas Series if needed
+    if isinstance(returns, np.ndarray):
+        returns = pd.Series(returns)
 
-    sorted_returns = returns.sort_values()
-    threshold_index = int(np.ceil(alpha * len(sorted_returns)))
+    # If not enough data, return 0.0 (no penalty)
+    if returns.empty or len(returns) < 2:
+        return 0.0
 
-    # Ensure we have enough values to compute CVaR
-    if threshold_index == 0 or threshold_index >= len(sorted_returns):
-        return np.nan
+    # Sort returns in ascending order (worst returns first)
+    sorted_losses = returns.sort_values(ascending=True)
+    threshold_index = int(np.ceil(alpha * len(sorted_losses)))
+    if threshold_index < 1:
+        return 0.0
 
-    tail_losses = sorted_returns[:threshold_index]
+    tail_losses = sorted_losses.iloc[:threshold_index]
     return tail_losses.mean()
 
 
