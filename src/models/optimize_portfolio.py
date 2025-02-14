@@ -152,7 +152,6 @@ def optimize_weights_objective(
         chosen_obj = obj
 
     elif objective.lower() == "sharpe":
-        print(f"allow_short: {allow_short}")
         if mu is None:
             raise ValueError(
                 "Expected returns (mu) must be provided for Sharpe optimization."
