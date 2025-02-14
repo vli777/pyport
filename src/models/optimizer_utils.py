@@ -116,17 +116,17 @@ def get_objective_weights(objective: str) -> dict:
             "omega": 0.0,
             "min_vol_tail": 0.0,
         },
+        "omega": {
+            "cumulative_return": 0.0,
+            "sharpe": 0.0,
+            "kappa": 0.0,
+            "omega": 1.0,  # Fully maximize Omega
+            "min_vol_tail": 0.0,
+        },
         "sk_mix": {
             "cumulative_return": 0.0,
             "sharpe": 0.5,  # Balanced risk-adjusted return
             "kappa": 0.5,  # Some tail-risk adjustment
-            "omega": 0.0,
-            "min_vol_tail": 0.0,
-        },
-        "sharpe": {
-            "cumulative_return": 0.0,
-            "sharpe": 1.0,  # Fully maximize Sharpe ratio
-            "kappa": 0.0,
             "omega": 0.0,
             "min_vol_tail": 0.0,
         },
@@ -137,17 +137,24 @@ def get_objective_weights(objective: str) -> dict:
             "omega": 0.5,  # Adding Omega ratio to capture asymmetry
             "min_vol_tail": 0.0,
         },
-        "omega": {
+         "sharpe": {
             "cumulative_return": 0.0,
-            "sharpe": 0.0,
+            "sharpe": 1.0,  # Fully maximize Sharpe ratio
             "kappa": 0.0,
-            "omega": 1.0,  # Fully maximize Omega
+            "omega": 0.0,
             "min_vol_tail": 0.0,
         },
         "aggro": {
             "cumulative_return": 1 / 3,  # Prioritize raw return
             "sharpe": 1 / 3,
             "kappa": 1 / 3,
+            "omega": 0.0,  # Omega is risk-adjusted, aggro purely seeks raw return
+            "min_vol_tail": 0.0,
+        },
+         "yolo": {
+            "cumulative_return": 0.5,  # Prioritize raw return
+            "sharpe": 0.5,
+            "kappa": 0.0,
             "omega": 0.0,  # Omega is risk-adjusted, aggro purely seeks raw return
             "min_vol_tail": 0.0,
         },

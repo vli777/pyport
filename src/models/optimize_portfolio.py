@@ -67,6 +67,7 @@ def optimize_weights_objective(
         np.ndarray: Optimized portfolio weights.
     """
     n = cov.shape[0]
+    max_weight = max(1.0 / n, max_weight)
     lower_bound = -max_weight if allow_short else 0.0
     bounds = [(lower_bound, max_weight)] * n
     constraints = {"type": "eq", "fun": lambda w: np.sum(w) - target_sum}
@@ -293,6 +294,22 @@ def optimize_weights_objective(
             combined = (
                 (1 / 3) * cumulative_return + (1 / 3) * sharpe_val + (1 / 3) * kappa_val
             )
+            return -combined
+
+        chosen_obj = obj
+    elif objective.lower() == "yolo":
+        if returns is None or returns.empty:
+            raise ValueError(
+                "Historical returns must be provided for YOLO optimization."
+            )
+
+        def obj(w: np.ndarray) -> float:
+            port_returns = returns.values @ w
+            cumulative_return = np.prod(1 + port_returns) - 1
+            port_mean = np.mean(port_returns)
+            port_vol = np.sqrt(w.T @ cov @ w)
+            sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
+            combined = (1 / 2) * cumulative_return + (1 / 2) * sharpe_val
             return -combined
 
         chosen_obj = obj
