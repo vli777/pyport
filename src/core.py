@@ -3,7 +3,7 @@
 from pathlib import Path
 import logging
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
@@ -206,42 +206,46 @@ def run_pipeline(
         return valid_symbols
 
     def perform_post_processing(
-        stack_weights: Dict[str, Any], returns_df: pd.DataFrame
-    ) -> Dict[str, any]:
+        stack_weights: Dict[str, Any],
+        period_weights: Optional[Union[Dict[str, float], np.ndarray]] = None,
+    ) -> Dict[str, Any]:
         """
         Perform post-processing on the stack data to calculate normalized weights.
+        Supports period weighting for combining asset weights.
 
         Args:
             stack_weights (Dict[str, Any]): The stack weights data containing optimization results.
-            returns_df (pd.DataFrame): Returns of the assets in the portfolio
+                Expected as a dict mapping time period identifiers to asset weight data (dict or pd.Series).
+            period_weights (Optional[Union[Dict[str, float], np.ndarray]]): Optional weights for each time period.
+                If provided, these weights will be used when averaging.
 
         Returns:
             Dict[str, Any]: Normalized weights as a dictionary.
         """
-        # Convert pd.Series to dictionaries if necessary
+        # Convert any pd.Series in stack_weights to dictionaries.
         processed_stack = {
             key: (value.to_dict() if isinstance(value, pd.Series) else value)
             for key, value in stack_weights.items()
         }
 
-        # Compute averaged weights
-        average_weights = stacked_output(processed_stack)
+        # Compute average weights (weighted or arithmetic).
+        average_weights = stacked_output(processed_stack, period_weights)
         if not average_weights:
             logger.warning(
                 "No valid averaged weights found. Skipping further processing."
             )
             return {}
 
-        # Sort weights in descending order
+        # Sort weights in descending order.
         sorted_weights = dict(
             sorted(average_weights.items(), key=lambda item: item[1], reverse=True)
         )
 
-        # Normalize weights and convert to a dictionary if necessary
+        # Normalize weights. (normalize_weights is used elsewhere so we leave it unchanged)
         normalized_weights = normalize_weights(sorted_weights, config.min_weight)
         logger.info(f"\nNormalized avg weights: {normalized_weights}")
 
-        # Ensure output is a dictionary
+        # Ensure output is a dictionary.
         if isinstance(normalized_weights, pd.Series):
             normalized_weights = normalized_weights.to_dict()
 
@@ -371,7 +375,7 @@ def run_pipeline(
         return {}
 
     # Post-processing of optimization results
-    normalized_avg_weights = perform_post_processing(stack, returns_df)
+    normalized_avg_weights = perform_post_processing(stack_weights=stack)
     if not normalized_avg_weights:
         return {}
 

@@ -12,7 +12,6 @@ from reversion.reversion_utils import (
     propagate_signals_by_similarity,
 )
 from reversion.optimize_reversion_strength import tune_reversion_alpha
-from utils.optimizer_utils import get_objective_weights
 from utils.caching_utils import load_parameters_from_pickle, save_parameters_to_pickle
 
 

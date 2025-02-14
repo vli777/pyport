@@ -2,6 +2,7 @@ from typing import Any, Dict, Tuple
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
+from scipy.stats import trim_mean
 
 from .logger import logger
 
@@ -66,32 +67,61 @@ def kappa_ratio(returns: pd.Series, order: int = 3, mar: float = 0.0) -> float:
     return mean_excess / (lpm ** (1 / order))
 
 
-def omega_ratio(returns: pd.Series, threshold: float = 0.0) -> float:
+def omega_ratio(
+    returns: pd.Series,
+    threshold: float = 0.0,
+    min_obs: int = 5,
+    trim_fraction: float = 0.1,
+) -> float:
     """
-    Calculates the Omega ratio of a return series.
+    Calculates the Omega ratio of a return series using robust statistics.
 
-    Omega = (Mean of gains above threshold) / (Mean of losses below threshold)
+    Omega = (Trimmed mean of gains above threshold) / (Trimmed mean of losses below threshold)
 
     Args:
         returns (pd.Series): Daily strategy returns.
         threshold (float): Minimum acceptable return (default 0 for break-even).
+        min_obs (int): Minimum number of observations required for gains/losses.
+        trim_fraction (float): Fraction of extreme values to trim from mean calculation.
 
     Returns:
-        float: Omega ratio. Returns np.nan if there are no losses.
+        float: Omega ratio. Returns np.nan if insufficient data.
     """
     if returns.empty:
         return np.nan  # No returns available
 
-    gains = returns[returns > threshold]
-    losses = returns[returns < threshold]
+    # Boolean masks for gains and losses
+    gains_mask = returns > threshold
+    losses_mask = returns < threshold
 
-    if losses.empty:
-        return np.nan  # No downside risk, return NaN to avoid bias
+    num_gains = np.sum(gains_mask)
+    num_losses = np.sum(losses_mask)
 
-    mean_gain = gains.mean() if not gains.empty else 1e-8
-    mean_loss = -losses.mean() if not losses.empty else 1e6  # Convert to positive
+    # If not enough data points, return NaN
+    if num_gains < min_obs or num_losses < min_obs:
+        return np.nan
 
-    return mean_gain / mean_loss if mean_loss > 1e-8 else np.nan
+    # Compute robust gain: trimmed mean or median fallback
+    gains = returns[gains_mask]
+    robust_gain = (
+        trim_mean(gains, proportiontocut=trim_fraction)
+        if len(gains) > 2
+        else np.median(gains)
+    )
+
+    # Compute robust loss: trimmed mean of absolute losses
+    losses = returns[losses_mask]
+    robust_loss = (
+        -trim_mean(losses, proportiontocut=trim_fraction)
+        if len(losses) > 2
+        else -np.median(losses)
+    )
+
+    # Avoid division by near-zero losses
+    if robust_loss < 1e-8:
+        robust_loss = 1e-8
+
+    return robust_gain / robust_loss
 
 
 def conditional_var(returns: pd.Series, alpha: float = 0.05) -> float:
