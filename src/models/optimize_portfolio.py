@@ -9,6 +9,7 @@ from models.pyomo_objective_models import (
     build_sharpe_model,
     build_sharpe_omega_model,
 )
+from utils.performance_metrics import conditional_var
 
 
 def empirical_lpm(portfolio_returns, target=0, order=3):
@@ -27,6 +28,11 @@ def empirical_lpm(portfolio_returns, target=0, order=3):
     return np.mean(diff**order)
 
 
+def portfolio_volatility(w: np.ndarray, cov: np.ndarray) -> float:
+    """Computes portfolio volatility (standard deviation) given weights and covariance."""
+    return np.sqrt(w.T @ cov @ w)
+
+
 def optimize_weights_objective(
     cov: pd.DataFrame,
     mu: Optional[Union[pd.Series, np.ndarray]] = None,
@@ -37,6 +43,10 @@ def optimize_weights_objective(
     max_weight: float = 1.0,
     allow_short: bool = False,
     target_sum: float = 1.0,
+    vol_limit: float = 0.3,  # Constraint: maximum allowable portfolio volatility
+    cvar_limit: float = -0.02,  # Constraint: CVaR cannot exceed this threshold
+    alpha: float = 0.05,  # Tail probability for CVaR, default 5%
+    solver_method: str = "SLSQP",
 ) -> np.ndarray:
     """
     Optimize portfolio weights using a unified, robust interface.
@@ -62,15 +72,39 @@ def optimize_weights_objective(
         max_weight (float): Maximum weight per asset (default 1.0).
         allow_short (bool): Allow short positions (default False).
         target_sum (float): Sum of weights (default 1.0).
+        vol_limit (float): Maximum acceptable portfolio volatility (default 30%).
+        cvar_limit (float): Maximum acceptable CVaR value (default -2%).
+        alpha (float): Tail probability for CVaR constraint.
+        solver_method (str): Solver method for use with scipy minimize (default "SQSLP").
 
     Returns:
         np.ndarray: Optimized portfolio weights.
     """
     n = cov.shape[0]
+    # Ensure max_weight is at least equal to equal allocation
     max_weight = max(1.0 / n, max_weight)
     lower_bound = -max_weight if allow_short else 0.0
     bounds = [(lower_bound, max_weight)] * n
-    constraints = {"type": "eq", "fun": lambda w: np.sum(w) - target_sum}
+
+    # Define CVaR constraint using the conditional_var function.
+    def cvar_constraint(w):
+        port_returns = returns @ w  # returns is (T x n) and w is (n,)
+        cvar_value = conditional_var(pd.Series(port_returns), alpha)
+        # Constraint: cvar_limit - computed CVaR must be >= 0.
+        return cvar_limit - cvar_value
+
+    # Define the volatility constraint with a small slack to ease numerical issues.
+    def vol_constraint(w):
+        return vol_limit - portfolio_volatility(w, cov)
+
+    constraints = [
+        {"type": "eq", "fun": lambda w: np.sum(w) - target_sum},
+    ]
+
+    # Add CVaR and max volatility if the objectives do not already account for it
+    # if objective not in ["min_vol_tail", "max_kappa"]:
+        # constraints.append({"type": "ineq", "fun": cvar_constraint})
+        # constraints.append({"type": "ineq", "fun": vol_constraint})
 
     # We'll assign the selected objective function to chosen_obj.
     chosen_obj = None
@@ -92,14 +126,9 @@ def optimize_weights_objective(
                 )
             port_returns = np.atleast_1d(r_vals @ w)
             # Volatility component (standard deviation)
-            vol = np.std(port_returns)
+            port_vol = portfolio_volatility(port_returns, cov)
             # CVaR component (tail risk)
-            port_losses = -port_returns  # Convert returns to losses
-            sorted_losses = np.sort(port_losses)
-            alpha = 0.05  # Tail probability (worst 5% losses
-            num_tail = max(1, int(np.ceil(alpha * len(sorted_losses))))
-            tail_losses = sorted_losses[:num_tail]
-            cvar = np.mean(tail_losses)
+            cvar = conditional_var(port_returns, alpha)
             # -----------------------------
             # Configurable Weights:
             lambda_vol = 1.0  # Set high to mimic min_var; 0 to ignore volatility.
@@ -109,7 +138,7 @@ def optimize_weights_objective(
             penalty = lambda_penalty * (-cvar) if cvar < 0 else 0.0
 
             # The overall objective: minimize lambda_vol * volatility plus the tail risk penalty.
-            return lambda_vol * vol + penalty
+            return lambda_vol * port_vol + penalty
 
         chosen_obj = obj
 
@@ -152,37 +181,46 @@ def optimize_weights_objective(
         chosen_obj = obj
 
     elif objective.lower() == "sharpe":
-        if mu is None:
+        if returns is None or mu is None:
             raise ValueError(
-                "Expected returns (mu) must be provided for Sharpe optimization."
+                "Both historical returns and expected returns (mu) must be provided for Kappa and Sharpe optimization."
             )
 
-        # use scipy min for simplicity if not using bound constraints
+        if True:  # n < 50:
 
-        # # Build and solve Pyomo model
-        # model_pyomo = build_sharpe_model(
-        #     cov, mu, target_sum=1.0, bounds=[(-1, 1) for _ in range(n)] if allow_short else [(0, 1) for _ in range(n)]
-        # )
-        # solver = pyo.SolverFactory(
-        #     "ipopt",
-        #     executable="H:/Solvers/Ipopt-3.14.17-win64-msvs2022-md/bin/ipopt.exe",
-        # )
-        # solver.solve(model_pyomo)
+            def obj(w: np.ndarray) -> float:
+                port_return = w @ mu
+                port_vol = portfolio_volatility(w, cov)
+                return -port_return / port_vol if port_vol > 0 else 1e6
 
-        # # Extract weights
-        # weights_pyomo = np.array(
-        #     [pyo.value(model_pyomo.w[i]) for i in model_pyomo.assets]
-        # )
-        # # sharpe_pyomo = -pyo.value(model_pyomo.obj)
+            chosen_obj = obj
 
-        # return weights_pyomo
+        else:
+            # Build and solve Pyomo model
+            model_pyomo = build_sharpe_model(
+                cov=cov,
+                mu=mu,
+                returns=returns,
+                target_sum=1.0,
+                max_weight=max_weight,
+                allow_short=allow_short,
+                vol_limit=vol_limit,
+                cvar_limit=cvar_limit,
+                alpha=alpha,
+            )
+            solver = pyo.SolverFactory(
+                "ipopt",
+                executable="H:/Solvers/Ipopt-3.14.17-win64-msvs2022-md/bin/ipopt.exe",
+            )
+            solver.solve(model_pyomo)
 
-        def obj(w: np.ndarray) -> float:
-            port_return = w @ mu
-            port_vol = np.sqrt(w.T @ cov @ w)
-            return -port_return / port_vol if port_vol > 0 else 1e6
+            # Extract weights
+            weights_pyomo = np.array(
+                [pyo.value(model_pyomo.w[i]) for i in model_pyomo.assets]
+            )
+            # sharpe_pyomo = -pyo.value(model_pyomo.obj)
 
-        chosen_obj = obj
+            return weights_pyomo
 
     elif objective.lower() == "so_mix":
         # A simple combined objective: 50% sharpe + 50% omega.
@@ -327,17 +365,16 @@ def optimize_weights_objective(
 
     # Set initial weights (equal allocation)
     init_weights = np.ones(n) / n
-    feasible_min = n * lower_bound
-    feasible_max = n * max_weight
-    if not (feasible_min <= target_sum <= feasible_max):
-        raise ValueError(
-            f"Infeasible target_sum: {target_sum}. It must be between {feasible_min} and {feasible_max} for n={n} assets."
-        )
+
+    # Check feasibility of initial weights; adjust if necessary.
+    if portfolio_volatility(init_weights, cov) > vol_limit:
+        # Slightly dampen the weights if initial volatility is too high.
+        init_weights *= 0.95
 
     result = minimize(
         chosen_obj,
         init_weights,
-        method="SLSQP",
+        method=solver_method,
         bounds=bounds,
         constraints=constraints,
     )
