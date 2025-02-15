@@ -2,6 +2,7 @@
 import numpy as np
 from scipy.optimize import dual_annealing
 
+
 def global_optimize(
     chosen_obj,
     bounds,
@@ -15,7 +16,7 @@ def global_optimize(
 ):
     """
     Global optimization using dual annealing, with penalty functions to enforce constraints.
-    
+
     Parameters:
       - chosen_obj: callable
           The base objective function that takes a weight vector (w) and returns a scalar.
@@ -35,16 +36,16 @@ def global_optimize(
           Multiplier for constraint violations.
       - maxiter: int
           Maximum number of iterations for dual annealing.
-    
+
     Returns:
       - numpy.ndarray: Optimized weight vector.
     """
-    
+
     def penalty_function(w):
         pen = 0.0
         # Enforce equality constraint: sum(w) == target_sum.
         pen += penalty_weight * abs(np.sum(w) - target_sum)
-        
+
         # For inequality constraints (if applied and objective is not exempted).
         if apply_constraints and (objective not in ["min_vol_tail", "max_kappa"]):
             if cvar_constraint is not None:
@@ -59,11 +60,14 @@ def global_optimize(
 
     def global_objective(w):
         return chosen_obj(w) + penalty_function(w)
-    
+
     result = dual_annealing(global_objective, bounds=bounds, maxiter=maxiter)
     if not result.success:
-        raise ValueError("Global optimization via dual annealing failed: " + result.message)
+        raise ValueError(
+            "Global optimization via dual annealing failed: " + result.message
+        )
     return result.x
+
 
 # Example usage
 """

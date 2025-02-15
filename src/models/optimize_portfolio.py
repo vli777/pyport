@@ -107,7 +107,7 @@ def optimize_weights_objective(
     ]
 
     # Add CVaR and max volatility if the objectives do not already account for it
-    if apply_constraints and objective not in ["min_vol_tail", "max_kappa"]:
+    if apply_constraints and objective.lower() not in ["min_vol_tail", "max_kappa"]:
         constraints.append({"type": "ineq", "fun": cvar_constraint})
         constraints.append({"type": "ineq", "fun": vol_constraint})
 
@@ -154,12 +154,20 @@ def optimize_weights_objective(
             )
 
         def obj(w: np.ndarray) -> float:
-            port_returns = returns.values @ w
+            # Compute portfolio returns using NumPy conversion
+            port_returns = returns.to_numpy() @ w
             port_mean = np.mean(port_returns)
-            lpm = empirical_lpm(port_returns, target=target, order=order)
-            if lpm < 1e-8:
-                return 1e6
-            kappa = (port_mean - target) / (lpm ** (1.0 / order))
+
+            # Compute empirical lower partial moment (order 3)
+            lpm = empirical_lpm(port_returns, target=target, order=3)
+
+            # Floor lpm to avoid division by zero or extremely small values
+            lpm = max(lpm, 1e-6)
+
+            # Compute Kappa ratio: (port_mean - target) / (lpm^(1/3))
+            kappa = (port_mean - target) / (lpm ** (1.0 / 3))
+
+            # Return negative Kappa because we are minimizing
             return -kappa
 
         chosen_obj = obj
@@ -175,11 +183,13 @@ def optimize_weights_objective(
             port_returns = returns.values @ w
             port_mean = np.mean(port_returns)
             port_vol = np.sqrt(w.T @ cov @ w)
+
             lpm = empirical_lpm(port_returns, target=target, order=order)
-            kappa_val = (
-                (port_mean - target) / (lpm ** (1.0 / order)) if lpm > 1e-8 else -1e6
-            )
+            lpm = max(lpm, 1e-6)
+            kappa_val = (port_mean - target) / (lpm ** (1.0 / order))
+
             sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
+
             combined = 0.5 * kappa_val + 0.5 * sharpe_val
             return -combined
 

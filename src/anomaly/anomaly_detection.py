@@ -131,5 +131,3 @@ def remove_anomalous_stocks(
         plot_anomaly_overview(anomalous_stocks, cache, returns_df)
 
     return valid_tickers
-
-
