@@ -254,7 +254,7 @@ def build_sharpe_omega_model(
     # --- Sharpe Ratio Components ---
     # Portfolio return: w^T mu.
     model.port_return = pyo.Expression(
-        expr=sum(model.w[i] * mu[i] for i in model.assets)
+        expr=sum(model.w[i] * mu.iloc[i] for i in model.assets)
     )
     # Portfolio variance: w^T cov w.
     model.port_variance = pyo.Expression(
