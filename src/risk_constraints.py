@@ -4,7 +4,10 @@ import pandas as pd
 import optuna
 
 from config import Config
-from models.optimize_portfolio import optimize_weights_objective, portfolio_volatility
+from models.optimize_portfolio import (
+    optimize_weights_objective,
+    estimated_portfolio_volatility,
+)
 from utils.performance_metrics import conditional_var
 from utils.portfolio_utils import convert_weights_to_series
 from utils import logger
@@ -61,7 +64,7 @@ def adaptive_risk_constraints(
             )
 
             # Evaluate portfolio volatility using the risk estimates' covariance matrix.
-            port_vol = portfolio_volatility(final_w, risk_estimates["cov"])
+            port_vol = estimated_portfolio_volatility(final_w, risk_estimates["cov"])
 
             # Compute CVaR using the historical returns and given alpha.
             computed_cvar = conditional_var(
