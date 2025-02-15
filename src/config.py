@@ -19,6 +19,7 @@ class Config:
     portfolio_max_size: int
     portfolio_max_vol: float
     portfolio_max_cvar: float
+    portfolio_risk_priority: str
     risk_free_rate: float
     allow_short: bool
 
@@ -73,9 +74,10 @@ class Config:
             include_etf_top_holdings=config_dict.get("include_etf_top_holdings", False),
             min_weight=config_dict.get("min_weight", 0.01),
             max_weight=config_dict.get("max_weight", 1.0),
-            portfolio_max_size=config_dict.get("portfolio_max_size", 20),
-            portfolio_max_vol=config_dict.get("portfolio_max_vol", 0.2),
+            portfolio_max_size=config_dict.get("portfolio_max_size"),
+            portfolio_max_vol=config_dict.get("portfolio_max_vol"),
             portfolio_max_cvar=config_dict.get("portfolio_max_cvar", -0.02),
+            portfolio_risk_priority=config_dict.get("portfolio_risk_priority"),
             risk_free_rate=config_dict.get("risk_free_rate", 0.0),
             allow_short=config_dict.get("allow_short", False),
             plot_daily_returns=config_dict.get("plot_daily_returns", False),
