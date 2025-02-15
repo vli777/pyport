@@ -365,13 +365,17 @@ def plot_risk_return_contributions(
         symbols = symbols[:min_length]
 
     if len(return_contributions) != min_length:
-        logger.warning(f"Trimming return contributions from {len(return_contributions)} to {min_length}")
+        logger.warning(
+            f"Trimming return contributions from {len(return_contributions)} to {min_length}"
+        )
         return_contributions = return_contributions[:min_length]
 
     if len(risk_contributions) != min_length:
-        logger.warning(f"Trimming risk contributions from {len(risk_contributions)} to {min_length}")
+        logger.warning(
+            f"Trimming risk contributions from {len(risk_contributions)} to {min_length}"
+        )
         risk_contributions = risk_contributions[:min_length]
-        
+
     # Compute Sharpe Ratio (Avoid division by zero)
     sharpe_ratios = np.divide(
         return_contributions,
