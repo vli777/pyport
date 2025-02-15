@@ -112,7 +112,10 @@ def optimize_weights_objective(
         constraints.append({"type": "ineq", "fun": vol_constraint})
 
     # Ensure Kappa always has a volatility constraint, even if apply_constraints=False
-    if objective.lower() == "kappa" and {"type": "ineq", "fun": vol_constraint} not in constraints:
+    if (
+        objective.lower() == "kappa"
+        and {"type": "ineq", "fun": vol_constraint} not in constraints
+    ):
         constraints.append({"type": "ineq", "fun": vol_constraint})
 
     # We'll assign the selected objective function to chosen_obj.

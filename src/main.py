@@ -60,11 +60,7 @@ def iterative_pipeline_runner(
         # Exclude the simulated portfolio symbol from the next epoch
         valid_symbols = [symbol for symbol in result["symbols"] if symbol != "SIM_PORT"]
 
-        print(f"\nTop symbols from epoch {epoch + 1}: {valid_symbols}")
-
-        logger.info(
-            f"Epoch {epoch + 1}: Selected {len(valid_symbols)} symbols for the next iteration."
-        )
+        logger.info(f"\nTop symbols from epoch {epoch + 1}: {valid_symbols}")
 
         # Check for convergence
         if set(valid_symbols) == previous_top_symbols:

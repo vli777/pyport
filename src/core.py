@@ -441,8 +441,10 @@ def run_pipeline(
 
         # Align weights with covariance matrix assets
         cov_assets = risk_estimates["cov"].index
-        normalized_avg_weights = normalized_avg_weights.reindex(cov_assets, fill_value=0)
-        
+        normalized_avg_weights = normalized_avg_weights.reindex(
+            cov_assets, fill_value=0
+        )
+
         # Compute the current portfolio risk measures from the unconstrained weights.
         current_vol = estimated_portfolio_volatility(
             normalized_avg_weights.values, risk_estimates["cov"]
@@ -501,7 +503,7 @@ def run_pipeline(
         pre_boxplot_stats,
         return_contributions_pct,
         risk_contributions_pct,
-        valid_symbols
+        valid_symbols,
     ) = compute_performance_results(
         data=dfs["data"],
         start_date=str(dfs["start"]),
