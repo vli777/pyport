@@ -111,6 +111,10 @@ def optimize_weights_objective(
         constraints.append({"type": "ineq", "fun": cvar_constraint})
         constraints.append({"type": "ineq", "fun": vol_constraint})
 
+    # Ensure Kappa always has a volatility constraint, even if apply_constraints=False
+    if objective.lower() == "kappa" and {"type": "ineq", "fun": vol_constraint} not in constraints:
+        constraints.append({"type": "ineq", "fun": vol_constraint})
+
     # We'll assign the selected objective function to chosen_obj.
     chosen_obj = None
 
@@ -121,7 +125,11 @@ def optimize_weights_objective(
             )
 
         def obj(w: np.ndarray) -> float:
-            r_vals = returns.values
+            valid_assets = cov.index.intersection(
+                returns.columns
+            )  # Ensure assets match
+            r_vals = returns[valid_assets].values  # Select only matching assets
+
             # Ensure returns are 2D: shape (T, n)
             if r_vals.ndim == 1:
                 r_vals = r_vals.reshape(-1, 1)
