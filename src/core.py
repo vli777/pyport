@@ -9,7 +9,7 @@ import pandas as pd
 
 from config import Config
 from plotly_graphs import plot_graphs
-from portfolio_optimization import run_optimization_and_save
+from portfolio_optimization import apply_final_constraints, run_optimization_and_save
 from process_symbols import process_symbols
 from anomaly.anomaly_detection import remove_anomalous_stocks
 from correlation.filter_hdbscan import (
@@ -22,6 +22,7 @@ from apply_reversion import (
     compute_performance_results,
 )
 from correlation.cluster_assets import get_cluster_labels
+from correlation.correlation_utils import compute_lw_covariance
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -379,6 +380,61 @@ def run_pipeline(
     if not normalized_avg_weights:
         return {}
 
+    # Preprocess df_all to compute risk estimates for the merged portfolio.
+    # This follows the original logic: flatten the MultiIndex and reindex by all_dates and valid_symbols.
+    df_risk = df_all.loc[start_long:end_long].copy()
+    if isinstance(
+        df_risk.columns, pd.MultiIndex
+    ) and "Adj Close" in df_risk.columns.get_level_values(1):
+        try:
+            df_risk = df_risk.xs("Adj Close", level=1, axis=1)
+            all_tickers = df_risk.columns.get_level_values(0).unique()
+            df_risk = df_risk.reindex(columns=all_tickers, fill_value=np.nan)
+            df_risk.columns.name = None  # Flatten MultiIndex properly
+        except KeyError:
+            logger.warning(
+                "Adj Close column not found when processing risk estimates. Using original DataFrame."
+            )
+
+    # Align stocks with different start dates using the full available date range.
+    df_risk = df_risk.reindex(index=all_dates, columns=valid_symbols, fill_value=np.nan)
+    df_risk.index.name = "Date"
+    df_risk.columns.name = None
+
+    # Compute returns based on the processed data.
+    asset_returns = np.log(df_risk).diff().dropna(how="all")
+    valid_assets = asset_returns.dropna(
+        thresh=int(len(asset_returns) * 0.5), axis=1
+    ).columns
+    asset_returns = asset_returns[valid_assets]
+
+    # Compute risk estimates.
+    try:
+        cov_daily = compute_lw_covariance(asset_returns)
+    except ValueError as e:
+        logger.error(f"Covariance computation failed: {e}")
+        return {}
+
+    trading_days_per_year = 252
+    mu_daily = asset_returns.mean()
+    mu_annual = mu_daily * trading_days_per_year
+    cov_annual = cov_daily * trading_days_per_year
+    mu_annual = mu_annual.loc[valid_assets].reindex(valid_assets)
+
+    risk_estimates = {
+        "cov": cov_annual,
+        "mu": mu_annual,
+        "returns": asset_returns,
+    }
+
+    # Final pass: apply risk constraints to the merged portfolio
+    if not isinstance(normalized_avg_weights, pd.Series):
+        normalized_avg_weights = pd.Series(normalized_avg_weights)
+    risk_adjusted_weights = normalize_weights(
+        weights=apply_final_constraints(normalized_avg_weights, risk_estimates, config),
+        min_weight=config.min_weight,
+    )
+
     # Prepare input metadata
     valid_models = [
         model for models in config.models.values() if models for model in models
@@ -406,7 +462,7 @@ def run_pipeline(
         data=dfs["data"],
         start_date=str(dfs["start"]),
         end_date=str(dfs["end"]),
-        allocation_weights=normalized_avg_weights,
+        allocation_weights=risk_adjusted_weights,
         sorted_symbols=sorted_symbols,
         combined_input_files=combined_input_files,
         combined_models=combined_models,
@@ -419,7 +475,7 @@ def run_pipeline(
         end_date=str(dfs["end"]),
         models=combined_models,
         symbols=sorted_symbols,
-        normalized_avg=normalized_avg_weights,
+        normalized_avg=risk_adjusted_weights,
         daily_returns=daily_returns,
         cumulative_returns=cumulative_returns,
         boxplot_stats=pre_boxplot_stats,
@@ -432,7 +488,7 @@ def run_pipeline(
         if config.reversion_type == "z":
             final_result_dict = apply_z_reversion(
                 dfs=dfs,
-                normalized_avg_weights=normalized_avg_weights,
+                normalized_avg_weights=risk_adjusted_weights,
                 combined_input_files=combined_input_files,
                 combined_models=combined_models,
                 sorted_time_periods=sorted_time_periods,
@@ -443,7 +499,7 @@ def run_pipeline(
         else:
             final_result_dict = apply_ou_reversion(
                 dfs=dfs,
-                normalized_avg_weights=normalized_avg_weights,
+                normalized_avg_weights=risk_adjusted_weights,
                 combined_input_files=combined_input_files,
                 combined_models=combined_models,
                 sorted_time_periods=sorted_time_periods,
