@@ -28,7 +28,7 @@ def empirical_lpm(portfolio_returns, target=0, order=3):
     return np.mean(diff**order)
 
 
-def portfolio_volatility(w: np.ndarray, cov: np.ndarray) -> float:
+def estimated_portfolio_volatility(w: np.ndarray, cov: np.ndarray) -> float:
     """Computes portfolio volatility (standard deviation) given weights and covariance."""
     return np.sqrt(w.T @ cov @ w)
 
@@ -100,7 +100,7 @@ def optimize_weights_objective(
 
     # Define the volatility constraint with a small slack to ease numerical issues.
     def vol_constraint(w):
-        return vol_limit - portfolio_volatility(w, cov)
+        return vol_limit - estimated_portfolio_volatility(w, cov)
 
     constraints = [
         {"type": "eq", "fun": lambda w: np.sum(w) - target_sum},
@@ -131,7 +131,7 @@ def optimize_weights_objective(
                 )
             port_returns = np.atleast_1d(r_vals @ w)
             # Volatility component (standard deviation)
-            port_vol = portfolio_volatility(port_returns, cov)
+            port_vol = estimated_portfolio_volatility(port_returns, cov)
             # CVaR component (tail risk)
             cvar = conditional_var(port_returns, alpha)
             # -----------------------------
@@ -205,7 +205,7 @@ def optimize_weights_objective(
 
             def obj(w: np.ndarray) -> float:
                 port_return = w @ mu
-                port_vol = portfolio_volatility(w, cov)
+                port_vol = estimated_portfolio_volatility(w, cov)
                 return -port_return / port_vol if port_vol > 0 else 1e6
 
             chosen_obj = obj
@@ -397,7 +397,7 @@ def optimize_weights_objective(
     )
 
     # Check feasibility of initial weights; adjust if necessary.
-    if portfolio_volatility(init_weights, cov) > vol_limit:
+    if estimated_portfolio_volatility(init_weights, cov) > vol_limit:
         # Slightly dampen the weights if initial volatility is too high.
         init_weights *= 0.95
 
