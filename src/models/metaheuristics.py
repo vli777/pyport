@@ -47,7 +47,7 @@ def global_optimize(
         pen += penalty_weight * abs(np.sum(w) - target_sum)
 
         # For inequality constraints (if applied and objective is not exempted).
-        if apply_constraints and (objective not in ["min_vol_tail", "max_kappa"]):
+        if apply_constraints:
             if cvar_constraint is not None:
                 cvar_val = cvar_constraint(w)
                 if cvar_val < 0:

@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 
 from utils.performance_metrics import (
-    conditional_var,
     kappa_ratio,
     omega_ratio,
     sharpe_ratio,
@@ -61,12 +60,6 @@ def strategy_performance_metrics(
             if "omega" in objective_weights
             else 0
         )
-        cvar = (
-            conditional_var(asset_returns, alpha=0.05)
-            if "min_vol_tail" in objective_weights
-            else 0
-        )
-        vol = asset_returns.std() if "min_vol_tail" in objective_weights else 0
 
         # Apply penalty for negative cumulative return
         penalty = 0
@@ -81,7 +74,6 @@ def strategy_performance_metrics(
             + objective_weights.get("sharpe", 1.0) * sr
             + objective_weights.get("kappa", 0.0) * kp
             + objective_weights.get("omega", 0.0) * omega
-            - objective_weights.get("min_vol_tail", 0.0) * (cvar + vol)
             - penalty  # Apply additional penalty for negative returns
         )
 
@@ -96,67 +88,53 @@ def get_objective_weights(objective: str) -> dict:
 
     Args:
         objective (str): The optimization objective. Choices:
-                         ["min_vol_tail", "kappa", "sk_mix", "sharpe", "so_mix", "omega", "aggro"]
+                         ["kappa", "sk_mix", "sharpe", "so_mix", "omega", "aggro"]
 
     Returns:
         dict: Objective weight dictionary for computing performance metrics.
     """
     objective_mappings = {
-        "min_vol_tail": {
-            "cumulative_return": 0.0,  # Ignore total return
-            "min_vol_tail": 1.0,  # Fully minimize vol-tail-risk
-            "sharpe": 0.0,  # Ignore Sharpe ratio
-            "kappa": 0.0,  # Ignore Kappa ratio
-            "omega": 0.0,  # Ignore Omega ratio
-        },
         "kappa": {
             "cumulative_return": 0.0,
             "sharpe": 0.0,
             "kappa": 1.0,  # Fully maximize Kappa ratio
             "omega": 0.0,
-            "min_vol_tail": 0.0,
         },
         "omega": {
             "cumulative_return": 0.0,
             "sharpe": 0.0,
             "kappa": 0.0,
             "omega": 1.0,  # Fully maximize Omega
-            "min_vol_tail": 0.0,
         },
         "sk_mix": {
             "cumulative_return": 0.0,
             "sharpe": 0.5,  # Balanced risk-adjusted return
             "kappa": 0.5,  # Some tail-risk adjustment
             "omega": 0.0,
-            "min_vol_tail": 0.0,
         },
         "so_mix": {
             "cumulative_return": 0.0,
             "sharpe": 0.5,  # Balanced risk-adjusted return
             "kappa": 0.0,
             "omega": 0.5,  # Adding Omega ratio to capture asymmetry
-            "min_vol_tail": 0.0,
         },
         "sharpe": {
             "cumulative_return": 0.0,
             "sharpe": 1.0,  # Fully maximize Sharpe ratio
             "kappa": 0.0,
             "omega": 0.0,
-            "min_vol_tail": 0.0,
         },
         "aggro": {
             "cumulative_return": 1 / 3,  # Prioritize raw return
             "sharpe": 1 / 3,
             "kappa": 1 / 3,
             "omega": 0.0,  # Omega is risk-adjusted, aggro purely seeks raw return
-            "min_vol_tail": 0.0,
         },
         "yolo": {
             "cumulative_return": 0.5,  # Prioritize raw return
             "sharpe": 0.5,
             "kappa": 0.0,
             "omega": 0.0,  # Omega is risk-adjusted, aggro purely seeks raw return
-            "min_vol_tail": 0.0,
         },
     }
 

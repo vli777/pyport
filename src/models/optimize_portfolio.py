@@ -54,20 +54,15 @@ def optimize_weights_objective(
     Optimize portfolio weights using a unified, robust interface.
 
     For 'sharpe', expected returns (mu) and covariance (cov) are used.
-    For objectives such as 'kappa', 'sk_mix', 'so_mix', 'omega', 'aggro',
-    and the unified 'min_vol_tail', historical returns (returns) are required.
-
-    The 'min_vol_tail' objective minimizes overall portfolio volatility with a penalty
-    if the tail performance (CVaR) is below break-even. You can mimic:
-      - Pure min_var by setting lambda_vol high and lambda_penalty = 0.
-      - Pure min_cvar by setting lambda_vol = 0 and lambda_penalty high.
+    For objectives such as 'kappa', 'sk_mix', 'so_mix', 'omega', 'aggro', 
+    historical returns (returns) are required.
 
     Args:
         cov (pd.DataFrame): Covariance matrix of asset returns.
         mu (Optional[Union[pd.Series, np.ndarray]]): Expected returns.
         returns (Optional[pd.DataFrame]): Historical returns (T x n), where T is time.
         objective (str): Optimization objective. Options:
-                         ["min_vol_tail", "kappa", "sk_mix", "sharpe",
+                         ["kappa", "sk_mix", "sharpe",
                           "so_mix", "omega", "aggro"].
         order (int): Order for downside risk metrics (default 3).
         target (float): Target return (default 0.0).
@@ -106,8 +101,8 @@ def optimize_weights_objective(
         {"type": "eq", "fun": lambda w: np.sum(w) - target_sum},
     ]
 
-    # Add CVaR and max volatility if the objectives do not already account for it
-    if apply_constraints and objective.lower() not in ["min_vol_tail"]:
+    # Add CVaR and max volatility 
+    if apply_constraints:
         constraints.append({"type": "ineq", "fun": cvar_constraint})
         constraints.append({"type": "ineq", "fun": vol_constraint})
 
@@ -121,44 +116,7 @@ def optimize_weights_objective(
     # We'll assign the selected objective function to chosen_obj.
     chosen_obj = None
 
-    if objective.lower() == "min_vol_tail":
-        if returns is None:
-            raise ValueError(
-                "Historical returns must be provided for min_vol_tail optimization."
-            )
-
-        def obj(w: np.ndarray) -> float:
-            valid_assets = cov.index.intersection(
-                returns.columns
-            )  # Ensure assets match
-            r_vals = returns[valid_assets].values  # Select only matching assets
-
-            # Ensure returns are 2D: shape (T, n)
-            if r_vals.ndim == 1:
-                r_vals = r_vals.reshape(-1, 1)
-            if r_vals.shape[1] != n:
-                raise ValueError(
-                    f"Shape mismatch: returns has {r_vals.shape[1]} column(s), expected {n}."
-                )
-            port_returns = np.atleast_1d(r_vals @ w)
-            # Volatility component (standard deviation)
-            port_vol = estimated_portfolio_volatility(port_returns, cov)
-            # CVaR component (tail risk)
-            cvar = conditional_var(port_returns, alpha)
-            # -----------------------------
-            # Configurable Weights:
-            lambda_vol = 1.0  # Set high to mimic min_var; 0 to ignore volatility.
-            lambda_penalty = 1.0  # Set high to mimic min_cvar; 0 to ignore tail risk.
-            # -----------------------------
-            # Apply penalty only if CVaR is negative (i.e. tail losses yield a loss).
-            penalty = lambda_penalty * (-cvar) if cvar < 0 else 0.0
-
-            # The overall objective: minimize lambda_vol * volatility plus the tail risk penalty.
-            return lambda_vol * port_vol + penalty
-
-        chosen_obj = obj
-
-    elif objective.lower() == "kappa":
+    if objective.lower() == "kappa":
         if returns is None:
             raise ValueError(
                 "Historical returns must be provided for kappa optimization."

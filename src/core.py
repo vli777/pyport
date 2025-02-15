@@ -383,9 +383,7 @@ def run_pipeline(
     if not normalized_avg_weights:
         return {}
 
-    if config.optimization_objective.lower() not in ["min_vol_tail"] and (
-        config.portfolio_max_vol is not None or config.portfolio_max_cvar is not None
-    ):
+    if config.portfolio_max_vol is not None or config.portfolio_max_cvar is not None:
         # Preprocess df_all to compute risk estimates for the merged portfolio.
         # This follows the original logic: flatten the MultiIndex and reindex by all_dates and valid_symbols.
         df_risk = df_all.loc[start_long:end_long].copy()
