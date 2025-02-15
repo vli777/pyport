@@ -49,9 +49,8 @@ def output(
         logger.warning(
             f"The following symbols are missing in the data and will be filled with zeros: {missing_symbols}"
         )
-        # Add missing columns with zero values
-        for symbol in missing_symbols:
-            data[symbol] = 0
+        missing_df = pd.DataFrame(0, index=data.index, columns=missing_symbols)
+        data = pd.concat([data, missing_df], axis=1)
 
     # Trim if we have more assets than allowed
     if len(clean_weights) > config.portfolio_max_size:
