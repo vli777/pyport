@@ -137,7 +137,7 @@ def get_objective_weights(objective: str) -> dict:
             "omega": 0.5,  # Adding Omega ratio to capture asymmetry
             "min_vol_tail": 0.0,
         },
-         "sharpe": {
+        "sharpe": {
             "cumulative_return": 0.0,
             "sharpe": 1.0,  # Fully maximize Sharpe ratio
             "kappa": 0.0,
@@ -151,7 +151,7 @@ def get_objective_weights(objective: str) -> dict:
             "omega": 0.0,  # Omega is risk-adjusted, aggro purely seeks raw return
             "min_vol_tail": 0.0,
         },
-         "yolo": {
+        "yolo": {
             "cumulative_return": 0.5,  # Prioritize raw return
             "sharpe": 0.5,
             "kappa": 0.0,
