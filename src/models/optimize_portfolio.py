@@ -43,7 +43,7 @@ def optimize_weights_objective(
     max_weight: float = 1.0,
     allow_short: bool = False,
     target_sum: float = 1.0,
-    vol_limit: float = 0.3,  # Constraint: maximum allowable portfolio volatility
+    vol_limit: float = 0.15,  # Constraint: maximum allowable portfolio volatility
     cvar_limit: float = -0.02,  # Constraint: CVaR cannot exceed this threshold
     alpha: float = 0.05,  # Tail probability for CVaR, default 5%
     solver_method: str = "SLSQP",
