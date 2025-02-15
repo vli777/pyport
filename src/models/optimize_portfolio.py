@@ -47,6 +47,8 @@ def optimize_weights_objective(
     cvar_limit: float = -0.02,  # Constraint: CVaR cannot exceed this threshold
     alpha: float = 0.05,  # Tail probability for CVaR, default 5%
     solver_method: str = "SLSQP",
+    initial_guess: Optional[np.ndarray] = None,
+    apply_constraints: bool = False,
 ) -> np.ndarray:
     """
     Optimize portfolio weights using a unified, robust interface.
@@ -76,6 +78,9 @@ def optimize_weights_objective(
         cvar_limit (float): Maximum acceptable CVaR value (default -2%).
         alpha (float): Tail probability for CVaR constraint.
         solver_method (str): Solver method for use with scipy minimize (default "SQSLP").
+        initial_guess (np.ndarray): Initial estimates for the optimal portfolio weights.
+        apply_constraints (bool): Whether to add risk constraints (volatility and CVaR).
+
 
     Returns:
         np.ndarray: Optimized portfolio weights.
@@ -102,9 +107,9 @@ def optimize_weights_objective(
     ]
 
     # Add CVaR and max volatility if the objectives do not already account for it
-    # if objective not in ["min_vol_tail", "max_kappa"]:
-        # constraints.append({"type": "ineq", "fun": cvar_constraint})
-        # constraints.append({"type": "ineq", "fun": vol_constraint})
+    if apply_constraints and objective not in ["min_vol_tail", "max_kappa"]:
+        constraints.append({"type": "ineq", "fun": cvar_constraint})
+        constraints.append({"type": "ineq", "fun": vol_constraint})
 
     # We'll assign the selected objective function to chosen_obj.
     chosen_obj = None
@@ -364,7 +369,9 @@ def optimize_weights_objective(
         chosen_obj = obj
 
     # Set initial weights (equal allocation)
-    init_weights = np.ones(n) / n
+    init_weights = (
+        initial_guess if initial_guess is not None else np.full(n, target_sum / n)
+    )
 
     # Check feasibility of initial weights; adjust if necessary.
     if portfolio_volatility(init_weights, cov) > vol_limit:
