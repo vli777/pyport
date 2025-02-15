@@ -361,7 +361,7 @@ def plot_risk_return_contributions(
     min_length = min(len(symbols), len(return_contributions), len(risk_contributions))
 
     if len(symbols) != min_length:
-        logger.warning(f"Trimming symbols list from {len(symbols)} to {min_length}")
+        logger.info(f"Trimming symbols list from {len(symbols)} to {min_length}")
         symbols = symbols[:min_length]
 
     if len(return_contributions) != min_length:
