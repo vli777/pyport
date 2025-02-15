@@ -191,7 +191,7 @@ def optimize_weights_objective(
                 "Both historical returns and expected returns (mu) must be provided for Kappa and Sharpe optimization."
             )
 
-        if True:  # n < 50:
+        if n < 50:
 
             def obj(w: np.ndarray) -> float:
                 port_return = w @ mu
@@ -206,11 +206,11 @@ def optimize_weights_objective(
                 cov=cov,
                 mu=mu,
                 returns=returns,
-                target_sum=1.0,
+                target_sum=target_sum,
                 max_weight=max_weight,
                 allow_short=allow_short,
-                vol_limit=vol_limit,
-                cvar_limit=cvar_limit,
+                vol_limit=vol_limit if apply_constraints else None,
+                cvar_limit=cvar_limit if apply_constraints else None,
                 alpha=alpha,
             )
             solver = pyo.SolverFactory(
@@ -235,13 +235,16 @@ def optimize_weights_objective(
             )
         # Build the combined model.
         model = build_sharpe_omega_model(
-            cov,
-            mu,
-            returns,
-            target=0.0,
-            target_sum=1.0,
-            max_weight=1.0,
-            allow_short=False,
+            cov=cov,
+            mu=mu,
+            returns=returns,
+            target=target,
+            target_sum=target_sum,
+            max_weight=max_weight,
+            allow_short=allow_short,
+            vol_limit=vol_limit if apply_constraints else None,
+            cvar_limit=cvar_limit if apply_constraints else None,
+            alpha=alpha,
         )
 
         # Solve using a non-linear solver, e.g., IPOPT.
@@ -293,7 +296,17 @@ def optimize_weights_objective(
                 "Historical returns must be provided for Omega optimization."
             )
 
-        model = build_omega_model(returns, target, target_sum, max_weight, allow_short)
+        model = build_omega_model(
+            cov=cov,
+            returns=returns,
+            target=target,
+            target_sum=target_sum,
+            max_weight=max_weight,
+            allow_short=allow_short,
+            vol_limit=vol_limit if apply_constraints else None,
+            cvar_limit=cvar_limit if apply_constraints else None,
+            alpha=alpha,
+        )
         # Since the transformed omega formulation is linear, you could use an LP solver like CBC.
         solver = pyo.SolverFactory(
             "cbc",
