@@ -7,14 +7,17 @@ from config import Config
 from utils.performance_metrics import (
     calculate_portfolio_alpha,
     calculate_portfolio_performance,
+    conditional_var,
     kappa_ratio,
     max_drawdown,
+    omega_ratio,
     portfolio_volatility,
     sharpe_ratio,
     time_under_water,
 )
 from utils import logger
 from utils.portfolio_utils import (
+    estimate_optimal_num_assets,
     trim_weights,
 )
 
@@ -53,8 +56,12 @@ def output(
         data = pd.concat([data, missing_df], axis=1)
 
     # Trim if we have more assets than allowed
-    if len(clean_weights) > config.portfolio_max_size:
-        clean_weights = trim_weights(clean_weights, config.portfolio_max_size)
+    portfolio_max_size = estimate_optimal_num_assets(
+        vol_limit=config.portfolio_max_vol, portfolio_max_size=config.portfolio_max_size
+    ) or len(clean_weights)
+
+    if len(clean_weights) > portfolio_max_size:
+        clean_weights = trim_weights(clean_weights, portfolio_max_size)
 
     # If nothing left, can't proceed
     if len(clean_weights) == 0:
@@ -71,7 +78,9 @@ def output(
 
     sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
     kappa = kappa_ratio(portfolio_returns)
+    omega = omega_ratio(portfolio_returns)
     volatility = portfolio_volatility(portfolio_returns)
+    cvar = conditional_var(portfolio_returns)
     max_dd = max_drawdown(portfolio_cumulative_returns)
     time_uw = time_under_water(portfolio_cumulative_returns)
 
@@ -123,18 +132,19 @@ def output(
     print(f"Optimization Method:\t{optimization_model}")
     print(f"Sharpe Ratio:\t\t{sharpe:.2f}")
     print(f"Kappa Ratio:\t\t{kappa:.2f}")
+    print(f"Omega Ratio:\t\t{omega:.2f}")
     print(f"Portfolio Volatility:\t{volatility * 100:.2f}%")
+    print(f"Conditional VaR:\t\t{cvar * 100:.2f}%")
     print(f"Max Drawdown:\t\t{max_dd * 100:.2f}%")
     print(f"Time Under Water:\t{time_uw} days")
 
     # Only print Alpha if it was successfully calculated
     if alpha is not None:
-        print(f"Portfolio Alpha vs Market:\t{alpha:.2f}%")
+        print(f"Portfolio Alpha:\t{alpha:.2f}%")
 
     print(f"Cumulative Return:\t{cumulative_pct:.2f}%")
 
     # Print portfolio allocation in tab-separated format
-    print("Asset\tWeight")  # Column headers
     sorted_weights = sorted(clean_weights.items(), key=lambda kv: kv[1], reverse=True)
     for asset, weight in sorted_weights:
         print(f"{asset}\t{weight:.4f}")

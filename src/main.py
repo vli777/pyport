@@ -7,6 +7,7 @@ from plotly_graphs import plot_graphs, plot_risk_return_contributions
 from reversion.reversion_plots import plot_reversion_params, plot_reversion_signals
 from utils.caching_utils import load_parameters_from_pickle
 from utils.logger import logger
+from utils.portfolio_utils import estimate_optimal_num_assets
 
 
 def iterative_pipeline_runner(
@@ -29,6 +30,11 @@ def iterative_pipeline_runner(
             config.portfolio_max_size = portfolio_max_size
         else:
             raise TypeError("portfolio_max_size must be an integer")
+    else:
+        config.portfolio_max_size = estimate_optimal_num_assets(
+            vol_limit=config.portfolio_max_vol,
+            portfolio_max_size=config.portfolio_max_size,
+        ) or (len(initial_symbols) if initial_symbols is not None else 30)
 
     # initial_symbols and run_local are handled separately as they may not be part of config
     symbols = initial_symbols
