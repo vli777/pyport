@@ -319,3 +319,52 @@ def limit_portfolio_size(
         limited_weights = limited_weights / current_sum * target_sum
 
     return limited_weights
+
+
+def estimate_optimal_num_assets(
+    vol_limit: float, portfolio_max_size: Optional[int]
+) -> int:
+    """
+    Determine the optimal number of assets in a portfolio using the "volatility squared" rule.
+
+    The rule suggests that the ideal number of assets (N*) in a portfolio is approximately:
+        N* ≈ (vol_limit * 100)^2
+    where:
+      - vol_limit represents the target portfolio volatility (e.g., 0.12 for 12%).
+      - The intuition is that portfolio variance reduction through diversification follows
+        a diminishing returns pattern, and this formula provides a balance between risk
+        reduction and over-diversification.
+
+    Practical Considerations:
+    - The computed N* is **rounded** to the nearest integer.
+    - The number of assets is **bounded** between:
+        - A minimum of 1 (to ensure at least one asset is included).
+        - A maximum defined by `portfolio_max_size` (user-defined upper limit), if provided.
+    - If `vol_limit` is **not set or invalid**, it falls back to `portfolio_max_size` (or 20 as default).
+
+    Args:
+        vol_limit (float): The target portfolio volatility constraint (e.g., 0.12 for 12%).
+        portfolio_max_size (Optional[int]): The target portfolio max n assets size (can be `None`).
+
+    Returns:
+        int: The optimal number of assets to include in the portfolio.
+    """
+    if vol_limit is None or vol_limit <= 0:
+        logger.warning("Volatility limit not set or invalid. Using default max size.")
+        return portfolio_max_size  # Fallback to user-defined max size
+
+    # Compute optimal number of assets
+    optimal_n = round((vol_limit * 100) ** 2)
+
+    # Apply constraints: Ensure it does not exceed max size and is at least 1
+    optimal_n = max(optimal_n, 1)  # Ensure at least 1 asset
+    if portfolio_max_size is not None:
+        optimal_n = min(
+            optimal_n, portfolio_max_size
+        )  # Apply upper limit only if defined
+
+    logger.info(
+        f"Using optimal portfolio size: {optimal_n} assets (vol_limit={vol_limit:.2f})"
+    )
+
+    return optimal_n
