@@ -8,6 +8,7 @@ from sklearn.covariance import LedoitWolf
 from result_output import output_results
 from config import Config
 from models.nco import nested_clustered_optimization
+from models.optimize_portfolio import optimize_weights_objective
 from utils import logger
 from utils.caching_utils import (
     load_model_results_from_cache,
@@ -144,7 +145,7 @@ def run_optimization_and_save(
             )
             final_weights = pd.Series(dtype=float)  # Default empty Series
 
-        # Output / Print / Plot results
+        # Output results for individual optimizations
         output_results(
             df=df,
             weights=final_weights,
@@ -154,3 +155,53 @@ def run_optimization_and_save(
             years=years,
             config=config,
         )
+
+
+def apply_final_constraints(
+    initial_weights: pd.Series, risk_estimates: dict, config: Config
+) -> pd.Series:
+    """
+    Given a merged (unconstrained) set of weights, re-optimize using risk constraints.
+    If the initial volatility constraint is too strict, it is relaxed iteratively.
+    """
+    # Align weights with covariance matrix assets
+    cov_assets = risk_estimates["cov"].index
+    initial_weights = initial_weights.reindex(cov_assets, fill_value=0)
+    initial_weights_np = initial_weights.values
+
+    # Initialize volatility constraint
+    vol_limit = config.portfolio_max_vol
+    max_attempts = 5  # Number of retries with relaxed constraints
+    relaxation_factor = 1.10  # Increase vol_limit by 10% per retry
+
+    for attempt in range(max_attempts):
+        try:
+            final_w = optimize_weights_objective(
+                cov=risk_estimates["cov"],
+                mu=risk_estimates["mu"],
+                returns=risk_estimates["returns"],
+                objective=config.optimization_objective,
+                order=3,
+                target=0.0,
+                max_weight=config.max_weight,
+                allow_short=config.allow_short,
+                target_sum=1.0,
+                vol_limit=vol_limit,  # Adaptive constraint
+                cvar_limit=config.portfolio_max_cvar,
+                alpha=0.05,
+                solver_method="SLSQP",
+                initial_guess=initial_weights_np,
+                apply_constraints=True,
+            )
+            # If optimization succeeds, return results
+            return convert_weights_to_series(final_w, index=risk_estimates["cov"].index)
+
+        except ValueError as e:
+            logger.warning(
+                f"Optimization failed with vol_limit={vol_limit:.4f}. Retrying..."
+            )
+            vol_limit *= relaxation_factor  # Increase volatility limit by 10%
+
+    # If all attempts fail, return initial weights as fallback
+    logger.error("All optimization attempts failed. Returning initial weights.")
+    return initial_weights
