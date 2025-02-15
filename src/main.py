@@ -143,6 +143,6 @@ if __name__ == "__main__":
     final_result = iterative_pipeline_runner(
         config=config,
         initial_symbols=None,  # Or provide initial symbols as needed
-        max_epochs=10,
+        max_epochs=1,
         run_local=True,
     )
