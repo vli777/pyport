@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
@@ -69,9 +69,10 @@ def kappa_ratio(returns: pd.Series, order: int = 3, mar: float = 0.0) -> float:
 
 def omega_ratio(
     returns: pd.Series,
-    threshold: float = 0.0,
+    threshold: Optional[float] = None,  # Allow dynamic threshold
     min_obs: int = 5,
     trim_fraction: float = 0.1,
+    risk_free_rate: float = 0.0,
 ) -> float:
     """
     Calculates the Omega ratio of a return series using robust statistics.
@@ -79,16 +80,30 @@ def omega_ratio(
     Omega = (Trimmed mean of gains above threshold) / (Trimmed mean of losses below threshold)
 
     Args:
-        returns (pd.Series): Daily strategy returns.
-        threshold (float): Minimum acceptable return (default 0 for break-even).
+        returns (pd.Series): Strategy returns.
+        threshold (Optional[float]): Minimum acceptable return (default None, dynamically determined).
         min_obs (int): Minimum number of observations required for gains/losses.
         trim_fraction (float): Fraction of extreme values to trim from mean calculation.
+        risk_free_rate (float): Default to the risk-free rate if no dynamic threshold is provided.
 
     Returns:
         float: Omega ratio. Returns np.nan if insufficient data.
     """
     if returns.empty:
         return np.nan  # No returns available
+
+    # Dynamically determine threshold if not provided
+    if threshold is None:
+        if returns.notna().sum() > 10:  # Ensure enough observations
+            threshold = np.percentile(
+                returns.dropna(), 30
+            )  # Use 30th percentile of historical returns
+        else:
+            threshold = (
+                risk_free_rate  # Fallback to risk-free rate if data is insufficient
+            )
+
+    logger.info(f"Using Omega threshold (τ): {threshold:.4f}")
 
     # Boolean masks for gains and losses
     gains_mask = returns > threshold

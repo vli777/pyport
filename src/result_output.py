@@ -78,7 +78,7 @@ def output(
 
     sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
     kappa = kappa_ratio(portfolio_returns)
-    omega = omega_ratio(portfolio_returns)
+    omega = omega_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
     volatility = portfolio_volatility(portfolio_returns)
     cvar = conditional_var(portfolio_returns)
     max_dd = max_drawdown(portfolio_cumulative_returns)

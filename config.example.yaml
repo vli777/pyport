@@ -17,7 +17,7 @@ portfolio_max_size: int # Maximum number of assets in the portfolio, default vol
 portfolio_max_vol: float # Maximum allowable target portfolio volatility
 portfolio_max_cvar: float # Maximum allowable tail risk e.g. -0.02 for -2%
 portfolio_risk_priority: str # Prioritize 'vol' or 'cvar' while allowing the other to adapt when searching for a risk-constrained solution
-risk_free_rate: float
+risk_free_rate: float # e.g. T-bill return, default 0.0
 allow_short: bool # Whether to allow shorting (WIP)
 
 plot_daily_returns: bool # Whether to plot daily returns
