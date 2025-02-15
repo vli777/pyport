@@ -1,9 +1,11 @@
 from pathlib import Path
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
+import numpy as np
 import pandas as pd
 
 from config import Config
+from boxplot import generate_boxplot_data
 from utils.performance_metrics import (
     calculate_portfolio_alpha,
     calculate_portfolio_performance,
@@ -12,6 +14,7 @@ from utils.performance_metrics import (
     max_drawdown,
     omega_ratio,
     portfolio_volatility,
+    risk_return_contributions,
     sharpe_ratio,
     time_under_water,
 )
@@ -175,3 +178,96 @@ def output_results(
         time_period=years,
         config=config,
     )
+
+
+def compute_performance_results(
+    data: pd.DataFrame,
+    start_date: str,
+    end_date: str,
+    allocation_weights: Dict[str, float],
+    sorted_symbols: list,
+    combined_input_files: str,
+    combined_models: str,
+    sorted_time_periods: list,
+    config: Config,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray, List[str]]:
+    """
+    Compute daily returns, cumulative returns, boxplot stats, and risk/return contributions.
+
+    Returns:
+        daily_returns, cumulative_returns, boxplot_stats,
+        return_contributions_pct, risk_contributions_pct, valid_symbols
+    """
+    # Compute daily & cumulative returns
+    daily_returns, cumulative_returns = output(
+        data=data,
+        start_date=start_date,
+        end_date=end_date,
+        allocation_weights=allocation_weights,
+        inputs=combined_input_files,
+        optimization_model=f"{combined_models} ENSEMBLE: {config.optimization_objective}",
+        time_period=sorted_time_periods[0],
+        config=config,
+    )
+
+    boxplot_stats = generate_boxplot_data(daily_returns)
+
+    # Filter valid symbols: those present in cumulative_returns
+    valid_symbols = [s for s in sorted_symbols if s in cumulative_returns.columns]
+
+    # Re-sort valid_symbols according to the original order in sorted_symbols
+    # (Since sorted_symbols is already sorted, this ensures consistency.)
+    valid_symbols = sorted(valid_symbols, key=lambda s: sorted_symbols.index(s))
+
+    # Build weights array in the same order
+    np_weights = np.array([allocation_weights[s] for s in valid_symbols])
+
+    # Extract final cumulative returns per stock (in the same order)
+    contribution_cumulative_returns = cumulative_returns.loc[
+        cumulative_returns.index[-1], valid_symbols
+    ].values
+
+    # Compute risk and return contributions
+    return_contributions_pct, risk_contributions_pct = risk_return_contributions(
+        weights=np_weights,
+        daily_returns=daily_returns[valid_symbols],
+        cumulative_returns=contribution_cumulative_returns,
+    )
+
+    return (
+        daily_returns,
+        cumulative_returns,
+        boxplot_stats,
+        return_contributions_pct,
+        risk_contributions_pct,
+        valid_symbols,
+    )
+
+
+def build_final_result_dict(
+    start_date: str,
+    end_date: str,
+    models: str,
+    symbols: list,
+    normalized_avg: dict,
+    daily_returns: pd.DataFrame,
+    cumulative_returns: pd.DataFrame,
+    boxplot_stats,
+    return_contributions: np.ndarray,
+    risk_contributions: np.ndarray,
+) -> dict:
+    """
+    Constructs the final results dictionary.
+    """
+    return {
+        "start_date": start_date,
+        "end_date": end_date,
+        "models": models,
+        "symbols": symbols,
+        "normalized_avg": normalized_avg,
+        "daily_returns": daily_returns,
+        "cumulative_returns": cumulative_returns,
+        "boxplot_stats": boxplot_stats,
+        "return_contributions": return_contributions,
+        "risk_contributions": risk_contributions,
+    }

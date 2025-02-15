@@ -501,6 +501,7 @@ def run_pipeline(
         pre_boxplot_stats,
         return_contributions_pct,
         risk_contributions_pct,
+        valid_symbols
     ) = compute_performance_results(
         data=dfs["data"],
         start_date=str(dfs["start"]),
@@ -517,7 +518,7 @@ def run_pipeline(
         start_date=str(dfs["start"]),
         end_date=str(dfs["end"]),
         models=combined_models,
-        symbols=sorted_symbols,
+        symbols=valid_symbols,
         normalized_avg=final_weights,
         daily_returns=daily_returns,
         cumulative_returns=cumulative_returns,
