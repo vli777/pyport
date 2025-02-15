@@ -67,8 +67,8 @@ def nested_clustered_optimization(
         returns = returns[valid_assets]
 
     if target is None and returns is not None:
-        target = np.percentile(
-            returns.to_numpy().flatten(), 30
+        target = max(
+            np.percentile(returns.to_numpy().flatten(), 30), risk_free_rate
         )  # 30th percentile threshold
     else:
         target = risk_free_rate

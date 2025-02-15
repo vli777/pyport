@@ -28,13 +28,16 @@ def adaptive_risk_constraints(
     allow_short: bool = config.allow_short
     risk_priority: str = config.portfolio_risk_priority
     optimization_objective: str = config.optimization_objective
+    risk_free_rate: float = config.risk_free_rate
 
     if "returns" not in risk_estimates or risk_estimates["returns"].empty:
         target = config.risk_free_rate
     else:
         simulated_returns = risk_estimates["returns"]
         # Set target (τ) dynamically based on simulated returns (30th percentile threshold)
-        target = np.percentile(simulated_returns.to_numpy().flatten(), 30)
+        target = max(
+            np.percentile(simulated_returns.to_numpy().flatten(), 30), risk_free_rate
+        )
 
     def objective(trial):
         """

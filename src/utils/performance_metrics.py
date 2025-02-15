@@ -95,15 +95,15 @@ def omega_ratio(
     # Dynamically determine threshold if not provided
     if threshold is None:
         if returns.notna().sum() > 10:  # Ensure enough observations
-            threshold = np.percentile(
-                returns.dropna(), 30
+            threshold = max(
+                np.percentile(returns.dropna(), 30), risk_free_rate
             )  # Use 30th percentile of historical returns
         else:
             threshold = (
                 risk_free_rate  # Fallback to risk-free rate if data is insufficient
             )
 
-    logger.info(f"Using Omega threshold (τ): {threshold:.4f}")
+    # logger.info(f"Using Omega threshold (τ): {threshold:.4f}")
 
     # Boolean masks for gains and losses
     gains_mask = returns > threshold
