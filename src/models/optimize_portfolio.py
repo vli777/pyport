@@ -107,7 +107,7 @@ def optimize_weights_objective(
     ]
 
     # Add CVaR and max volatility if the objectives do not already account for it
-    if apply_constraints and objective.lower() not in ["min_vol_tail", "max_kappa"]:
+    if apply_constraints and objective.lower() not in ["min_vol_tail"]:
         constraints.append({"type": "ineq", "fun": cvar_constraint})
         constraints.append({"type": "ineq", "fun": vol_constraint})
 
