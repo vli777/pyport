@@ -6,12 +6,26 @@ from sklearn.covariance import LedoitWolf
 from utils.logger import logger
 
 
+def compute_lw_covariance(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Computes the Ledoit-Wolf shrinkage covariance matrix for asset returns.
+
+    Args:
+        df (pd.DataFrame): Asset returns DataFrame (T x n), where T is time.
+
+    Returns:
+        pd.DataFrame: Ledoit-Wolf covariance matrix (n x n).
+    """
+    lw = LedoitWolf()
+    covariance = lw.fit(df).covariance_
+    return pd.DataFrame(covariance, index=df.columns, columns=df.columns)
+
+
 def compute_lw_correlation(df: pd.DataFrame) -> pd.DataFrame:
     """
     Computes a Ledoit-Wolf covariance and converts it to a correlation matrix.
     """
-    lw = LedoitWolf()
-    covariance = lw.fit(df).covariance_
+    covariance = compute_lw_covariance(df)
     stddev = np.sqrt(np.diag(covariance))
     corr_matrix = covariance / np.outer(stddev, stddev)
     np.fill_diagonal(corr_matrix, 0)
