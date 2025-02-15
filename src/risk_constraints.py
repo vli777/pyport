@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 import numpy as np
 import pandas as pd
 import optuna
@@ -14,48 +14,48 @@ from utils import logger
 
 
 def adaptive_risk_constraints(
-    config: Config, risk_estimates: dict, initial_weights: np.ndarray
-):
+    config: Config, risk_estimates: Dict[str, np.ndarray], initial_weights: np.ndarray
+) -> Optional[np.ndarray]:
+    """
+    Adjusts portfolio risk constraints using Optuna to find an optimal relaxation factor.
+    Returns the optimized portfolio weights or None if optimization fails.
+    """
+
+    # Extract and explicitly typecast key config values
+    max_vol: float = float(config.portfolio_max_vol)
+    max_cvar: float = float(config.portfolio_max_cvar)
+    max_weight: float = float(config.max_weight)
+    allow_short: bool = config.allow_short
+    risk_priority: str = config.portfolio_risk_priority
+    optimization_objective: str = config.optimization_objective
+
     def objective(trial):
         """
-        Optuna objective for tuning constraint relaxations.
-
-        It adjusts the constraints based on a suggested relaxation factor and then
-        evaluates the resulting portfolio's volatility and CVaR. The loss is defined
-        as the sum of squared violations of the original risk targets.
-
-        Returns a scalar loss that is 0 if both risk constraints are met.
+        Optuna objective function for tuning constraint relaxations.
+        Computes portfolio loss based on adjusted volatility and CVaR constraints.
         """
-        # Suggest a relaxation factor (in steps of 0.1)
-        relaxation_factor = trial.suggest_float("relax_factor", 0.8, 1.3, step=0.1)
 
-        # Adjust constraints based on risk_priority
-        if config.portfolio_risk_priority == "cvar":
-            vol_limit_adj = (
-                config.portfolio_max_vol * relaxation_factor
-            )  # Relax volatility constraint
-            cvar_limit_adj = config.portfolio_max_cvar  # Keep CVaR fixed
-        elif config.portfolio_risk_priority == "vol":
-            vol_limit_adj = config.portfolio_max_vol  # Keep volatility fixed
-            cvar_limit_adj = (
-                config.portfolio_max_cvar * relaxation_factor
-            )  # Relax CVaR constraint
-        else:  # "both"
-            vol_limit_adj = config.portfolio_max_vol * relaxation_factor
-            cvar_limit_adj = config.portfolio_max_cvar * relaxation_factor
+        # Suggest relaxation factor in steps of 0.1
+        relax_factor = trial.suggest_float("relax_factor", 0.8, 1.3, step=0.1)
+
+        # Adjust constraints based on priority
+        vol_limit_adj, cvar_limit_adj = adjust_constraints(
+            max_vol, max_cvar, relax_factor, risk_priority
+        )
 
         try:
+            # Optimize portfolio with adjusted constraints
             final_w = optimize_weights_objective(
                 cov=risk_estimates["cov"],
                 mu=risk_estimates["mu"],
                 returns=risk_estimates["returns"],
-                objective=config.optimization_objective,
+                objective=optimization_objective,
                 order=3,
                 target=0.0,
-                max_weight=config.max_weight,
-                allow_short=config.allow_short,
+                max_weight=max_weight,
+                allow_short=allow_short,
                 target_sum=1.0,
-                vol_limit=vol_limit_adj,  # Use adjusted constraints
+                vol_limit=vol_limit_adj,
                 cvar_limit=cvar_limit_adj,
                 alpha=0.05,
                 solver_method="SLSQP",
@@ -63,55 +63,48 @@ def adaptive_risk_constraints(
                 apply_constraints=True,
             )
 
-            # Evaluate portfolio volatility using the risk estimates' covariance matrix.
+            # Compute risk metrics
             port_vol = estimated_portfolio_volatility(final_w, risk_estimates["cov"])
-
-            # Compute CVaR using the historical returns and given alpha.
             computed_cvar = conditional_var(
                 pd.Series(risk_estimates["returns"] @ final_w), 0.05
             )
 
-            # For volatility: if port_vol exceeds the original target, record the violation.
-            vol_loss = max(0, port_vol - config.portfolio_max_vol)
-            # For CVaR: since target CVaR is negative, a computed CVaR that is higher (less negative)
-            # than the target indicates a violation.
-            cvar_loss = max(0, computed_cvar - config.portfolio_max_cvar)
+            # Calculate constraint violations (loss function)
+            vol_loss = max(
+                0, port_vol - max_vol
+            )  # Positive if it exceeds allowed volatility
+            cvar_loss = max(
+                0, computed_cvar - max_cvar
+            )  # Positive if it exceeds allowed CVaR
+            loss = vol_loss**2 + cvar_loss**2  # Sum of squared violations
 
-            # Loss is the sum of squared violations (can weight these terms if desired)
-            loss = vol_loss**2 + cvar_loss**2
             return loss
 
         except ValueError:
-            # Infeasible solution: penalize heavily
-            return float("inf")
+            return float("inf")  # Penalize infeasible solutions
 
+    # Optimize relaxation factor
     study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=10)  # You can adjust the number of trials
+    study.optimize(objective, n_trials=10)
 
     best_relax_factor = study.best_params["relax_factor"]
-    # logger.info(f"Optimal relaxation factor found: {best_relax_factor:.2f}")
 
-    # Adjust the constraints with the best relaxation factor based on risk_priority.
-    if config.portfolio_risk_priority == "vol":
-        final_vol_limit = config.portfolio_max_vol * best_relax_factor
-        final_cvar_limit = config.portfolio_max_cvar
-    elif config.portfolio_risk_priority == "cvar":
-        final_vol_limit = config.portfolio_max_vol
-        final_cvar_limit = config.portfolio_max_cvar * best_relax_factor
-    else:  # "both"
-        final_vol_limit = config.portfolio_max_vol * best_relax_factor
-        final_cvar_limit = config.portfolio_max_cvar * best_relax_factor
+    # Compute final adjusted constraints
+    final_vol_limit, final_cvar_limit = adjust_constraints(
+        max_vol, max_cvar, best_relax_factor, risk_priority
+    )
 
     try:
+        # Final optimization using the best relaxation factor
         final_w = optimize_weights_objective(
             cov=risk_estimates["cov"],
             mu=risk_estimates["mu"],
             returns=risk_estimates["returns"],
-            objective=config.optimization_objective,
+            objective=optimization_objective,
             order=3,
             target=0.0,
-            max_weight=config.max_weight,
-            allow_short=config.allow_short,
+            max_weight=max_weight,
+            allow_short=allow_short,
             target_sum=1.0,
             vol_limit=final_vol_limit,
             cvar_limit=final_cvar_limit,
@@ -121,9 +114,25 @@ def adaptive_risk_constraints(
             apply_constraints=True,
         )
         return final_w
+
     except ValueError:
         logger.error("Optimization failed even after relaxing constraints.")
         return None
+
+
+def adjust_constraints(
+    max_vol: float, max_cvar: float, relax_factor: float, risk_priority: str
+) -> tuple:
+    """
+    Adjusts volatility and CVaR limits based on relaxation factor and risk priority.
+    Returns (vol_limit, cvar_limit).
+    """
+    if risk_priority == "vol":
+        return max_vol * relax_factor, max_cvar  # Relax volatility, keep CVaR fixed
+    elif risk_priority == "cvar":
+        return max_vol, max_cvar * relax_factor  # Keep volatility fixed, relax CVaR
+    else:  # "both"
+        return max_vol * relax_factor, max_cvar * relax_factor  # Relax both constraints
 
 
 def apply_risk_constraints(
