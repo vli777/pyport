@@ -6,7 +6,7 @@ from scipy.optimize import minimize
 
 
 from stat_arb.cointegration import CointegrationAnalyzer
-from utils.performance_metrics import kappa_ratio, sharpe_ratio
+from utils.performance_metrics import sharpe_ratio
 
 
 class MultiAssetReversion:
@@ -118,10 +118,9 @@ class MultiAssetReversion:
             if portfolio_returns.std() == 0 or np.isnan(portfolio_returns.std()):
                 return -np.inf
             s = sharpe_ratio(portfolio_returns)
-            k = kappa_ratio(portfolio_returns, order=3)
-            if np.isnan(s) or np.isnan(k):
+            if np.isnan(s):
                 return -np.inf
-            return 0.5 * s + 0.5 * k
+            return s
 
         study = optuna.create_study(direction="maximize")
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -219,11 +218,9 @@ class MultiAssetReversion:
         returns = returns.dropna()
 
         s = sharpe_ratio(returns)
-        k = kappa_ratio(returns, order=3)
         metrics = {
             "Total Trades": (signals["Position"] != 0).sum(),
             "Sharpe Ratio": s,
-            "Kappa Ratio": k,
             "Win Rate": (returns > 0).mean(),
             "Avg Return": returns.mean(),
         }

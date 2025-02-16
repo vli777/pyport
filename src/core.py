@@ -116,14 +116,17 @@ def run_pipeline(
             # Drop any remaining NaNs or fill with zeros
             log_returns = log_returns.fillna(0)  # Alternative: log_returns.dropna()
 
-            logger.debug(f"Calculated daily log returns, {log_returns.isna().sum().sum()} NaN remaining")            
+            logger.debug(
+                f"Calculated daily log returns, {log_returns.isna().sum().sum()} NaN remaining"
+            )
 
             return log_returns
 
         except KeyError as e:
-            logger.error(f"Adjusted close prices not found in the DataFrame. Error: {e}")
+            logger.error(
+                f"Adjusted close prices not found in the DataFrame. Error: {e}"
+            )
             raise
-
 
     def preprocess_data(
         df: pd.DataFrame, config: Config

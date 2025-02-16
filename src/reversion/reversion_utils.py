@@ -147,17 +147,17 @@ def propagate_signals_by_similarity(
         ]
         if not available_tickers:
             continue
-        
+
         # Extract group parameters.
         # Expecting keys: "window_daily", "window_weekly", "weight_daily"
         wd = group_params.get("weight_daily", 0.7)
         ww = 1.0 - wd
         window_daily = group_params.get("window_daily", 20)  # default if missing
-        window_weekly = group_params.get("window_weekly", 5)   # in weeks
-        
+        window_weekly = group_params.get("window_weekly", 5)  # in weeks
+
         # Convert weekly window to days (assuming 5 trading days per week)
         window_weekly_days = window_weekly * 5
-        
+
         # Compute effective window as a weighted combination.
         effective_window = wd * window_daily + ww * window_weekly_days
         effective_window = int(round(effective_window))
