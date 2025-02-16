@@ -110,17 +110,20 @@ def run_pipeline(
             # Compute log returns (log difference of prices)
             log_returns = np.log(adj_close).diff()
 
-            # Fill only leading NaNs for stocks with different start dates
-            log_returns = log_returns.ffill().dropna(how="all")
+            # Fill leading NaNs for assets with different start dates
+            log_returns = log_returns.ffill()
 
-            logger.debug("Calculated daily log returns.")
+            # Drop any remaining NaNs or fill with zeros
+            log_returns = log_returns.fillna(0)  # Alternative: log_returns.dropna()
+
+            logger.debug(f"Calculated daily log returns, {log_returns.isna().sum().sum()} NaN remaining")            
+
             return log_returns
 
         except KeyError as e:
-            logger.error(
-                f"Adjusted close prices not found in the DataFrame. Error: {e}"
-            )
+            logger.error(f"Adjusted close prices not found in the DataFrame. Error: {e}")
             raise
+
 
     def preprocess_data(
         df: pd.DataFrame, config: Config
@@ -181,6 +184,7 @@ def run_pipeline(
         Falls back to the original returns_df columns if filtering results in an empty list.
         """
         original_symbols = list(returns_df.columns)  # Preserve original symbols
+        trading_days_per_year = 252
         risk_free_rate_log_daily = (
             np.log(1 + config.risk_free_rate) / trading_days_per_year
         )

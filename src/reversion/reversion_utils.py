@@ -149,10 +149,13 @@ def propagate_signals_by_similarity(
         if not available_tickers:
             continue
 
-        # Compute rolling returns and correlation matrix using the utility function
-        cluster_returns = (
-            returns_df[available_tickers].rolling(window=corr_window).mean()
-        )
+        # Convert log returns to simple returns before computing rolling mean
+        simple_returns = np.exp(returns_df[available_tickers]) - 1
+        cluster_returns = simple_returns.rolling(window=corr_window).mean()
+
+        # Drop NaNs before computing covariance
+        cluster_returns = cluster_returns.dropna()
+
         rolling_corr = compute_correlation_matrix(
             cluster_returns, lw_threshold=lw_threshold, use_abs=True
         )
