@@ -22,6 +22,10 @@ from apply_reversion import (
     compute_performance_results,
 )
 from correlation.cluster_assets import get_cluster_labels
+from correlation.correlation_utils import compute_lw_covariance
+from risk_constraints import apply_risk_constraints
+from models.optimize_portfolio import estimated_portfolio_volatility
+from utils.performance_metrics import conditional_var
 from utils.caching_utils import cleanup_cache
 from utils.data_utils import download_multi_ticker_data, process_input_files
 from utils.date_utils import calculate_start_end_dates
@@ -91,26 +95,32 @@ def run_pipeline(
 
     def calculate_returns(df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calculate daily returns from a multiindex DataFrame with adjusted close prices.
+        Calculate daily log returns from a multiindex DataFrame with adjusted close prices.
 
         Args:
             df (pd.DataFrame): Multiindex DataFrame with adjusted close prices under the level "Adj Close".
 
         Returns:
-            pd.DataFrame: DataFrame containing daily returns for each stock.
+            pd.DataFrame: DataFrame containing daily log returns for each stock.
         """
         try:
             # Extract only 'Adj Close' level
             adj_close = df.xs("Adj Close", level=1, axis=1)
 
-            # Calculate daily returns while preserving different stock histories
-            returns = adj_close.pct_change()
+            # Compute log returns (log difference of prices)
+            log_returns = np.log(adj_close).diff()
 
-            # Fill only leading NaNs for stocks with different start dates
-            returns = returns.ffill().dropna(how="all")
+            # Fill leading NaNs for assets with different start dates
+            log_returns = log_returns.ffill()
 
-            logger.debug("Calculated daily returns.")
-            return returns
+            # Drop any remaining NaNs or fill with zeros
+            log_returns = log_returns.fillna(0)  # Alternative: log_returns.dropna()
+
+            logger.debug(
+                f"Calculated daily log returns, {log_returns.isna().sum().sum()} NaN remaining"
+            )
+
+            return log_returns
 
         except KeyError as e:
             logger.error(
@@ -177,12 +187,16 @@ def run_pipeline(
         Falls back to the original returns_df columns if filtering results in an empty list.
         """
         original_symbols = list(returns_df.columns)  # Preserve original symbols
+        trading_days_per_year = 252
+        risk_free_rate_log_daily = (
+            np.log(1 + config.risk_free_rate) / trading_days_per_year
+        )
 
         try:
             decorrelated_tickers = filter_correlated_groups_hdbscan(
                 returns_df=returns_df,
                 asset_cluster_map=asset_cluster_map,
-                risk_free_rate=config.risk_free_rate,
+                risk_free_rate=risk_free_rate_log_daily,
                 plot=config.plot_clustering,
                 objective=config.optimization_objective,
             )
@@ -379,6 +393,101 @@ def run_pipeline(
     if not normalized_avg_weights:
         return {}
 
+    if config.portfolio_max_vol is not None or config.portfolio_max_cvar is not None:
+        # Preprocess df_all to compute risk estimates for the merged portfolio.
+        # This follows the original logic: flatten the MultiIndex and reindex by all_dates and valid_symbols.
+        df_risk = df_all.loc[start_long:end_long].copy()
+        if isinstance(
+            df_risk.columns, pd.MultiIndex
+        ) and "Adj Close" in df_risk.columns.get_level_values(1):
+            try:
+                df_risk = df_risk.xs("Adj Close", level=1, axis=1)
+                all_tickers = df_risk.columns.get_level_values(0).unique()
+                df_risk = df_risk.reindex(columns=all_tickers, fill_value=np.nan)
+                df_risk.columns.name = None  # Flatten MultiIndex properly
+            except KeyError:
+                logger.warning(
+                    "Adj Close column not found when processing risk estimates. Using original DataFrame."
+                )
+
+        # Align stocks with different start dates using the full available date range.
+        df_risk = df_risk.reindex(
+            index=all_dates, columns=valid_symbols, fill_value=np.nan
+        )
+        df_risk.index.name = "Date"
+        df_risk.columns.name = None
+
+        # Compute returns based on the processed data.
+        asset_returns = np.log(df_risk).diff().dropna(how="all")
+        valid_assets = asset_returns.dropna(
+            thresh=int(len(asset_returns) * 0.5), axis=1
+        ).columns
+        asset_returns = asset_returns[valid_assets]
+
+        # Compute risk estimates.
+        try:
+            cov_daily = compute_lw_covariance(asset_returns)
+        except ValueError as e:
+            logger.error(f"Covariance computation failed: {e}")
+            return {}
+
+        trading_days_per_year = 252
+        mu_daily = asset_returns.mean()
+        mu_annual = mu_daily * trading_days_per_year
+        cov_annual = cov_daily * trading_days_per_year
+        mu_annual = mu_annual.loc[valid_assets].reindex(valid_assets)
+
+        risk_estimates = {
+            "cov": cov_annual,
+            "mu": mu_annual,
+            "returns": asset_returns,
+        }
+
+        # Convert weights dict to numpy array
+        if not isinstance(normalized_avg_weights, pd.Series):
+            normalized_avg_weights = pd.Series(normalized_avg_weights)
+
+        # Align weights with covariance matrix assets
+        cov_assets = risk_estimates["cov"].index
+        normalized_avg_weights = normalized_avg_weights.reindex(
+            cov_assets, fill_value=0
+        )
+
+        # Compute the current portfolio risk measures from the unconstrained weights.
+        current_vol = estimated_portfolio_volatility(
+            normalized_avg_weights.values, risk_estimates["cov"]
+        )
+        current_cvar = conditional_var(
+            pd.Series(risk_estimates["returns"] @ normalized_avg_weights.values),
+            alpha=0.05,
+        )
+
+        # If portfolio_max_vol is not specified, set it to the current portfolio's volatility.
+        if config.portfolio_max_vol is None:
+            logger.info(
+                f"portfolio_max_vol not specified; using current portfolio vol: {current_vol:.2f}"
+            )
+            config.portfolio_max_vol = current_vol
+
+        # If portfolio_max_cvar is not specified, set it to the current portfolio's CVaR.
+        if config.portfolio_max_cvar is None:
+            logger.info(
+                f"portfolio_max_cvar not specified; using current portfolio CVaR: {current_cvar:.2f}"
+            )
+            config.portfolio_max_cvar = current_cvar
+
+        # Final pass: apply risk constraints to the merged portfolio
+        risk_adjusted_weights = apply_risk_constraints(
+            normalized_avg_weights, risk_estimates, config
+        )
+
+        final_weights = normalize_weights(
+            weights=risk_adjusted_weights,
+            min_weight=config.min_weight,
+        )
+    else:
+        final_weights = normalized_avg_weights
+
     # Prepare input metadata
     valid_models = [
         model for models in config.models.values() if models for model in models
@@ -387,7 +496,7 @@ def run_pipeline(
     combined_input_files = ", ".join(config.input_files)
 
     # Sort symbols and filter DataFrame accordingly
-    sorted_symbols = sorted(normalized_avg_weights.keys())
+    sorted_symbols = sorted(final_weights.keys())
     dfs["data"] = dfs["data"].filter(items=sorted_symbols)
 
     # Prevent empty DataFrame after filtering
@@ -402,11 +511,12 @@ def run_pipeline(
         pre_boxplot_stats,
         return_contributions_pct,
         risk_contributions_pct,
+        valid_symbols,
     ) = compute_performance_results(
         data=dfs["data"],
         start_date=str(dfs["start"]),
         end_date=str(dfs["end"]),
-        allocation_weights=normalized_avg_weights,
+        allocation_weights=final_weights,
         sorted_symbols=sorted_symbols,
         combined_input_files=combined_input_files,
         combined_models=combined_models,
@@ -418,8 +528,8 @@ def run_pipeline(
         start_date=str(dfs["start"]),
         end_date=str(dfs["end"]),
         models=combined_models,
-        symbols=sorted_symbols,
-        normalized_avg=normalized_avg_weights,
+        symbols=valid_symbols,
+        normalized_avg=final_weights,
         daily_returns=daily_returns,
         cumulative_returns=cumulative_returns,
         boxplot_stats=pre_boxplot_stats,
@@ -432,9 +542,9 @@ def run_pipeline(
         if config.reversion_type == "z":
             final_result_dict = apply_z_reversion(
                 dfs=dfs,
-                normalized_avg_weights=normalized_avg_weights,
+                normalized_avg_weights=final_weights,
                 combined_input_files=combined_input_files,
-                combined_models=combined_models,
+                combined_models=f"{combined_models} + z-reversion",
                 sorted_time_periods=sorted_time_periods,
                 config=config,
                 asset_cluster_map=asset_cluster_map,
@@ -443,9 +553,9 @@ def run_pipeline(
         else:
             final_result_dict = apply_ou_reversion(
                 dfs=dfs,
-                normalized_avg_weights=normalized_avg_weights,
+                normalized_avg_weights=final_weights,
                 combined_input_files=combined_input_files,
-                combined_models=combined_models,
+                combined_models=f"{combined_models} + ou-reversion",
                 sorted_time_periods=sorted_time_periods,
                 config=config,
                 returns_df=returns_df,
