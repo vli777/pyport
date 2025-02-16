@@ -234,27 +234,8 @@ def optimize_weights_objective(
             return -combined
 
         chosen_obj = obj
-    elif objective.lower() == "yolo":
-        if returns is None or returns.empty:
-            raise ValueError(
-                "Historical returns must be provided for YOLO optimization."
-            )
-
-        def obj(w: np.ndarray) -> float:
-            port_returns = returns.values @ w
-            cumulative_return = np.prod(1 + port_returns) - 1
-            port_mean = np.mean(port_returns)
-            port_vol = np.sqrt(w.T @ cov @ w)
-            sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
-            combined = (1 / 2) * cumulative_return + (1 / 2) * sharpe_val
-            return -combined
-
-        chosen_obj = obj
 
     else:
-        print(
-            f"Unknown objective specified: {objective}. Defaulting to Sharpe optimal."
-        )
 
         def obj(w: np.ndarray) -> float:
             port_return = w @ mu

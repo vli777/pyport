@@ -101,21 +101,15 @@ def get_objective_weights(objective: str = "sharpe") -> dict:
         },
         "sharpe": {
             "cumulative_return": 0.0,
-            "sharpe": 1.0,  # Fully maximize Sharpe ratio
+            "sharpe": 1.0,  # Fully maximize Sharpe
             "kappa": 0.0,
             "omega": 0.0,
         },
         "aggro": {
-            "cumulative_return": 1 / 3,  # Prioritize raw return
+            "cumulative_return": 1 / 3,  # Include raw return
             "sharpe": 1 / 3,
-            "kappa": 1 / 3,
-            "omega": 0.0,  # Omega is risk-adjusted, aggro purely seeks raw return
-        },
-        "yolo": {
-            "cumulative_return": 0.5,  # Prioritize raw return
-            "sharpe": 0.5,
-            "kappa": 0.0,
-            "omega": 0.0,  # Omega is risk-adjusted, aggro purely seeks raw return
+            "kappa": 1 / 3,  # Balance with Kappa
+            "omega": 0.0,
         },
     }
 
