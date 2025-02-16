@@ -78,9 +78,11 @@ def output(
         portfolio_cumulative_returns,
         (all_daily_returns, all_cumulative_returns),
     ) = calculate_portfolio_performance(data[list(clean_weights.keys())], clean_weights)
+    # from scipy.stats import skew
+    # print("Portfolio return skew:", skew(portfolio_returns))
 
     sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
-    kappa = kappa_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
+    # kappa = kappa_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
     omega = omega_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
     volatility = portfolio_volatility(portfolio_returns)
     cvar = conditional_var(portfolio_returns)
@@ -111,13 +113,11 @@ def output(
         market_returns = market_returns.loc[start_date:end_date]
 
         if not market_returns.empty:
-            alpha = (
-                calculate_portfolio_alpha(
-                    portfolio_returns=portfolio_returns,
-                    market_returns=market_returns,
-                    weights=clean_weights,
-                    risk_free_rate=config.risk_free_rate,
-                )                
+            alpha = calculate_portfolio_alpha(
+                portfolio_returns=portfolio_returns,
+                market_returns=market_returns,
+                weights=clean_weights,
+                risk_free_rate=config.risk_free_rate,
             )
         else:
             print(f"Warning: Market data for {market_file} is empty after filtering.")
@@ -140,7 +140,7 @@ def output(
     print(f"Time Period:\t{start_date} to {end_date} ({time_period} yrs)")
     print(f"Optimization Method:\t{optimization_model}")
     print(f"Sharpe Ratio:\t\t{sharpe:.2f}")
-    print(f"Kappa Ratio:\t\t{kappa:.2f}")
+    # print(f"Kappa Ratio:\t\t{kappa:.2f}")
     print(f"Omega Ratio:\t\t{omega:.2f}")
     print(f"Portfolio Volatility:\t{volatility * 100:.2f}%")
     print(f"Conditional VaR:\t{cvar * 100:.2f}%")

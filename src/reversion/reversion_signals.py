@@ -53,11 +53,11 @@ def compute_stateful_signal_with_decay(
     rolling_std = (
         series.rolling(window=window, min_periods=window).std().replace(0, np.nan)
     )
-    z_scores = (series - rolling_mean) / rolling_std    
+    z_scores = (series - rolling_mean) / rolling_std
     # Initialize arrays.
     state = np.zeros(len(series))  # 0: neutral, -1: overbought, +1: oversold.
     state_age = np.zeros(len(series))
-    raw_signal = np.zeros(len(series))    
+    raw_signal = np.zeros(len(series))
 
     # Iterate over the series.
     for i in range(1, len(series)):
@@ -90,7 +90,7 @@ def compute_stateful_signal_with_decay(
         # decay_multiplier = (
         #     adaptive_decay_rate.iloc[i] ** state_age[i] if state[i] != 0 else 0
         # )
-        
+
         # Compute decay multiplier proportional to the series optimal reversion window.
         if state[i] != 0:
             decay_multiplier = target_decay ** (state_age[i] / window)

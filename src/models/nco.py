@@ -31,8 +31,7 @@ def nested_clustered_optimization(
 ) -> pd.Series:
     """
     Perform Nested Clustered Optimization with a flexible objective.
-    For objectives requiring historical returns (kappa or blend),
-    a 'returns' DataFrame must be provided.
+    For objectives requiring historical returns a 'returns' DataFrame must be provided.
 
     Args:
         cov (pd.DataFrame): Covariance matrix of asset returns.

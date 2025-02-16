@@ -7,7 +7,6 @@ from pyomo.opt import TerminationCondition, SolverStatus
 from models.pyomo_objective_models import (
     build_omega_model,
     build_sharpe_model,
-    build_sharpe_omega_model,
 )
 from utils.performance_metrics import conditional_var
 
@@ -54,17 +53,13 @@ def optimize_weights_objective(
     Optimize portfolio weights using a unified, robust interface.
 
     For 'sharpe', expected returns (mu) and covariance (cov) are used.
-    For objectives such as 'kappa', 'sk_mix', 'so_mix', 'omega', 'aggro',
-    historical returns (returns) are required.
+    For objectives such as 'omega', historical returns (returns) are required.
 
     Args:
         cov (pd.DataFrame): Covariance matrix of asset returns.
         mu (Optional[Union[pd.Series, np.ndarray]]): Expected returns.
         returns (Optional[pd.DataFrame]): Historical returns (T x n), where T is time.
-        objective (str): Optimization objective. Options:
-                         ["kappa", "sk_mix", "sharpe",
-                          "so_mix", "omega", "aggro"].
-        order (int): Order for downside risk metrics (default 3).
+        objective (str): Optimization objective (default 'sharpe').
         target (float): Target return (default 0.0).
         max_weight (float): Maximum weight per asset (default 1.0).
         allow_short (bool): Allow short positions (default False).
@@ -106,68 +101,13 @@ def optimize_weights_objective(
         constraints.append({"type": "ineq", "fun": cvar_constraint})
         constraints.append({"type": "ineq", "fun": vol_constraint})
 
-    # Ensure Kappa always has a volatility constraint, even if apply_constraints=False
-    if (
-        objective.lower() == "kappa"
-        and {"type": "ineq", "fun": vol_constraint} not in constraints
-    ):
-        constraints.append({"type": "ineq", "fun": vol_constraint})
-
     # We'll assign the selected objective function to chosen_obj.
     chosen_obj = None
 
-    if objective.lower() == "kappa":
-        if returns is None:
-            raise ValueError(
-                "Historical returns must be provided for kappa optimization."
-            )
-
-        def obj(w: np.ndarray) -> float:
-            # Compute portfolio returns using NumPy conversion
-            port_returns = returns.to_numpy() @ w
-            port_mean = np.mean(port_returns)
-
-            # Compute empirical lower partial moment (order 3)
-            lpm = empirical_lpm(port_returns, target=target, order=3)
-
-            # Floor lpm to avoid division by zero or extremely small values
-            lpm = max(lpm, 1e-6)
-
-            # Compute Kappa ratio: (port_mean - target) / (lpm^(1/3))
-            kappa = (port_mean - target) / (lpm ** (1.0 / 3))
-
-            # Return negative Kappa because we are minimizing
-            return -kappa
-
-        chosen_obj = obj
-
-    elif objective.lower() == "sk_mix":
-        # A simple combined objective: 50% kappa + 50% sharpe.
+    if objective.lower() == "sharpe":
         if returns is None or mu is None:
             raise ValueError(
-                "Both historical returns and expected returns (mu) must be provided for Kappa and Sharpe optimization."
-            )
-
-        def obj(w: np.ndarray) -> float:
-            port_returns = returns.values @ w
-            port_mean = np.mean(port_returns)
-            port_vol = np.sqrt(w.T @ cov @ w)
-
-            lpm = empirical_lpm(port_returns, target=target, order=order)
-            lpm = max(lpm, 1e-6)
-            kappa_val = (port_mean - target) / (lpm ** (1.0 / order))
-
-            sharpe_val = port_mean / port_vol if port_vol > 0 else -1e6
-
-            combined = 0.5 * kappa_val + 0.5 * sharpe_val
-            return -combined
-
-        chosen_obj = obj
-
-    elif objective.lower() == "sharpe":
-        if returns is None or mu is None:
-            raise ValueError(
-                "Both historical returns and expected returns (mu) must be provided for Kappa and Sharpe optimization."
+                "Both historical returns and expected returns (mu) must be provided for Sharpe optimization."
             )
 
         if n < 50:
@@ -205,43 +145,6 @@ def optimize_weights_objective(
             # sharpe_pyomo = -pyo.value(model_pyomo.obj)
 
             return weights_pyomo
-
-    elif objective.lower() == "so_mix":
-        # A simple combined objective: 50% sharpe + 50% omega.
-        if returns is None or mu is None:
-            raise ValueError(
-                "Historical returns and expected returns (mu) must be provided for the blend."
-            )
-        # Build the combined model.
-        model = build_sharpe_omega_model(
-            cov=cov,
-            mu=mu,
-            returns=returns,
-            target=target,
-            target_sum=target_sum,
-            max_weight=max_weight,
-            allow_short=allow_short,
-            vol_limit=vol_limit if apply_constraints else None,
-            cvar_limit=cvar_limit if apply_constraints else None,
-            alpha=alpha,
-        )
-
-        # Solve using a non-linear solver, e.g., IPOPT.
-        solver = pyo.SolverFactory(
-            "ipopt",
-            executable="H:/Solvers/Ipopt-3.14.17-win64-msvs2022-md/bin/ipopt.exe",
-        )
-        if not solver.available():
-            print("IPOPT Solver not found!")
-        results = solver.solve(model, tee=True)
-        if results.solver.status != pyo.SolverStatus.ok:
-            raise RuntimeError("Solver did not converge!")
-
-        # Extract optimized weights.
-        weights = np.array([pyo.value(model.w[i]) for i in model.assets])
-        weights = weights / np.sum(weights) * 1.0  # Ensure they sum to target_sum.
-
-        return weights
 
     elif objective.lower() == "omega":
         """
