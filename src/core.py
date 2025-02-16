@@ -95,26 +95,26 @@ def run_pipeline(
 
     def calculate_returns(df: pd.DataFrame) -> pd.DataFrame:
         """
-        Calculate daily returns from a multiindex DataFrame with adjusted close prices.
+        Calculate daily log returns from a multiindex DataFrame with adjusted close prices.
 
         Args:
             df (pd.DataFrame): Multiindex DataFrame with adjusted close prices under the level "Adj Close".
 
         Returns:
-            pd.DataFrame: DataFrame containing daily returns for each stock.
+            pd.DataFrame: DataFrame containing daily log returns for each stock.
         """
         try:
             # Extract only 'Adj Close' level
             adj_close = df.xs("Adj Close", level=1, axis=1)
 
-            # Calculate daily returns while preserving different stock histories
-            returns = adj_close.pct_change()
+            # Compute log returns (log difference of prices)
+            log_returns = np.log(adj_close).diff()
 
             # Fill only leading NaNs for stocks with different start dates
-            returns = returns.ffill().dropna(how="all")
+            log_returns = log_returns.ffill().dropna(how="all")
 
-            logger.debug("Calculated daily returns.")
-            return returns
+            logger.debug("Calculated daily log returns.")
+            return log_returns
 
         except KeyError as e:
             logger.error(
@@ -181,12 +181,15 @@ def run_pipeline(
         Falls back to the original returns_df columns if filtering results in an empty list.
         """
         original_symbols = list(returns_df.columns)  # Preserve original symbols
+        risk_free_rate_log_daily = (
+            np.log(1 + config.risk_free_rate) / trading_days_per_year
+        )
 
         try:
             decorrelated_tickers = filter_correlated_groups_hdbscan(
                 returns_df=returns_df,
                 asset_cluster_map=asset_cluster_map,
-                risk_free_rate=config.risk_free_rate,
+                risk_free_rate=risk_free_rate_log_daily,
                 plot=config.plot_clustering,
                 objective=config.optimization_objective,
             )

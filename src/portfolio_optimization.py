@@ -106,13 +106,14 @@ def run_optimization_and_save(
         optimization_objective = config.optimization_objective
         allow_short = config.allow_short
         risk_free_rate = config.risk_free_rate
+        risk_free_rate_log_daily = np.log(1 + risk_free_rate) / trading_days_per_year
 
         model_args = {
             "returns": asset_returns,
             "max_weight": max_weight,
             "objective": optimization_objective,
             "allow_short": allow_short,
-            "risk_free_rate": risk_free_rate,
+            "risk_free_rate": risk_free_rate_log_daily,
         }
 
         try:

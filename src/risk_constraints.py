@@ -30,13 +30,17 @@ def adaptive_risk_constraints(
     optimization_objective: str = config.optimization_objective
     risk_free_rate: float = config.risk_free_rate
 
+    trading_days_per_year = 252
+    risk_free_rate_log_daily = np.log(1 + risk_free_rate) / trading_days_per_year
+
     if "returns" not in risk_estimates or risk_estimates["returns"].empty:
-        target = config.risk_free_rate
+        target = risk_free_rate_log_daily
     else:
         simulated_returns = risk_estimates["returns"]
         # Set target (τ) dynamically based on simulated returns (30th percentile threshold)
         target = max(
-            np.percentile(simulated_returns.to_numpy().flatten(), 30), risk_free_rate
+            np.percentile(simulated_returns.to_numpy().flatten(), 30),
+            risk_free_rate_log_daily,
         )
 
     def objective(trial):

@@ -79,9 +79,12 @@ def output(
         (all_daily_returns, all_cumulative_returns),
     ) = calculate_portfolio_performance(data[list(clean_weights.keys())], clean_weights)
 
-    sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
+    trading_days_per_year = 252
+    risk_free_rate_log_daily = np.log(1 + config.risk_free_rate) / trading_days_per_year
+
+    sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=risk_free_rate_log_daily)
     kappa = kappa_ratio(portfolio_returns)
-    omega = omega_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
+    omega = omega_ratio(portfolio_returns, risk_free_rate=risk_free_rate_log_daily)
     volatility = portfolio_volatility(portfolio_returns)
     cvar = conditional_var(portfolio_returns)
     max_dd = max_drawdown(portfolio_cumulative_returns)
@@ -95,9 +98,9 @@ def output(
         market_data = pd.read_parquet(market_file)
 
         if "Adj Close" in market_data.columns:
-            market_returns = market_data["Adj Close"].pct_change().dropna()
+            market_returns = np.log(market_data["Adj Close"]).diff().ffill().dropna(how="all")
         elif "Close" in market_data.columns:
-            market_returns = market_data["Close"].pct_change().dropna()
+            market_returns = np.log(market_data["Close"]).diff().ffill().dropna(how="all")
         else:
             raise ValueError(
                 f"{market_file} is missing 'Adj Close' or 'Close' columns."
