@@ -164,7 +164,7 @@ def propagate_signals_by_similarity(
 
         # Convert log returns to simple returns before computing rolling mean
         simple_returns = np.exp(returns_df[available_tickers]) - 1
-        cluster_returns = simple_returns.rolling(window=group_params["window"]).mean()
+        cluster_returns = simple_returns.rolling(window=effective_window).mean()
 
         # Drop NaNs before computing covariance
         cluster_returns = cluster_returns.dropna()
