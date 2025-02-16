@@ -65,7 +65,6 @@ def apply_mean_reversion(
 
     # Only re-optimize if the cache is stale or some tickers are missing.
     if cache_is_stale or missing_tickers:
-        print(f"missing_tickers: {missing_tickers}")
         # If there are missing tickers, only pass that subset. Otherwise, use all tickers.
         returns_subset = returns_df[missing_tickers] if missing_tickers else returns_df
         updated_signals = cluster_mean_reversion(

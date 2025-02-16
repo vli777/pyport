@@ -144,7 +144,7 @@ def output(
     print(f"Kappa Ratio:\t\t{kappa:.2f}")
     print(f"Omega Ratio:\t\t{omega:.2f}")
     print(f"Portfolio Volatility:\t{volatility * 100:.2f}%")
-    print(f"Conditional VaR:\t\t{cvar * 100:.2f}%")
+    print(f"Conditional VaR:\t{cvar * 100:.2f}%")
     print(f"Max Drawdown:\t\t{max_dd * 100:.2f}%")
     print(f"Time Under Water:\t{time_uw} days")
 
