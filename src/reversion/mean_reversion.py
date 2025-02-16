@@ -113,6 +113,8 @@ def apply_mean_reversion(
     )
     realized_volatility = returns_df.rolling(window=30).std().mean(axis=1)
     adaptive_alpha = base_alpha / (1 + realized_volatility.iloc[-1])
+    print(f"Adaptive alpha: {adaptive_alpha}")
+    
     final_allocation = adjust_allocation_with_mean_reversion(
         baseline_allocation=baseline_allocation,
         composite_signals=updated_composite_signals,
