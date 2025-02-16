@@ -79,12 +79,9 @@ def output(
         (all_daily_returns, all_cumulative_returns),
     ) = calculate_portfolio_performance(data[list(clean_weights.keys())], clean_weights)
 
-    trading_days_per_year = 252
-    risk_free_rate_log_daily = np.log(1 + config.risk_free_rate) / trading_days_per_year
-
-    sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=risk_free_rate_log_daily)
-    kappa = kappa_ratio(portfolio_returns)
-    omega = omega_ratio(portfolio_returns, risk_free_rate=risk_free_rate_log_daily)
+    sharpe = sharpe_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
+    kappa = kappa_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
+    omega = omega_ratio(portfolio_returns, risk_free_rate=config.risk_free_rate)
     volatility = portfolio_volatility(portfolio_returns)
     cvar = conditional_var(portfolio_returns)
     max_dd = max_drawdown(portfolio_cumulative_returns)
@@ -116,9 +113,11 @@ def output(
         if not market_returns.empty:
             alpha = (
                 calculate_portfolio_alpha(
-                    portfolio_returns=portfolio_returns, market_returns=market_returns
-                )
-                * 100
+                    portfolio_returns=portfolio_returns,
+                    market_returns=market_returns,
+                    weights=clean_weights,
+                    risk_free_rate=config.risk_free_rate,
+                )                
             )
         else:
             print(f"Warning: Market data for {market_file} is empty after filtering.")
@@ -150,7 +149,7 @@ def output(
 
     # Only print Alpha if it was successfully calculated
     if alpha is not None:
-        print(f"Portfolio Alpha:\t{alpha:.2f}%")
+        print(f"Portfolio Alpha:\t{alpha * 100:.2f}%")
 
     print(f"Cumulative Return:\t{cumulative_pct:.2f}%")
 

@@ -155,12 +155,12 @@ def run_optimization_and_save(
             final_weights = pd.Series(dtype=float)  # Default empty Series
 
         # Output results for individual optimizations
-        output_results(
-            df=df,
-            weights=final_weights,
-            model_name=f"{model} {config.optimization_objective}",
-            start_date=start_date,
-            end_date=end_date,
-            years=years,
-            config=config,
-        )
+        # output_results(
+        #     df=df,
+        #     weights=final_weights,
+        #     model_name=f"{model} {config.optimization_objective}",
+        #     start_date=start_date,
+        #     end_date=end_date,
+        #     years=years,
+        #     config=config,
+        # )
