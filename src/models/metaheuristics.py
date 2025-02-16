@@ -3,12 +3,16 @@ import numpy as np
 from scipy.optimize import dual_annealing
 
 
+# global_optim.py
+import numpy as np
+from scipy.optimize import dual_annealing
+
+
 def global_optimize(
     chosen_obj,
     bounds,
     target_sum,
     apply_constraints=False,
-    objective=None,
     cvar_constraint=None,
     vol_constraint=None,
     penalty_weight=1e6,
@@ -25,9 +29,7 @@ def global_optimize(
       - target_sum: float
           The required sum of weights (equality constraint: sum(w) == target_sum).
       - apply_constraints: bool
-          Whether to enforce additional inequality constraints.
-      - objective: str (optional)
-          Identifier for the objective (used to skip some constraints if needed).
+          Whether to enforce additional inequality constraints (CVaR, volatility).
       - cvar_constraint: callable (optional)
           Function that takes w and returns a scalar; feasible if >= 0.
       - vol_constraint: callable (optional)
@@ -46,7 +48,7 @@ def global_optimize(
         # Enforce equality constraint: sum(w) == target_sum.
         pen += penalty_weight * abs(np.sum(w) - target_sum)
 
-        # For inequality constraints (if applied and objective is not exempted).
+        # Apply CVaR and volatility constraints if enabled.
         if apply_constraints:
             if cvar_constraint is not None:
                 cvar_val = cvar_constraint(w)
@@ -101,7 +103,6 @@ optimal_weights = global_optimize(
     bounds=bounds,
     target_sum=target_sum,
     apply_constraints=True,
-    objective="sharpe",  # or another identifier
     cvar_constraint=cvar_constraint,
     vol_constraint=vol_constraint,
     penalty_weight=1e6,
