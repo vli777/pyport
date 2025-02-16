@@ -98,9 +98,13 @@ def output(
         market_data = pd.read_parquet(market_file)
 
         if "Adj Close" in market_data.columns:
-            market_returns = np.log(market_data["Adj Close"]).diff().ffill().dropna(how="all")
+            market_returns = (
+                np.log(market_data["Adj Close"]).diff().ffill().dropna(how="all")
+            )
         elif "Close" in market_data.columns:
-            market_returns = np.log(market_data["Close"]).diff().ffill().dropna(how="all")
+            market_returns = (
+                np.log(market_data["Close"]).diff().ffill().dropna(how="all")
+            )
         else:
             raise ValueError(
                 f"{market_file} is missing 'Adj Close' or 'Close' columns."

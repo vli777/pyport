@@ -54,7 +54,7 @@ def optimize_weights_objective(
     Optimize portfolio weights using a unified, robust interface.
 
     For 'sharpe', expected returns (mu) and covariance (cov) are used.
-    For objectives such as 'kappa', 'sk_mix', 'so_mix', 'omega', 'aggro', 
+    For objectives such as 'kappa', 'sk_mix', 'so_mix', 'omega', 'aggro',
     historical returns (returns) are required.
 
     Args:
@@ -101,7 +101,7 @@ def optimize_weights_objective(
         {"type": "eq", "fun": lambda w: np.sum(w) - target_sum},
     ]
 
-    # Add CVaR and max volatility 
+    # Add CVaR and max volatility
     if apply_constraints:
         constraints.append({"type": "ineq", "fun": cvar_constraint})
         constraints.append({"type": "ineq", "fun": vol_constraint})
