@@ -160,11 +160,6 @@ def build_omega_model(
     model.z = pyo.Var(domain=pyo.NonNegativeReals)
     model.q = pyo.Var(model.obs, domain=pyo.NonNegativeReals)
 
-    # **Constraint: Weights Sum to Target**
-    model.weight_sum = pyo.Constraint(
-        expr=sum(model.w[i] for i in model.assets) == target_sum
-    )
-
     # Expected Return Constraint: y^T mu_robust >= target * z.
     model.exp_return_constraint = pyo.Constraint(
         expr=sum(model.y[i] * mu_robust[i] for i in model.assets) >= target * model.z
@@ -178,7 +173,7 @@ def build_omega_model(
     # **Portfolio Variance**
     model.port_variance = pyo.Expression(
         expr=sum(
-            model.w[i] * cov.iloc[i, j] * model.w[j]
+            (model.y[i] / model.z) * cov.iloc[i, j] * (model.y[j] / model.z)
             for i in model.assets
             for j in model.assets
         )
